@@ -86,6 +86,8 @@ mod tests {
         let feature_path = PathBuf::from(feature);
         let rust_dir = feature_path.join("rust");
         
-        assert_eq!(rust_dir.to_str().unwrap(), "my_feature/rust");
+        // Compare paths as PathBuf instead of strings to work on Windows
+        let expected = PathBuf::from("my_feature").join("rust");
+        assert_eq!(rust_dir, expected);
     }
 }

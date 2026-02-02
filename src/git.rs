@@ -3,15 +3,16 @@ use std::process::Command;
 use crate::util;
 
 /// Commit changes with a message
-/// Only stages .c2rust/ directory and feature directories to avoid committing unrelated changes
-pub fn git_commit(message: &str) -> Result<()> {
+/// Only stages .c2rust/ directory and the specific feature directory to avoid committing unrelated changes
+pub fn git_commit(message: &str, feature: &str) -> Result<()> {
     let project_root = util::find_project_root()?;
     
-    // Add only .c2rust directory and any feature directories (not all changes)
+    // Add only .c2rust directory and the specific feature directory (not all features)
     // This prevents accidentally committing unrelated local modifications
+    let feature_rust_path = format!("{}/rust/", feature);
     let add_output = Command::new("git")
         .current_dir(&project_root)
-        .args(&["add", ".c2rust/", "*/rust/"])
+        .args(&["add", ".c2rust/", &feature_rust_path])
         .output()
         .context("Failed to git add")?;
 

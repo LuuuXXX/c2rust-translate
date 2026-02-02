@@ -11,6 +11,14 @@ use anyhow::{Context, Result};
 pub fn translate_feature(feature: &str) -> Result<()> {
     println!("Starting translation for feature: {}", feature);
 
+    // Validate feature name to prevent path traversal attacks
+    if feature.contains('/') || feature.contains('\\') || feature.contains("..") || feature.is_empty() {
+        anyhow::bail!(
+            "Invalid feature name '{}': must be a simple directory name without path separators or '..'",
+            feature
+        );
+    }
+
     // Find the project root first
     let project_root = util::find_project_root()?;
     
@@ -48,7 +56,7 @@ pub fn translate_feature(feature: &str) -> Result<()> {
         }
         
         // Commit the initialization
-        git::git_commit(&format!("Initialize {} rust directory", feature))?;
+        git::git_commit(&format!("Initialize {} rust directory", feature), feature)?;
     }
 
     // Step 2: Main loop - process all empty .rs files
@@ -170,14 +178,14 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path) -> Result<()> {
     git::git_commit(&format!(
         "Translate {} from C to Rust (feature: {})",
         rs_file_name, feature
-    ))?;
+    ), feature)?;
 
     // Step 2.2.8: Update code analysis
     println!("Updating code analysis...");
     analyzer::update_code_analysis(feature)?;
 
     // Step 2.2.9: Save update result
-    git::git_commit(&format!("Update code analysis for {}", feature))?;
+    git::git_commit(&format!("Update code analysis for {}", feature), feature)?;
 
     // Step 2.2.10 & 2.2.11: Hybrid build testing
     println!("Running hybrid build tests...");
