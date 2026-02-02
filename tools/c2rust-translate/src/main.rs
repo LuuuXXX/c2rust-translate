@@ -18,7 +18,7 @@ enum Commands {
         feature: Option<String>,
         
         /// Input file(s) to translate
-        #[arg(value_name = "FILE")]
+        #[arg(value_name = "FILE", required = true)]
         files: Vec<PathBuf>,
     },
 }
@@ -42,11 +42,6 @@ fn handle_translate(feature: Option<&str>, files: &[PathBuf]) {
         println!("Feature: <not specified>");
     }
     
-    if files.is_empty() {
-        eprintln!("Error: No input files specified");
-        std::process::exit(1);
-    }
-    
     for file in files {
         println!("Translating file: {}", file.display());
         // TODO: Implement actual translation logic
@@ -59,9 +54,43 @@ fn handle_translate(feature: Option<&str>, files: &[PathBuf]) {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn test_cli_parsing() {
-        // Basic test to ensure CLI structure works
-        assert!(true);
+        // Test basic translate command with feature and file
+        let result = Cli::try_parse_from(["c2rust-translate", "translate", "--feature", "myfeature", "test.c"]);
+        assert!(result.is_ok());
+        
+        let cli = result.unwrap();
+        match cli.command {
+            Commands::Translate { feature, files } => {
+                assert_eq!(feature, Some("myfeature".to_string()));
+                assert_eq!(files.len(), 1);
+                assert_eq!(files[0].to_str().unwrap(), "test.c");
+            }
+        }
+    }
+    
+    #[test]
+    fn test_cli_without_feature() {
+        // Test translate command without feature flag
+        let result = Cli::try_parse_from(["c2rust-translate", "translate", "file1.c", "file2.c"]);
+        assert!(result.is_ok());
+        
+        let cli = result.unwrap();
+        match cli.command {
+            Commands::Translate { feature, files } => {
+                assert_eq!(feature, None);
+                assert_eq!(files.len(), 2);
+            }
+        }
+    }
+    
+    #[test]
+    fn test_cli_requires_files() {
+        // Test that translate command requires at least one file
+        let result = Cli::try_parse_from(["c2rust-translate", "translate", "--feature", "myfeature"]);
+        assert!(result.is_err());
     }
 }

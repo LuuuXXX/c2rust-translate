@@ -18,7 +18,7 @@ The binary will be available at `target/release/c2rust-translate`.
 ### Basic Syntax
 
 ```bash
-c2rust-translate translate [OPTIONS] [FILES]...
+c2rust-translate translate [OPTIONS] <FILE>...
 ```
 
 ### Options

@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::path::PathBuf;
 use auto_translate::{
-    env, file_scanner, config, translator, Result, AutoTranslateError
+    env, file_scanner, config, translator, Result
 };
 
 #[derive(Parser, Debug)]
@@ -11,6 +11,10 @@ struct Args {
     /// Path to the project directory (defaults to current directory)
     #[arg(short, long)]
     path: Option<PathBuf>,
+    
+    /// Feature name for the translation
+    #[arg(short, long)]
+    feature: Option<String>,
     
     /// Path to the mixed build library for LD_PRELOAD
     #[arg(long)]
@@ -25,7 +29,7 @@ fn main() -> Result<()> {
     let args = Args::parse();
     
     // Determine starting directory
-    let start_dir = args.path.unwrap_or_else(|| std::env::current_dir().unwrap());
+    let start_dir = args.path.unwrap_or_else(|| PathBuf::from("."));
     
     println!("Auto-translate tool starting in: {:?}", start_dir);
     
@@ -45,6 +49,10 @@ fn main() -> Result<()> {
     println!("Loading configuration...");
     let (config, _) = config::Config::find_and_load(&project_root)?;
     println!("Configuration loaded successfully.");
+    
+    // Get feature name
+    let feature_name = args.feature.as_deref().unwrap_or("default");
+    println!("Using feature: {}", feature_name);
     
     // Step 4: Find empty Rust files
     println!("Scanning for empty Rust files...");
@@ -72,16 +80,9 @@ fn main() -> Result<()> {
         
         println!("Found corresponding C file: {:?}", c_file);
         
-        // Get filename for feature flag
-        let filename = c_file.file_name()
-            .and_then(|s| s.to_str())
-            .ok_or_else(|| AutoTranslateError::TranslationFailed(
-                "Invalid filename".to_string()
-            ))?;
-        
         // Step 6: Translate C to Rust
         println!("Translating C to Rust...");
-        if let Err(e) = translator::translate_c_to_rust(&c_file, filename) {
+        if let Err(e) = translator::translate_c_to_rust(&c_file, feature_name) {
             eprintln!("Translation failed: {}", e);
             eprintln!("Please fix the issue manually and rerun the tool.");
             return Err(e);
@@ -89,7 +90,7 @@ fn main() -> Result<()> {
         
         // Step 7: Analyze code
         println!("Analyzing code...");
-        if let Err(e) = translator::analyze_code(filename) {
+        if let Err(e) = translator::analyze_code(feature_name) {
             eprintln!("Code analysis failed: {}", e);
             eprintln!("Please fix the issue manually and rerun the tool.");
             return Err(e);

@@ -54,7 +54,7 @@ auto-translate --ld-preload /path/to/lib.so
 ## Requirements
 
 The following tools must be available in your PATH:
-- `c2rust-translate`: For translating C code to Rust (command: `c2rust-translate translate --feature <filename>`)
+- `c2rust-translate`: For translating C code to Rust (command: `c2rust-translate translate --feature <feature-name> path/to/file.c`)
 - `c2rust-config`: For retrieving build configuration
 - `code-analyse`: For analyzing the translated code
 - `git`: For version control operations
@@ -98,7 +98,7 @@ command = "make test"
 4. **File Scanning**: Identifies empty `.rs` files that need translation
 5. **Translation Pipeline**: For each empty Rust file:
    - Finds the corresponding C file
-   - Runs `c2rust-translate` to generate Rust code
+   - Runs `c2rust-translate` with the specified feature to generate Rust code
    - Runs `code-analyse` to analyze the result
    - Executes the clean/build/test pipeline
 6. **Error Handling**: Stops on errors and prompts for manual intervention
