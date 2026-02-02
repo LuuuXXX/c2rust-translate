@@ -1,28 +1,11 @@
 use anyhow::{Context, Result};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
-
-/// Find the project root by searching upward for .c2rust directory
-fn find_project_root() -> Result<PathBuf> {
-    let mut current = std::env::current_dir()
-        .context("Failed to get current directory")?;
-    
-    loop {
-        let c2rust_dir = current.join(".c2rust");
-        if c2rust_dir.exists() && c2rust_dir.is_dir() {
-            return Ok(current);
-        }
-        
-        match current.parent() {
-            Some(parent) => current = parent.to_path_buf(),
-            None => anyhow::bail!("Could not find .c2rust directory in any parent directory"),
-        }
-    }
-}
+use crate::util;
 
 /// Run cargo build in the .c2rust directory
 pub fn cargo_build(_rust_dir: &Path) -> Result<()> {
-    let project_root = find_project_root()?;
+    let project_root = util::find_project_root()?;
     let build_dir = project_root.join(".c2rust");
     
     let output = Command::new("cargo")
@@ -41,7 +24,11 @@ pub fn cargo_build(_rust_dir: &Path) -> Result<()> {
 
 /// Get a specific command from c2rust-config
 fn get_c2rust_command(cmd_type: &str, feature: &str) -> Result<String> {
+    let project_root = util::find_project_root()?;
+    let c2rust_dir = project_root.join(".c2rust");
+    
     let output = Command::new("c2rust-config")
+        .current_dir(&c2rust_dir)
         .args(&["config", "--make", "--feature", feature, "--list", cmd_type])
         .output()
         .with_context(|| format!("Failed to get {} command from config", cmd_type))?;
@@ -67,15 +54,26 @@ pub fn run_c2rust_command(cmd_type: &str, feature: &str) -> Result<()> {
     // Get the actual command from config
     let actual_command = get_c2rust_command(cmd_type, feature)?;
     
-    let output = Command::new(&cmd_name)
-        .args(&[cmd_type, "--", &actual_command])
-        .output()
-        .with_context(|| format!("Failed to execute {}", cmd_name))?;
+    // Split the command into parts for proper argument passing
+    let parts: Vec<&str> = actual_command.split_whitespace().collect();
+    
+    let output = if parts.is_empty() {
+        return Ok(()); // Nothing to execute
+    } else if parts.len() == 1 {
+        Command::new(&cmd_name)
+            .args(&[cmd_type, "--", parts[0]])
+            .output()
+    } else {
+        Command::new(&cmd_name)
+            .arg(cmd_type)
+            .arg("--")
+            .args(&parts)
+            .output()
+    }.with_context(|| format!("Failed to execute {}", cmd_name))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        eprintln!("Warning: {} failed: {}", cmd_name, stderr);
-        eprintln!("Please handle this manually");
+        anyhow::bail!("{} failed: {}", cmd_name, stderr);
     }
 
     Ok(())
@@ -84,7 +82,7 @@ pub fn run_c2rust_command(cmd_type: &str, feature: &str) -> Result<()> {
 /// Run hybrid build test suite
 pub fn run_hybrid_build(feature: &str) -> Result<()> {
     // Get build commands from config
-    let project_root = find_project_root()?;
+    let project_root = util::find_project_root()?;
     let config_path = project_root.join(".c2rust/config.toml");
     
     if !config_path.exists() {

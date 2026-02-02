@@ -1,47 +1,40 @@
 use anyhow::{Context, Result};
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-
-/// Find the project root by searching upward for .c2rust directory
-fn find_project_root() -> Result<PathBuf> {
-    let mut current = std::env::current_dir()
-        .context("Failed to get current directory")?;
-    
-    loop {
-        let c2rust_dir = current.join(".c2rust");
-        if c2rust_dir.exists() && c2rust_dir.is_dir() {
-            return Ok(current);
-        }
-        
-        match current.parent() {
-            Some(parent) => current = parent.to_path_buf(),
-            None => anyhow::bail!("Could not find .c2rust directory in any parent directory"),
-        }
-    }
-}
+use std::io::Write;
+use crate::util;
 
 /// Get the config.toml path by searching for .c2rust directory
 fn get_config_path() -> Result<PathBuf> {
-    let project_root = find_project_root()?;
+    let project_root = util::find_project_root()?;
     Ok(project_root.join(".c2rust/config.toml"))
 }
 
 /// Translate a C file to Rust using the translation tool
 pub fn translate_c_to_rust(file_type: &str, c_file: &Path, rs_file: &Path) -> Result<()> {
+    let project_root = util::find_project_root()?;
     let config_path = get_config_path()?;
+    let script_path = project_root.join("translate_and_fix.py");
+    
+    let config_str = config_path.to_str()
+        .with_context(|| format!("Non-UTF8 path: {}", config_path.display()))?;
+    let c_file_str = c_file.to_str()
+        .with_context(|| format!("Non-UTF8 path: {}", c_file.display()))?;
+    let rs_file_str = rs_file.to_str()
+        .with_context(|| format!("Non-UTF8 path: {}", rs_file.display()))?;
     
     let output = Command::new("python")
+        .current_dir(&project_root)
         .args(&[
-            "translate_and_fix.py",
+            script_path.to_str().unwrap(),
             "--config",
-            config_path.to_str().unwrap(),
+            config_str,
             "--type",
             file_type,
             "--code",
-            c_file.to_str().unwrap(),
+            c_file_str,
             "--output",
-            rs_file.to_str().unwrap(),
+            rs_file_str,
         ])
         .output()
         .context("Failed to execute translate_and_fix.py")?;
@@ -56,24 +49,35 @@ pub fn translate_c_to_rust(file_type: &str, c_file: &Path, rs_file: &Path) -> Re
 
 /// Fix translation errors using the translation tool
 pub fn fix_translation_error(file_type: &str, rs_file: &Path, error_msg: &str) -> Result<()> {
+    let project_root = util::find_project_root()?;
     let config_path = get_config_path()?;
+    let script_path = project_root.join("translate_and_fix.py");
     
-    // Create a temporary file with error message
-    let temp_dir = std::env::temp_dir();
-    let error_file = temp_dir.join("build_error.txt");
-    fs::write(&error_file, error_msg)?;
+    // Create a unique temporary file with error message
+    let mut temp_file = tempfile::NamedTempFile::new()
+        .context("Failed to create temporary error file")?;
+    write!(temp_file, "{}", error_msg)
+        .context("Failed to write error message to temp file")?;
+    
+    let config_str = config_path.to_str()
+        .with_context(|| format!("Non-UTF8 path: {}", config_path.display()))?;
+    let error_file_str = temp_file.path().to_str()
+        .with_context(|| format!("Non-UTF8 path: {}", temp_file.path().display()))?;
+    let rs_file_str = rs_file.to_str()
+        .with_context(|| format!("Non-UTF8 path: {}", rs_file.display()))?;
 
     let output = Command::new("python")
+        .current_dir(&project_root)
         .args(&[
-            "translate_and_fix.py",
+            script_path.to_str().unwrap(),
             "--config",
-            config_path.to_str().unwrap(),
+            config_str,
             "--type",
             file_type,
             "--error",
-            error_file.to_str().unwrap(),
+            error_file_str,
             "--output",
-            rs_file.to_str().unwrap(),
+            rs_file_str,
         ])
         .output()
         .context("Failed to execute translate_and_fix.py for fixing")?;
@@ -83,23 +87,26 @@ pub fn fix_translation_error(file_type: &str, rs_file: &Path, error_msg: &str) -
         anyhow::bail!("Fix failed: {}", stderr);
     }
 
+    // temp_file is automatically deleted when it goes out of scope
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+    
     #[test]
     fn test_temp_error_file_creation() {
-        use std::fs;
-        
-        let temp_dir = std::env::temp_dir();
-        let error_file = temp_dir.join("test_build_error.txt");
         let test_msg = "test error message";
-        
-        fs::write(&error_file, test_msg).unwrap();
-        let content = fs::read_to_string(&error_file).unwrap();
-        
+
+        let mut temp_file = NamedTempFile::new().unwrap();
+        write!(temp_file, "{}", test_msg).unwrap();
+
+        let path = temp_file.path();
+        let content = std::fs::read_to_string(path).unwrap();
+
         assert_eq!(content, test_msg);
-        fs::remove_file(&error_file).ok();
+        // temp_file is automatically deleted when it goes out of scope
     }
 }

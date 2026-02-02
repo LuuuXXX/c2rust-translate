@@ -3,16 +3,19 @@ pub mod builder;
 pub mod file_scanner;
 pub mod git;
 pub mod translator;
+pub mod util;
 
 use anyhow::{Context, Result};
-use std::path::PathBuf;
 
 /// Main translation workflow for a feature
 pub fn translate_feature(feature: &str) -> Result<()> {
     println!("Starting translation for feature: {}", feature);
 
+    // Find the project root first
+    let project_root = util::find_project_root()?;
+    
     // Step 1: Check if rust directory exists
-    let feature_path = PathBuf::from(feature);
+    let feature_path = project_root.join(feature);
     let rust_dir = feature_path.join("rust");
 
     if !rust_dir.exists() {
@@ -75,9 +78,10 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, rust_dir: &std::pat
     // Step 2.2.2: Check if corresponding .c file exists
     let c_file = rs_file.with_extension("c");
     if !c_file.exists() {
-        eprintln!("Warning: Corresponding C file not found: {}", c_file.display());
-        eprintln!("The project may be corrupted. Do you need to run 'code-analyse --init'?");
-        return Ok(());
+        anyhow::bail!(
+            "Corresponding C file not found for Rust file: {}",
+            rs_file.display()
+        );
     }
 
     // Step 2.2.3: Call translation tool
@@ -113,8 +117,15 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, rust_dir: &std::pat
         }
     }
 
-    // Step 2.2.7: Save translation result
-    git::git_commit(&format!("Translate {} from C to Rust", feature))?;
+    // Step 2.2.7: Save translation result with specific file in commit message
+    let rs_file_name = rs_file
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("<unknown>");
+    git::git_commit(&format!(
+        "Translate {} from C to Rust (feature: {})",
+        rs_file_name, feature
+    ))?;
 
     // Step 2.2.8: Update code analysis
     println!("Updating code analysis...");

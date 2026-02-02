@@ -38,30 +38,28 @@ pub fn extract_file_type(filename: &str) -> Option<(&'static str, &str)> {
 mod tests {
     use super::*;
     use std::io::Write;
+    use tempfile::tempdir;
 
     #[test]
     fn test_find_empty_rs_files() {
-        // Create a temporary directory structure
-        let temp_dir = std::env::temp_dir().join("test_c2rust_scanner");
-        let _ = fs::remove_dir_all(&temp_dir);
-        fs::create_dir_all(&temp_dir).unwrap();
+        // Create a unique temporary directory structure
+        let temp_dir = tempdir().unwrap();
 
         // Create an empty .rs file
-        let empty_file = temp_dir.join("var_test.rs");
+        let empty_file = temp_dir.path().join("var_test.rs");
         fs::File::create(&empty_file).unwrap();
 
         // Create a non-empty .rs file
-        let non_empty_file = temp_dir.join("fun_test.rs");
+        let non_empty_file = temp_dir.path().join("fun_test.rs");
         let mut file = fs::File::create(&non_empty_file).unwrap();
         file.write_all(b"fn test() {}").unwrap();
 
         // Test finding empty files
-        let empty_files = find_empty_rs_files(&temp_dir).unwrap();
+        let empty_files = find_empty_rs_files(temp_dir.path()).unwrap();
         assert_eq!(empty_files.len(), 1);
         assert!(empty_files[0].ends_with("var_test.rs"));
 
-        // Cleanup
-        fs::remove_dir_all(&temp_dir).unwrap();
+        // temp_dir is automatically deleted when it goes out of scope
     }
 
     #[test]
