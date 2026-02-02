@@ -18,12 +18,43 @@ pub fn cargo_build(rust_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Run c2rust command
+/// Get a specific command from c2rust-config
+fn get_c2rust_command(cmd_type: &str, feature: &str) -> Result<String> {
+    let output = Command::new("c2rust-config")
+        .args(&["config", "--feature", feature])
+        .output()
+        .with_context(|| format!("Failed to get {} command from config", cmd_type))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("Failed to retrieve {} command: {}", cmd_type, stderr);
+    }
+
+    let config_output = String::from_utf8_lossy(&output.stdout);
+    
+    // Parse the config output to get the specific command
+    // The output format should contain clean_cmd, build_cmd, test_cmd
+    for line in config_output.lines() {
+        let line = line.trim();
+        if line.starts_with(&format!("{}_cmd", cmd_type)) {
+            if let Some(cmd) = line.split('=').nth(1) {
+                return Ok(cmd.trim().trim_matches('"').to_string());
+            }
+        }
+    }
+
+    anyhow::bail!("Could not find {} command in config", cmd_type)
+}
+
+/// Run c2rust command with the command from config
 pub fn run_c2rust_command(cmd_type: &str, feature: &str) -> Result<()> {
     let cmd_name = format!("c2rust-{}", cmd_type);
     
+    // Get the actual command from config
+    let actual_command = get_c2rust_command(cmd_type, feature)?;
+    
     let output = Command::new(&cmd_name)
-        .args(&[cmd_type, "--", feature])
+        .args(&[cmd_type, "--", &actual_command])
         .output()
         .with_context(|| format!("Failed to execute {}", cmd_name))?;
 
@@ -48,11 +79,11 @@ pub fn run_hybrid_build(feature: &str) -> Result<()> {
         return Ok(());
     }
 
-    // Get command list
+    // Verify we can get config
     let output = Command::new("c2rust-config")
-        .args(&["config", "--list", feature])
+        .args(&["config", "--feature", feature])
         .output()
-        .context("Failed to get config list")?;
+        .context("Failed to get config")?;
 
     if !output.status.success() {
         println!("Warning: Could not retrieve build commands");

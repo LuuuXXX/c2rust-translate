@@ -30,9 +30,3 @@ pub fn git_commit(message: &str) -> Result<()> {
 
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    // Tests would require git repository setup
-    // or mocking git commands
-}

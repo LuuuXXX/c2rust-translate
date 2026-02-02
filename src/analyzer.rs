@@ -32,9 +32,3 @@ pub fn update_code_analysis(feature: &str) -> Result<()> {
 
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    // Tests would require mocking the code-analyse command
-    // or integration tests with actual tool
-}
