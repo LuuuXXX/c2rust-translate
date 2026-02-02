@@ -8,4 +8,3 @@ pub mod compiler;
 pub mod translator;
 
 pub use error::{AutoTranslateError, Result};
-
