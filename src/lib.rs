@@ -27,7 +27,15 @@ pub fn translate_feature(feature: &str) -> Result<()> {
     let rust_dir = feature_path.join("rust");
 
     let rust_dir_exists = match std::fs::metadata(&rust_dir) {
-        Ok(_) => true,
+        Ok(metadata) => {
+            if !metadata.is_dir() {
+                anyhow::bail!(
+                    "Path exists but is not a directory: {}",
+                    rust_dir.display()
+                );
+            }
+            true
+        }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
         Err(e) => {
             return Err(e).context(format!(
@@ -41,9 +49,16 @@ pub fn translate_feature(feature: &str) -> Result<()> {
         println!("Rust directory does not exist. Initializing...");
         analyzer::initialize_feature(feature)?;
         
-        // Verify rust directory was created
+        // Verify rust directory was created and is actually a directory
         match std::fs::metadata(&rust_dir) {
-            Ok(_) => {}
+            Ok(metadata) => {
+                if !metadata.is_dir() {
+                    anyhow::bail!(
+                        "Initialization created a file instead of a directory: {}",
+                        rust_dir.display()
+                    );
+                }
+            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 anyhow::bail!("Error: Failed to initialize rust directory");
             }

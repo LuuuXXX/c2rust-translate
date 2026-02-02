@@ -47,6 +47,10 @@ fn get_c2rust_command(cmd_type: &str, feature: &str) -> Result<String> {
 }
 
 /// Run c2rust command with the command from config
+/// 
+/// Note: Currently does not set environment variables like LD_PRELOAD or C2RUST_FEATURE_ROOT.
+/// If your hybrid build requires specific environment variables, you may need to set them
+/// externally before running this tool.
 pub fn run_c2rust_command(cmd_type: &str, feature: &str) -> Result<()> {
     let cmd_name = format!("c2rust-{}", cmd_type);
     
@@ -113,9 +117,18 @@ pub fn run_hybrid_build(feature: &str) -> Result<()> {
         match run_c2rust_command(cmd, feature) {
             Ok(_) => {}
             Err(e) => {
-                // Check if it's a "command not found" error
-                let err_msg = e.to_string();
-                if err_msg.contains("No such file") || err_msg.contains("not found") {
+                // Check if it's a "command not found" error by examining the error chain
+                // for std::io::ErrorKind::NotFound
+                let is_not_found = e.chain()
+                    .any(|cause| {
+                        if let Some(io_err) = cause.downcast_ref::<std::io::Error>() {
+                            io_err.kind() == std::io::ErrorKind::NotFound
+                        } else {
+                            false
+                        }
+                    });
+                
+                if is_not_found {
                     println!("c2rust-{} not found, skipping hybrid build tests", cmd);
                     return Ok(());
                 }
