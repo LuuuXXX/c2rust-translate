@@ -65,22 +65,29 @@ c2rust-translate translate
 - `c2rust-config` - 用于配置管理（可选）
 - `c2rust-clean`、`c2rust-build`、`c2rust-test` - 用于混合构建测试（可选）
 
-#### 环境变量
+#### 项目结构要求
 
-需要设置以下环境变量：
+工具会自动向上搜索 `.c2rust` 目录来定位项目根目录。项目应具有以下结构：
 
-- `C2RUST_PROJECT_ROOT` - 项目根目录，用于定位配置文件 `.c2rust/config.toml`
+```
+项目根目录/
+├── .c2rust/
+│   ├── config.toml    # 配置文件
+│   └── Cargo.toml     # Rust 项目配置（cargo build 在此执行）
+└── <feature>/
+    └── rust/          # 包含待翻译的 .rs 和 .c 文件
+```
 
 #### 翻译工具用法
 
 该工具使用以下参数调用 `translate_and_fix.py`：
 
 ```bash
-# 用于翻译
-python translate_and_fix.py --config $C2RUST_PROJECT_ROOT/.c2rust/config.toml --type <var|fn> --code <c文件> --output <rs文件>
+# 用于翻译（配置文件路径自动从 .c2rust 目录定位）
+python translate_and_fix.py --config <项目根>/.c2rust/config.toml --type <var|fn> --code <c文件> --output <rs文件>
 
 # 用于修复错误
-python translate_and_fix.py --config $C2RUST_PROJECT_ROOT/.c2rust/config.toml --type <var|fn> --error <错误文件> --output <rs文件>
+python translate_and_fix.py --config <项目根>/.c2rust/config.toml --type <var|fn> --error <错误文件> --output <rs文件>
 ```
 
 #### 代码分析工具用法
@@ -109,6 +116,8 @@ c2rust-config config --make --feature <特性名称> --list clean
 ```
 
 ## 示例
+
+在项目根目录（包含 `.c2rust/` 目录）或其子目录中运行：
 
 ```bash
 # 翻译名为 "my_feature" 的特性

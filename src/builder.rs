@@ -1,12 +1,33 @@
 use anyhow::{Context, Result};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Run cargo build in the specified directory
-pub fn cargo_build(rust_dir: &Path) -> Result<()> {
+/// Find the project root by searching upward for .c2rust directory
+fn find_project_root() -> Result<PathBuf> {
+    let mut current = std::env::current_dir()
+        .context("Failed to get current directory")?;
+    
+    loop {
+        let c2rust_dir = current.join(".c2rust");
+        if c2rust_dir.exists() && c2rust_dir.is_dir() {
+            return Ok(current);
+        }
+        
+        match current.parent() {
+            Some(parent) => current = parent.to_path_buf(),
+            None => anyhow::bail!("Could not find .c2rust directory in any parent directory"),
+        }
+    }
+}
+
+/// Run cargo build in the .c2rust directory
+pub fn cargo_build(_rust_dir: &Path) -> Result<()> {
+    let project_root = find_project_root()?;
+    let build_dir = project_root.join(".c2rust");
+    
     let output = Command::new("cargo")
         .arg("build")
-        .current_dir(rust_dir)
+        .current_dir(&build_dir)
         .output()
         .context("Failed to execute cargo build")?;
 

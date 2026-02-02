@@ -3,11 +3,28 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Get the config.toml path from C2RUST_PROJECT_ROOT environment variable
+/// Find the project root by searching upward for .c2rust directory
+fn find_project_root() -> Result<PathBuf> {
+    let mut current = std::env::current_dir()
+        .context("Failed to get current directory")?;
+    
+    loop {
+        let c2rust_dir = current.join(".c2rust");
+        if c2rust_dir.exists() && c2rust_dir.is_dir() {
+            return Ok(current);
+        }
+        
+        match current.parent() {
+            Some(parent) => current = parent.to_path_buf(),
+            None => anyhow::bail!("Could not find .c2rust directory in any parent directory"),
+        }
+    }
+}
+
+/// Get the config.toml path by searching for .c2rust directory
 fn get_config_path() -> Result<PathBuf> {
-    let project_root = std::env::var("C2RUST_PROJECT_ROOT")
-        .context("C2RUST_PROJECT_ROOT environment variable not set")?;
-    Ok(PathBuf::from(project_root).join(".c2rust/config.toml"))
+    let project_root = find_project_root()?;
+    Ok(project_root.join(".c2rust/config.toml"))
 }
 
 /// Translate a C file to Rust using the translation tool
