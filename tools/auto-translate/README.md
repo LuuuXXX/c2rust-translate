@@ -8,8 +8,8 @@ Automated C to Rust translation orchestration tool for the c2rust-translate proj
 - Scanning for empty Rust files that need translation
 - Translating corresponding C files using `c2rust-translate`
 - Running code analysis with `code-analyse`
-- Building and testing the translated code
-- Handling the full compilation and fixing pipeline
+- Building and testing the translated code with proper environment setup
+- Providing error reporting for manual intervention when needed
 
 ## Installation
 
