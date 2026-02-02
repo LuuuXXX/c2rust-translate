@@ -93,6 +93,21 @@ code-analyse --init --feature <特性名称>
 code-analyse --update --feature <特性名称>
 ```
 
+#### 混合构建配置工具用法
+
+`c2rust-config` 用于获取构建、测试和清理命令：
+
+```bash
+# 获取构建命令
+c2rust-config config --make --feature <特性名称> --list build
+
+# 获取测试命令
+c2rust-config config --make --feature <特性名称> --list test
+
+# 获取清理命令
+c2rust-config config --make --feature <特性名称> --list clean
+```
+
 ## 示例
 
 ```bash

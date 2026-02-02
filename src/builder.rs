@@ -21,7 +21,7 @@ pub fn cargo_build(rust_dir: &Path) -> Result<()> {
 /// Get a specific command from c2rust-config
 fn get_c2rust_command(cmd_type: &str, feature: &str) -> Result<String> {
     let output = Command::new("c2rust-config")
-        .args(&["config", "--feature", feature])
+        .args(&["config", "--make", "--feature", feature, "--list", cmd_type])
         .output()
         .with_context(|| format!("Failed to get {} command from config", cmd_type))?;
 
@@ -30,20 +30,13 @@ fn get_c2rust_command(cmd_type: &str, feature: &str) -> Result<String> {
         anyhow::bail!("Failed to retrieve {} command: {}", cmd_type, stderr);
     }
 
-    let config_output = String::from_utf8_lossy(&output.stdout);
+    let command = String::from_utf8_lossy(&output.stdout).trim().to_string();
     
-    // Parse the config output to get the specific command
-    // The output format should contain clean_cmd, build_cmd, test_cmd
-    for line in config_output.lines() {
-        let line = line.trim();
-        if line.starts_with(&format!("{}_cmd", cmd_type)) {
-            if let Some(cmd) = line.split('=').nth(1) {
-                return Ok(cmd.trim().trim_matches('"').to_string());
-            }
-        }
+    if command.is_empty() {
+        anyhow::bail!("Empty {} command from config", cmd_type);
     }
 
-    anyhow::bail!("Could not find {} command in config", cmd_type)
+    Ok(command)
 }
 
 /// Run c2rust command with the command from config
@@ -76,17 +69,6 @@ pub fn run_hybrid_build(feature: &str) -> Result<()> {
     
     if !config_path.exists() {
         println!("Config file not found, skipping hybrid build tests");
-        return Ok(());
-    }
-
-    // Verify we can get config
-    let output = Command::new("c2rust-config")
-        .args(&["config", "--feature", feature])
-        .output()
-        .context("Failed to get config")?;
-
-    if !output.status.success() {
-        println!("Warning: Could not retrieve build commands");
         return Ok(());
     }
 
