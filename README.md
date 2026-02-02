@@ -114,9 +114,9 @@ c2rust-translate translate --feature my_feature
 3. 更新代码分析后
 
 提交消息格式如下：
-- `"Initialize <特性> rust directory"`
-- `"Translate <特性> from C to Rust"`
-- `"Update code analysis for <特性>"`
+- `"Initialize <feature> rust directory"` （初始化 <特性> rust 目录）
+- `"Translate <feature> from C to Rust"` （将 <特性> 从 C 翻译为 Rust）
+- `"Update code analysis for <feature>"` （更新 <特性> 的代码分析）
 
 ## 代码结构
 
