@@ -86,35 +86,6 @@ def load_LLM_config(file_path):
     except Exception as e:
         raise RuntimeError(f"读取配置文件时出错: {e}") from e
 
-# def load_LLM_config(config_file_path):
-#     with open(config_file_path, 'r') as file:
-#         config_data = yaml.safe_load(file)
-#
-#     # 提取配置信息
-#     translator_config = config_data.get('translator', {})
-#     model = translator_config.get('model')
-#     base_url = translator_config.get('base_url')
-#     api_key = translator_config.get('api_key')
-#     temperature = translator_config.get('temperature')
-#     top_p = translator_config.get('top_p')
-#     seed = translator_config.get('seed')
-#     max_retries = translator_config.get('max_retries')
-#     timeout = translator_config.get('timeout')
-#
-#     # 创建 LLM_config 对象
-#     llm_config = LLM_config(
-#         model=model,
-#         base_url=base_url,
-#         api_key=api_key,
-#         temperature=temperature,
-#         top_p=top_p,
-#         seed=seed,
-#         max_retries=max_retries,
-#         timeout=timeout
-#     )
-#
-#     return llm_config
-
 # return a new openai instance
 def init_openai_instance(LLM_config):
     # 获取当前进程的专属KEY
@@ -132,6 +103,29 @@ def init_openai_instance(LLM_config):
     )
 
     return openai_instance
+
+# 关闭函数
+def close_openai_instance(openai_instance):
+    """
+    安全地关闭 OpenAI 实例及其底层连接
+    """
+    try:
+        # 方法1：尝试访问内部_client（openai库的内部实现）
+        if hasattr(openai_instance, '_client') and hasattr(openai_instance._client, 'close'):
+            openai_instance._client.close()
+
+        # 方法2：尝试访问我们设置的http_client
+        if hasattr(openai_instance, 'http_client') and hasattr(openai_instance.http_client, 'close'):
+            openai_instance.http_client.close()
+
+        # 清理敏感信息
+        if hasattr(openai_instance, 'api_key'):
+            openai_instance.api_key = None
+        return True
+
+    except Exception as e:
+        print(f"关闭 OpenAI 实例时出错: {e}")
+        return False
 
 # 调用LLM修复Rust编译/语义错误
 def call_llm_api(prompt, model, openai_instance):

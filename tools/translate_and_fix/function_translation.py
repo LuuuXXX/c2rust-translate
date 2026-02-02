@@ -2,11 +2,10 @@ from LLM_calling import call_llm_api
 from parse_LLM_output import filter_model_response
 from LLM_calling import load_LLM_config, init_openai_instance
 
-
 def function_translation(C_function_code, model, openai_instance):
     # 构建 prompt - 已修改输出格式要求
     prompt = f"""
-    你是一个代码翻译专家，请将以下的C函数翻译为Rust函数。在翻译过程中，如果识别到C函数依赖了外部C库函数（包括C标准库函数、第三方库函数或项目自定义函数），请自动生成相应的FFI（Foreign Function Interface）调用代码，并将这些FFI声明与Rust函数代码整合在一起输出。
+    你是一个代码翻译专家，请将以下的C函数翻译为Rust函数。在翻译过程中，如果识别到C函数依赖了外部C库函数和变量（包括C标准库、第三方库或项目自定义的函数和变量），请自动生成相应的FFI（Foreign Function Interface）调用代码，并将这些FFI声明与Rust函数代码整合在一起输出。
 
     输入的C函数：
     {C_function_code}
@@ -22,7 +21,7 @@ def function_translation(C_function_code, model, openai_instance):
     Rust翻译结果:
     // FFI声明（如果有）
     unsafe extern "C" {{
-        fn external_c_function(param: *const c_char) -> c_int;
+        // 外部C库函数和变量
     }}
 
     #[unsafe(no_mangle)]
@@ -54,7 +53,6 @@ def function_translation(C_function_code, model, openai_instance):
     res = filter_model_response(output)
 
     return res
-
 
 # ====================== 测试用例 ======================
 def run_all_tests():
@@ -112,10 +110,12 @@ pub unsafe extern "C" fn print_hello() {
                 *b = temp;
             }
             """,
-            "explanation": "使用指针参数进行值交换，需要处理Rust中的mut指针",
+            "explanation": "使用指针参数进行值交换，涉及指针解引用",
             "expected": """
+use std::os::raw::c_int;
+
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swap(a: *mut i32, b: *mut i32) {
+pub unsafe extern "C" fn swap(a: *mut c_int, b: *mut c_int) {
     unsafe {
         let temp = *a;
         *a = *b;
@@ -134,7 +134,7 @@ pub unsafe extern "C" fn swap(a: *mut i32, b: *mut i32) {
                 p->y += dy;
             }
             """,
-            "explanation": "操作自定义结构体，需要先定义结构体，保持内存布局兼容",
+            "explanation": "操作自定义结构体，涉及指针解引用",
             "expected": """
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn move_point(p: *mut Point, dx: i32, dy: i32) {
@@ -156,16 +156,16 @@ pub unsafe extern "C" fn move_point(p: *mut Point, dx: i32, dy: i32) {
             """,
             "explanation": "处理C字符串并调用strlen，需要FFI声明和字符串转换",
             "expected": """
-use std::os::raw::{c_char, c_ulong};
+use std::os::raw::{c_char, c_ulong, c_int};
 
 unsafe extern "C" {
     fn strlen(s: *const c_char) -> c_ulong;
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn string_length(str: *const c_char) -> usize {
+pub unsafe extern "C" fn string_length(str: *const c_char) -> c_int {
     unsafe {
-        strlen(str) as usize
+        strlen(str) as c_int
     }
 }
             """
@@ -179,18 +179,18 @@ pub unsafe extern "C" fn string_length(str: *const c_char) -> usize {
                 return (int*)malloc(size * sizeof(int));
             }
             """,
-            "explanation": "使用malloc分配内存，需要处理内存分配和类型转换",
+            "explanation": "使用malloc分配内存，需要处理内存分配和类型转换，需要FFI声明malloc",
             "expected": """
-use std::os::raw::{c_int, c_void};
+use std::os::raw::{c_int, c_void, c_ulong};
 
 unsafe extern "C" {
-    fn malloc(size: usize) -> *mut c_void;
+    fn malloc(size: c_ulong) -> *mut c_void;
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn create_array(size: c_int) -> *mut c_int {
     unsafe {
-        malloc(size as usize * std::mem::size_of::<c_int>()) as *mut c_int
+        malloc((size as c_ulong) * std::mem::size_of::<c_int>() as c_ulong) as *mut c_int
     }
 }
             """
@@ -208,11 +208,13 @@ pub unsafe extern "C" fn create_array(size: c_int) -> *mut c_int {
             """,
             "explanation": "接受函数指针作为回调，需要处理Rust中的函数指针类型",
             "expected": """
+use std::os::raw::c_int;
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn process_data(
-     *mut i32, 
-    size: i32, 
-    callback: Option<unsafe extern "C" fn(i32)>
+    data: *mut c_int, 
+    size: c_int, 
+    callback: Option<unsafe extern "C" fn(c_int)>
 ) {
     unsafe {
         for i in 0..size {
@@ -237,10 +239,12 @@ pub unsafe extern "C" fn process_data(
                 return 0; // Success
             }
             """,
-            "explanation": "使用错误码返回，需要转换为Rust的Result模式或保持C风格",
+            "explanation": "使用错误码返回，涉及指针操作",
             "expected": """
+use std::os::raw::c_int;
+
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn divide(a: i32, b: i32, result: *mut i32) -> i32 {
+pub unsafe extern "C" fn divide(a: c_int, b: c_int, result: *mut c_int) -> c_int {
     if b == 0 {
         return -1; // Error: division by zero
     }
@@ -262,9 +266,11 @@ pub unsafe extern "C" fn divide(a: i32, b: i32, result: *mut i32) -> i32 {
             """,
             "explanation": "纯位运算操作，无外部依赖",
             "expected": """
+use std::os::raw::{c_uint, c_int};
+
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn set_bit(value: u32, position: i32) -> u32 {
-    value | (1u32 << position as u32)
+pub unsafe extern "C" fn set_bit(value: c_uint, position: c_int) -> c_uint {
+    value | (1u32 << position as u32) as c_uint
 }
             """
         },
@@ -280,7 +286,7 @@ pub unsafe extern "C" fn set_bit(value: u32, position: i32) -> u32 {
             "explanation": "操作C联合体，Rust中需要使用union关键字并注意安全访问",
             "expected": """
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn get_float_value(data *mut Data) -> f32 {
+pub unsafe extern "C" fn get_float_value(data: *mut Data) -> f32 {
     unsafe {
         (*data).f
     }
@@ -304,10 +310,12 @@ pub unsafe extern "C" fn get_float_value(data *mut Data) -> f32 {
                 return max;
             }
             """,
-            "explanation": "包含边界检查和循环的复杂逻辑，无外部依赖",
+            "explanation": "包含边界检查和循环的复杂逻辑，涉及指针操作",
             "expected": """
+use std::os::raw::c_int;
+
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn find_max(array: *const i32, size: i32) -> i32 {
+pub unsafe extern "C" fn find_max(array: *const c_int, size: c_int) -> c_int {
     if size <= 0 {
         return -1;
     }
@@ -336,7 +344,7 @@ pub unsafe extern "C" fn find_max(array: *const i32, size: i32) -> i32 {
             """,
             "explanation": "依赖多个C标准库函数(time, printf, free)，需要多个FFI声明",
             "expected": """
-use std::os::raw::{c_char, c_int, c_long, c_void};
+use std::os::raw::{c_char, c_int, c_long, c_void, c_ulong};
 
 unsafe extern "C" {
     fn time(t: *mut c_long) -> c_long;
@@ -367,12 +375,13 @@ pub unsafe extern "C" fn log_and_free(ptr: *mut c_void, message: *const c_char) 
             "explanation": "使用C的静态局部变量，Rust中需要使用static变量模拟",
             "expected": """
 use std::sync::atomic::{AtomicI32, Ordering};
+use std::os::raw::c_int;
 
 static CURRENT_ID: AtomicI32 = AtomicI32::new(0);
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn get_next_id() -> i32 {
-    CURRENT_ID.fetch_add(1, Ordering::SeqCst)
+pub unsafe extern "C" fn get_next_id() -> c_int {
+    CURRENT_ID.fetch_add(1, Ordering::SeqCst) as c_int
 }
             """
         },
@@ -388,17 +397,12 @@ pub unsafe extern "C" fn get_next_id() -> i32 {
                 va_end(args);
             }
             """,
-            "explanation": "使用C的变长参数，Rust中需要特殊处理，通常保留为extern函数",
+            "explanation": "使用C的变长参数，需要FFI声明vprintf",
             "expected": """
-use std::os::raw::{c_char, c_void};
+use std::os::raw::{c_char, c_int, c_void};
 
 unsafe extern "C" {
-    fn vprintf(format: *const c_char, args: *mut __va_list_tag);
-}
-
-#[repr(C)]
-pub struct __va_list_tag {
-    _unused: [u8; 0],
+    fn vprintf(format: *const c_char, args: *mut __va_list_tag) -> c_int;
 }
 
 #[unsafe(no_mangle)]
@@ -425,21 +429,10 @@ pub unsafe extern "C" fn log_message(format: *const c_char, ...) {
                 return thread;
             }
             """,
-            "explanation": "使用pthread线程API，需要处理线程创建和FFI",
+            "explanation": "使用pthread线程API，需要FFI声明pthread_create",
             "expected": """
-use std::os::raw::{c_void, c_int};
+use std::os::raw::{c_void, c_int, c_ulong};
 use std::ptr::null_mut;
-
-#[repr(C)]
-pub struct pthread_t {
-    _unused: [u8; 0],
-}
-
-#[repr(C)]
-pub struct pthread_attr_t {
-    _unused: [u8; 0],
-}
-
 unsafe extern "C" {
     fn pthread_create(
         thread: *mut pthread_t,
@@ -454,11 +447,71 @@ pub unsafe extern "C" fn create_thread(
     start_routine: Option<unsafe extern "C" fn(*mut c_void) -> *mut c_void>,
     arg: *mut c_void
 ) -> pthread_t {
-    let mut thread = pthread_t { _unused: [] };
+    let mut thread = pthread_t { id: 0 };
     unsafe {
         pthread_create(&mut thread, null_mut(), start_routine, arg);
     }
     thread
+}
+            """
+        },
+
+        # 测试用例16：全局变量访问
+        {
+            "name": "全局变量访问",
+            "c_code": """
+            void increment_counter() {
+                global_counter++;
+            }
+
+            const char* get_app_name() {
+                return app_name;
+            }
+            """,
+            "explanation": "访问C全局变量",
+            "expected": """
+use std::os::raw::{c_int, c_char};
+
+unsafe extern "C" {
+    static mut global_counter: c_int;
+    static app_name: *const c_char;
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn increment_counter() {
+    unsafe {
+        global_counter += 1;
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn get_app_name() -> *const c_char {
+    unsafe {
+        app_name
+    }
+}
+            """
+        },
+
+        # 测试用例17：枚举变量访问
+        {
+            "name": "枚举变量访问",
+            "c_code": """
+            void set_state(AppState state) {
+                current_state = state;
+            }
+            """,
+            "explanation": "访问C枚举全局变量",
+            "expected": """
+unsafe extern "C" {
+    static mut current_state: AppState;
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn set_state(state: AppState) {
+    unsafe {
+        current_state = state;
+    }
 }
             """
         }
@@ -490,7 +543,6 @@ pub unsafe extern "C" fn create_thread(
 
     except Exception as e:
         print(f"测试过程中出错: {e}")
-
 
 # 示例用法
 if __name__ == "__main__":

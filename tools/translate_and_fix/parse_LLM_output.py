@@ -79,8 +79,12 @@ def filter_model_response(response):
     if final_response.startswith("Rust翻译结果:"):
         final_response = final_response[len("Rust翻译结果:"):].strip()
 
-    return final_response
+    # 在开头添加 use crate::*\n\n
+    if final_response.startswith("use crate::*"):
+        return final_response
+    final_response = "use crate::*\n\n" + final_response
 
+    return final_response
 
 # 使用示例
 if __name__ == "__main__":

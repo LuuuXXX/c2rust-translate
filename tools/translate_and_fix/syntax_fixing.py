@@ -1,80 +1,14 @@
-# from LLM_calling import call_llm_api
-# from parse_LLM_output import filter_model_response
-# from LLM_calling import load_LLM_config, init_openai_instance # 这两个函数只用在该文件的示例中，实际项目中应在初始化阶段完成
-#
-# def function_syntax_fixing(rust_function_code, error_message, model, openai_instance):
-#     # 构建 prompt
-#     prompt = f"""
-#     你是一个代码修复专家，请根据以下的Rust函数和编译报错信息，修复Rust函数的语法错误。
-#
-#     输入的Rust函数：
-#     {rust_function_code}
-#
-#     编译报错信息：
-#     {error_message}
-#
-#     输出格式：
-#     修复后的Rust函数代码（严格按输出格式示例的格式输出函数代码，无需其他说明）
-#
-#     输出格式示例：
-#     Rust翻译结果:
-#     #[unsafe(no_mangle)]
-#     pub extern "C" unsafe fn foo() {{
-#         // Rust 代码
-#     }}
-#     """
-#
-#     # todo： 拼接翻译规则与约束的prompt
-#
-#     # 调用大模型
-#     output = call_llm_api(prompt, model, openai_instance)
-#
-#     res = filter_model_response(output)
-#
-#     return res
-#
-# # 示例用法
-# if __name__ == "__main__":
-#     rust_function_code = """
-#     fn my_function() {
-#         println!("Hello from Rust!")
-#     }
-#     """
-#
-#     error_message = """
-#     error: expected `;` in function
-#     ---> src/main.rs
-#     1 | fn my_function() {
-#     2 |     println!("Hello from Rust!")
-#       |     ---------------------------^
-#       |     |                           |
-#       |     |                           expected `;` here
-#       |     consider add a semicolon here
-#     """
-#
-#     # 加载LLM配置信息
-#     config_file_path = "config.toml"
-#     LLM_config = load_LLM_config(config_file_path)
-#
-#     # 创建与大模型平台的api会话实例
-#     openai_instance = init_openai_instance(LLM_config)
-#
-#     fixed_rust_function = function_syntax_fixing(rust_function_code, error_message, LLM_config.model, openai_instance)
-#     print("修复后的 Rust 函数:")
-#     print(fixed_rust_function)
-
 from LLM_calling import call_llm_api
 from parse_LLM_output import filter_model_response
 from LLM_calling import load_LLM_config, init_openai_instance
 
-
-def function_syntax_fixing(rust_function_code, error_message, model, openai_instance):
+def syntax_fixing(rust_code, error_message, model, openai_instance):
     # 构建 prompt
     prompt = f"""
-    你是一个代码修复专家，请根据以下的Rust函数和编译报错信息，修复Rust函数的语法错误。
+    你是一个代码修复专家，请根据以下的Rust代码以及编译报错信息，修复Rust代码中的语法错误。
 
-    输入的Rust函数：
-    {rust_function_code}
+    出错的Rust代码：
+    {rust_code}
 
     编译报错信息：
     {error_message}
@@ -84,16 +18,14 @@ def function_syntax_fixing(rust_function_code, error_message, model, openai_inst
     2. 保持函数签名不变，包括 #[unsafe(no_mangle)] 和 pub extern "C" unsafe fn
     3. 确保修复后的代码能通过Rust编译器检查
     4. 如果涉及C标准库函数，确保正确的FFI声明和类型转换
+    5. 对于未改动的那些Rust代码，严格按原有布局与内容输出
 
     输出格式：
     Rust翻译结果:
-    #[unsafe(no_mangle)]
-    pub extern "C" unsafe fn function_name() {{
-        // 修复后的 Rust 代码
-    }}
+    // 修复后的 Rust 代码
 
     注意：
-    - 严格按输出格式输出，无需其他任何内容
+    - 严格按输出要求与输出格式输出，无需其他任何内容
     - 确保代码格式正确，包括缩进和括号匹配
     - 修复所有报错信息中提到的问题
     - 保持原有的函数逻辑不变，只修复语法错误
@@ -106,7 +38,6 @@ def function_syntax_fixing(rust_function_code, error_message, model, openai_inst
     res = filter_model_response(output)
 
     return res
-
 
 # ====================== 测试用例 ======================
 def run_all_tests():
@@ -539,7 +470,7 @@ pub extern "C" unsafe fn complex_function(arr: *mut i32, len: i32, threshold: f3
 
             # 调用修复函数
             print("\n实际修复结果:")
-            result = function_syntax_fixing(test['rust_code'], test['error_message'], LLM_config.model, openai_instance)
+            result = syntax_fixing(test['rust_code'], test['error_message'], LLM_config.model, openai_instance)
             print(result)
 
             print("-" * 80 + "\n")
