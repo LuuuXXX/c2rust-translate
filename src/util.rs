@@ -8,8 +8,24 @@ pub fn find_project_root() -> Result<PathBuf> {
     
     loop {
         let c2rust_dir = current.join(".c2rust");
-        if c2rust_dir.exists() && c2rust_dir.is_dir() {
-            return Ok(current);
+        
+        // Use metadata to properly handle IO errors
+        match std::fs::metadata(&c2rust_dir) {
+            Ok(metadata) if metadata.is_dir() => {
+                return Ok(current);
+            }
+            Ok(_) => {
+                // .c2rust exists but is not a directory, continue searching
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // .c2rust doesn't exist, continue searching
+            }
+            Err(e) => {
+                // Other IO error (permissions, etc.)
+                return Err(e).with_context(|| {
+                    format!("Failed to access .c2rust directory at {}", c2rust_dir.display())
+                });
+            }
         }
         
         match current.parent() {

@@ -1,10 +1,9 @@
 use anyhow::{Context, Result};
-use std::path::Path;
 use std::process::Command;
 use crate::util;
 
 /// Run cargo build in the .c2rust directory
-pub fn cargo_build(_rust_dir: &Path) -> Result<()> {
+pub fn cargo_build() -> Result<()> {
     let project_root = util::find_project_root()?;
     let build_dir = project_root.join(".c2rust");
     
@@ -94,6 +93,16 @@ pub fn run_hybrid_build(feature: &str) -> Result<()> {
     
     if !config_path.exists() {
         println!("Config file not found, skipping hybrid build tests");
+        return Ok(());
+    }
+
+    // Check if c2rust-config is available before proceeding
+    let check_output = Command::new("c2rust-config")
+        .arg("--version")
+        .output();
+    
+    if check_output.is_err() {
+        println!("c2rust-config not found, skipping hybrid build tests");
         return Ok(());
     }
 

@@ -35,7 +35,11 @@ pub fn git_commit(message: &str) -> Result<()> {
         let is_nothing_to_commit = exit_code == Some(1) && combined_output.contains("nothing to commit");
 
         if !is_nothing_to_commit {
-            println!("Warning: git commit failed: {}", combined_output);
+            anyhow::bail!(
+                "git commit failed with exit code {:?}: {}",
+                exit_code,
+                combined_output
+            );
         }
     }
 

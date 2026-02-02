@@ -37,7 +37,7 @@ pub fn translate_feature(feature: &str) -> Result<()> {
         // Step 2.1: Try to build first
         println!("Building project...");
         last_build_error = None;
-        if let Err(e) = builder::cargo_build(&rust_dir) {
+        if let Err(e) = builder::cargo_build() {
             println!("Build failed: {}", e);
             last_build_error = Some(e);
         }
@@ -66,7 +66,7 @@ pub fn translate_feature(feature: &str) -> Result<()> {
 }
 
 /// Process a single .rs file through the translation workflow
-fn process_rs_file(feature: &str, rs_file: &std::path::Path, rust_dir: &std::path::Path) -> Result<()> {
+fn process_rs_file(feature: &str, rs_file: &std::path::Path, _rust_dir: &std::path::Path) -> Result<()> {
     use std::fs;
 
     println!("\nProcessing file: {}", rs_file.display());
@@ -101,15 +101,24 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, rust_dir: &std::pat
         anyhow::bail!("Translation failed: output file is empty");
     }
 
-    // Step 2.2.5 & 2.2.6: Build and fix errors in a loop
-    loop {
-        println!("Building after translation...");
-        match builder::cargo_build(rust_dir) {
+    // Step 2.2.5 & 2.2.6: Build and fix errors in a loop (max 5 attempts)
+    const MAX_FIX_ATTEMPTS: usize = 5;
+    for attempt in 1..=MAX_FIX_ATTEMPTS {
+        println!("Building after translation (attempt {}/{})", attempt, MAX_FIX_ATTEMPTS);
+        match builder::cargo_build() {
             Ok(_) => {
                 println!("Build successful!");
                 break;
             }
             Err(build_error) => {
+                if attempt == MAX_FIX_ATTEMPTS {
+                    return Err(build_error).context(format!(
+                        "Build failed after {} fix attempts for file {}",
+                        MAX_FIX_ATTEMPTS,
+                        rs_file.display()
+                    ));
+                }
+                
                 println!("Build failed, attempting to fix errors...");
                 
                 // Try to fix the error

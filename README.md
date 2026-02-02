@@ -134,9 +134,12 @@ c2rust-translate translate
 - 如果 rust 目录初始化失败，工具将退出并显示错误
 - 如果缺少对应的 `.c` 文件，工具将退出并显示错误
 - 如果翻译或错误修复失败，工具将退出并显示错误
+- 如果构建错误修复超过 5 次尝试后仍失败，工具将退出并显示错误
 - 如果混合构建测试失败，工具将退出并显示错误
-- 如果 git 操作失败（add/commit），工具将退出并显示错误
+- 如果 git add 操作失败，工具将退出并显示错误
+- 如果 git commit 操作失败（除了"nothing to commit"情况），工具将退出并显示错误
 - 如果最终构建失败，即使所有文件已翻译完成，工具也会退出并显示错误
+- 如果未安装 c2rust-config，混合构建测试将被跳过（不会报错）
 
 ## Git 集成
 
@@ -148,7 +151,7 @@ c2rust-translate translate
 
 提交消息格式如下：
 - `"Initialize <feature> rust directory"` （初始化 <特性> rust 目录）
-- `"Translate <feature> from C to Rust"` （将 <特性> 从 C 翻译为 Rust）
+- `"Translate <filename> from C to Rust (feature: <feature>)"` （将 <文件名> 从 C 翻译为 Rust，特性：<特性>）
 - `"Update code analysis for <feature>"` （更新 <特性> 的代码分析）
 
 ## 代码结构
