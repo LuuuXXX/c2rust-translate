@@ -1,127 +1,138 @@
 # c2rust-translate
 
-A Rust tool for automating the translation of C code to Rust using the c2rust framework.
+一个使用 c2rust 框架自动化 C 代码到 Rust 代码翻译的工具。
 
-## Features
+## 功能特性
 
-- Automated C to Rust translation workflow
-- Support for feature-based translation with `--feature` flag
-- Automatic initialization of Rust project structure
-- Integration with translation tools (`translate_and_fix.py`)
-- Automatic build error detection and fixing
-- Git-based version control integration
-- Code analysis integration (`code-analyse`)
-- Hybrid build testing support
+- 自动化的 C 到 Rust 翻译工作流
+- 支持基于特性(feature)的翻译，使用 `--feature` 标志
+- 自动初始化 Rust 项目结构
+- 集成翻译工具（`translate_and_fix.py`）
+- 自动检测和修复构建错误
+- 基于 Git 的版本控制集成
+- 代码分析集成（`code-analyse`）
+- 混合构建测试支持
 
-## Installation
+## 安装
 
-Build from source:
+从源码构建：
 
 ```bash
 cargo build --release
 ```
 
-The binary will be available at `target/release/c2rust-translate`.
+二进制文件将位于 `target/release/c2rust-translate`。
 
-## Usage
+## 使用方法
 
-### Translate a Feature
+### 翻译一个特性
 
 ```bash
-c2rust-translate translate --feature <feature_name>
+c2rust-translate translate --feature <特性名称>
 ```
 
-This command will:
+该命令将执行以下操作：
 
-1. **Initialize** - Check if the `<feature_name>/rust` directory exists, and initialize it if needed
-2. **Scan** - Find all empty `.rs` files in the rust directory
-3. **Translate** - For each empty `.rs` file:
-   - Determine the type (variable or function) based on filename prefix (`var_` or `fun_`)
-   - Translate the corresponding `.c` file to Rust
-   - Build the project and fix any compilation errors
-   - Commit the changes with git
-   - Update code analysis
-   - Run hybrid build tests
+1. **初始化** - 检查 `<特性名称>/rust` 目录是否存在，如果需要则进行初始化
+2. **扫描** - 查找 rust 目录中所有空的 `.rs` 文件
+3. **翻译** - 对每个空的 `.rs` 文件：
+   - 根据文件名前缀确定类型（变量或函数）（`var_` 或 `fun_`）
+   - 将对应的 `.c` 文件翻译为 Rust
+   - 构建项目并修复任何编译错误
+   - 使用 git 提交更改
+   - 更新代码分析
+   - 运行混合构建测试
 
-### Workflow Details
+### 工作流程详情
 
-#### File Naming Convention
+#### 文件命名规范
 
-- `var_*.rs` - Variable declarations
-- `fun_*.rs` - Function definitions
+- `var_*.rs` - 变量声明
+- `fun_*.rs` - 函数定义
 
-Each `.rs` file should have a corresponding `.c` file with the same name.
+每个 `.rs` 文件应该有一个同名的对应 `.c` 文件。
 
-#### Required Tools
+#### 必需工具
 
-The following tools must be available in your PATH:
+以下工具必须在你的 PATH 中可用：
 
-- `code-analyse` - For code analysis and initialization
-- `translate_and_fix.py` - Python script for translation and error fixing
-- `c2rust-config` - For configuration management (optional)
-- `c2rust-clean`, `c2rust-build`, `c2rust-test` - For hybrid build testing (optional)
+- `code-analyse` - 用于代码分析和初始化
+- `translate_and_fix.py` - 用于翻译和错误修复的 Python 脚本
+- `c2rust-config` - 用于配置管理（可选）
+- `c2rust-clean`、`c2rust-build`、`c2rust-test` - 用于混合构建测试（可选）
 
-#### Translation Tool Usage
+#### 翻译工具用法
 
-The tool calls `translate_and_fix.py` with the following arguments:
+该工具使用以下参数调用 `translate_and_fix.py`：
 
 ```bash
-# For translation
-python translate_and_fix.py --config config.toml --type <var|fn> --code <c_file> --output <rs_file>
+# 用于翻译
+python translate_and_fix.py --config config.toml --type <var|fn> --code <c文件> --output <rs文件>
 
-# For fixing errors
-python translate_and_fix.py --config config.toml --type <var|fn> --error <error_file> --output <rs_file>
+# 用于修复错误
+python translate_and_fix.py --config config.toml --type <var|fn> --error <错误文件> --output <rs文件>
 ```
 
-#### Code Analysis Tool Usage
+#### 代码分析工具用法
 
 ```bash
-# Initialize
-code-analyse --init --feature <feature_name>
+# 初始化
+code-analyse --init --feature <特性名称>
 
-# Update
-code-analyse --update --feature <feature_name>
+# 更新
+code-analyse --update --feature <特性名称>
 ```
 
-#### Hybrid Build Environment Variables
+#### 混合构建环境变量
 
-When running the build command, the following environment variables are set:
+运行构建命令时，会设置以下环境变量：
 
-- `C2RUST_FEATURE_ROOT=<feature_path>` - Root directory of the feature
+- `C2RUST_FEATURE_ROOT=<特性路径>` - 特性的根目录
 
-## Example
+## 示例
 
 ```bash
-# Translate a feature called "my_feature"
+# 翻译名为 "my_feature" 的特性
 c2rust-translate translate --feature my_feature
 ```
 
-This will process all empty `.rs` files in `my_feature/rust/` directory.
+这将处理 `my_feature/rust/` 目录中所有空的 `.rs` 文件。
 
-## Error Handling
+## 错误处理
 
-- If the rust directory initialization fails, the tool will exit with an error
-- If a corresponding `.c` file is missing, the tool will warn and skip the file
-- If translation or error fixing fails, the tool will exit with an error
-- If hybrid build tests fail, the tool will warn but continue
+- 如果 rust 目录初始化失败，工具将退出并显示错误
+- 如果缺少对应的 `.c` 文件，工具将发出警告并跳过该文件
+- 如果翻译或错误修复失败，工具将退出并显示错误
+- 如果混合构建测试失败，工具将发出警告但继续执行
 
-## Git Integration
+## Git 集成
 
-The tool automatically commits changes at these points:
+工具会在以下时间点自动提交更改：
 
-1. After initializing the rust directory
-2. After successfully translating each file
-3. After updating code analysis
+1. 初始化 rust 目录后
+2. 成功翻译每个文件后
+3. 更新代码分析后
 
-Commit messages follow the format:
-- `"Initialize <feature> rust directory"`
-- `"Translate <feature> from C to Rust"`
-- `"Update code analysis for <feature>"`
+提交消息格式如下：
+- `"Initialize <特性> rust directory"`
+- `"Translate <特性> from C to Rust"`
+- `"Update code analysis for <特性>"`
 
-## License
+## 代码结构
 
-[Add your license here]
+项目采用模块化设计，主要模块包括：
 
-## Contributing
+- `analyzer` - 代码分析功能（初始化和更新）
+- `builder` - 构建相关功能（cargo 构建、混合构建）
+- `file_scanner` - 文件扫描和类型提取
+- `git` - Git 版本控制操作
+- `translator` - C 到 Rust 的翻译和错误修复
+- `lib` - 主要翻译工作流程编排
 
-[Add contribution guidelines here]
+## 许可证
+
+[在此添加许可证]
+
+## 贡献
+
+[在此添加贡献指南]
