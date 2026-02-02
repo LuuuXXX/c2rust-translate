@@ -13,7 +13,7 @@ pub fn check_tool_exists(tool_name: &str) -> Result<()> {
 }
 
 /// Check all required tools for the translation process
-pub fn check_required_tools() -> Result<Vec<String>> {
+pub fn check_required_tools() -> Result<()> {
     let required_tools = vec![
         "c2rust-translate",
         "c2rust-config",
@@ -35,7 +35,7 @@ pub fn check_required_tools() -> Result<Vec<String>> {
         ));
     }
     
-    Ok(missing_tools)
+    Ok(())
 }
 
 /// Find the project root (directory containing .c2rust)
