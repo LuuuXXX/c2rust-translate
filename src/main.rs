@@ -81,10 +81,10 @@ fn translate_feature(feature: &str) -> Result<()> {
 }
 
 fn initialize_feature(feature: &str) -> Result<()> {
-    println!("Running code-analyse --feature {} --init", feature);
+    println!("Running code-analyse --init --feature {}", feature);
     
     let output = Command::new("code-analyse")
-        .args(&["--feature", feature, "--init"])
+        .args(&["--init", "--feature", feature])
         .output()
         .context("Failed to execute code-analyse")?;
 
@@ -218,8 +218,9 @@ fn translate_c_to_rust(file_type: &str, c_file: &Path, rs_file: &Path) -> Result
 
 fn fix_translation_error(file_type: &str, rs_file: &Path, error_msg: &str) -> Result<()> {
     // Create a temporary file with error message
-    let error_file = "/tmp/build_error.txt";
-    fs::write(error_file, error_msg)?;
+    let temp_dir = std::env::temp_dir();
+    let error_file = temp_dir.join("build_error.txt");
+    fs::write(&error_file, error_msg)?;
 
     let output = Command::new("python")
         .args(&[
@@ -229,7 +230,7 @@ fn fix_translation_error(file_type: &str, rs_file: &Path, error_msg: &str) -> Re
             "--type",
             file_type,
             "--error",
-            error_file,
+            error_file.to_str().unwrap(),
             "--output",
             rs_file.to_str().unwrap(),
         ])
@@ -261,7 +262,7 @@ fn cargo_build(rust_dir: &Path) -> Result<()> {
 
 fn update_code_analysis(feature: &str) -> Result<()> {
     let output = Command::new("code-analyse")
-        .args(&["--feature", feature, "--update"])
+        .args(&["--update", "--feature", feature])
         .output()
         .context("Failed to execute code-analyse --update")?;
 
@@ -324,10 +325,12 @@ fn run_c2rust_command_with_env(cmd_type: &str, feature: &str) -> Result<()> {
     // Set environment variables for hybrid build
     let feature_root = std::env::current_dir()?.join(feature);
     
+    // Note: LD_PRELOAD is intentionally not set here as it requires the path to the
+    // hybrid build library, which is project-specific and should be configured separately.
+    // Users should set this environment variable based on their project requirements.
     let output = Command::new(&cmd_name)
         .args(&[cmd_type, "--", feature])
         .env("C2RUST_FEATURE_ROOT", feature_root)
-        // Note: LD_PRELOAD would need the actual library path
         .output()
         .with_context(|| format!("Failed to execute {}", cmd_name))?;
 
@@ -367,4 +370,58 @@ fn git_commit(message: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::io::Write;
+
+    #[test]
+    fn test_find_empty_rs_files() {
+        // Create a temporary directory structure
+        let temp_dir = std::env::temp_dir().join("test_c2rust_translate");
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        // Create an empty .rs file
+        let empty_file = temp_dir.join("var_test.rs");
+        fs::File::create(&empty_file).unwrap();
+
+        // Create a non-empty .rs file
+        let non_empty_file = temp_dir.join("fun_test.rs");
+        let mut file = fs::File::create(&non_empty_file).unwrap();
+        file.write_all(b"fn test() {}").unwrap();
+
+        // Test finding empty files
+        let empty_files = find_empty_rs_files(&temp_dir).unwrap();
+        assert_eq!(empty_files.len(), 1);
+        assert!(empty_files[0].ends_with("var_test.rs"));
+
+        // Cleanup
+        fs::remove_dir_all(&temp_dir).unwrap();
+    }
+
+    #[test]
+    fn test_file_type_extraction() {
+        // Test var prefix
+        let var_file = Path::new("var_counter.rs");
+        let file_stem = var_file.file_stem().unwrap().to_str().unwrap();
+        assert!(file_stem.starts_with("var_"));
+
+        // Test fun prefix
+        let fun_file = Path::new("fun_calculate.rs");
+        let file_stem = fun_file.file_stem().unwrap().to_str().unwrap();
+        assert!(file_stem.starts_with("fun_"));
+    }
+
+    #[test]
+    fn test_path_construction() {
+        let feature = "my_feature";
+        let feature_path = PathBuf::from(feature);
+        let rust_dir = feature_path.join("rust");
+        
+        assert_eq!(rust_dir.to_str().unwrap(), "my_feature/rust");
+    }
 }
