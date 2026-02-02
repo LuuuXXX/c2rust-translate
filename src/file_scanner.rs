@@ -7,10 +7,8 @@ use walkdir::WalkDir;
 pub fn find_empty_rs_files(rust_dir: &Path) -> Result<Vec<PathBuf>> {
     let mut empty_files = Vec::new();
 
-    for entry in WalkDir::new(rust_dir)
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
+    for entry in WalkDir::new(rust_dir) {
+        let entry = entry?;
         let path = entry.path();
         if path.extension().map_or(false, |ext| ext == "rs") {
             let metadata = fs::metadata(path)?;

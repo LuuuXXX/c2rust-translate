@@ -18,6 +18,8 @@ pub fn translate_c_to_rust(file_type: &str, c_file: &Path, rs_file: &Path) -> Re
     
     let config_str = config_path.to_str()
         .with_context(|| format!("Non-UTF8 path: {}", config_path.display()))?;
+    let script_str = script_path.to_str()
+        .with_context(|| format!("Non-UTF8 path: {}", script_path.display()))?;
     let c_file_str = c_file.to_str()
         .with_context(|| format!("Non-UTF8 path: {}", c_file.display()))?;
     let rs_file_str = rs_file.to_str()
@@ -26,7 +28,7 @@ pub fn translate_c_to_rust(file_type: &str, c_file: &Path, rs_file: &Path) -> Re
     let output = Command::new("python")
         .current_dir(&project_root)
         .args(&[
-            script_path.to_str().unwrap(),
+            script_str,
             "--config",
             config_str,
             "--type",
@@ -61,6 +63,8 @@ pub fn fix_translation_error(file_type: &str, rs_file: &Path, error_msg: &str) -
     
     let config_str = config_path.to_str()
         .with_context(|| format!("Non-UTF8 path: {}", config_path.display()))?;
+    let script_str = script_path.to_str()
+        .with_context(|| format!("Non-UTF8 path: {}", script_path.display()))?;
     let error_file_str = temp_file.path().to_str()
         .with_context(|| format!("Non-UTF8 path: {}", temp_file.path().display()))?;
     let rs_file_str = rs_file.to_str()
@@ -69,7 +73,7 @@ pub fn fix_translation_error(file_type: &str, rs_file: &Path, error_msg: &str) -
     let output = Command::new("python")
         .current_dir(&project_root)
         .args(&[
-            script_path.to_str().unwrap(),
+            script_str,
             "--config",
             config_str,
             "--type",

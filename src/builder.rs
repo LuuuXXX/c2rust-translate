@@ -54,17 +54,24 @@ pub fn run_c2rust_command(cmd_type: &str, feature: &str) -> Result<()> {
     // Get the actual command from config
     let actual_command = get_c2rust_command(cmd_type, feature)?;
     
-    // Split the command into parts for proper argument passing
-    let parts: Vec<&str> = actual_command.split_whitespace().collect();
+    // Parse the command using shell-words to handle quoted arguments and spaces correctly
+    let parts = shell_words::split(&actual_command)
+        .with_context(|| format!("Failed to parse command: {}", actual_command))?;
+    
+    // Ensure we run the c2rust-* command from the project .c2rust directory
+    let project_root = util::find_project_root()?;
+    let c2rust_dir = project_root.join(".c2rust");
     
     let output = if parts.is_empty() {
         return Ok(()); // Nothing to execute
     } else if parts.len() == 1 {
         Command::new(&cmd_name)
-            .args(&[cmd_type, "--", parts[0]])
+            .current_dir(&c2rust_dir)
+            .args(&[cmd_type, "--", &parts[0]])
             .output()
     } else {
         Command::new(&cmd_name)
+            .current_dir(&c2rust_dir)
             .arg(cmd_type)
             .arg("--")
             .args(&parts)

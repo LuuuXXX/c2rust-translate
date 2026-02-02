@@ -15,7 +15,7 @@ pub fn git_commit(message: &str) -> Result<()> {
 
     if !add_output.status.success() {
         let stderr = String::from_utf8_lossy(&add_output.stderr);
-        println!("Warning: git add failed: {}", stderr);
+        anyhow::bail!("git add failed: {}", stderr);
     }
 
     // Commit from the project root
