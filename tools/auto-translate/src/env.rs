@@ -15,7 +15,7 @@ pub fn check_tool_exists(tool_name: &str) -> Result<()> {
 /// Check all required tools for the translation process
 pub fn check_required_tools() -> Result<()> {
     let required_tools = vec![
-        "c2rust",
+        "c2rust-translate",
         "c2rust-config",
         "code-analyse",
         "git",
