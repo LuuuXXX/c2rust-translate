@@ -35,3 +35,7 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+
+# Config files with sensitive data
+# Keep the example but ignore the actual config with API keys
+.c2rust/config.toml
