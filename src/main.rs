@@ -13,8 +13,8 @@ struct Cli {
 enum Commands {
     /// Translate C code to Rust for a specific feature
     Translate {
-        /// Feature name
-        #[arg(long)]
+        /// Feature name (defaults to "default" if not specified)
+        #[arg(long, default_value = "default")]
         feature: String,
     },
 }

@@ -28,7 +28,11 @@ cargo build --release
 ### 翻译一个特性
 
 ```bash
+# 翻译指定的特性
 c2rust-translate translate --feature <特性名称>
+
+# 翻译默认特性（不指定 --feature 时默认使用 "default"）
+c2rust-translate translate
 ```
 
 该命令将执行以下操作：
@@ -94,9 +98,12 @@ code-analyse --update --feature <特性名称>
 ```bash
 # 翻译名为 "my_feature" 的特性
 c2rust-translate translate --feature my_feature
+
+# 翻译默认特性（使用 "default" 作为特性名称）
+c2rust-translate translate
 ```
 
-这将处理 `my_feature/rust/` 目录中所有空的 `.rs` 文件。
+这将处理 `<特性名称>/rust/` 目录中所有空的 `.rs` 文件。
 
 ## 错误处理
 
