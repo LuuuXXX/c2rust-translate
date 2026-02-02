@@ -7,7 +7,7 @@ temperature = 0
 top_p = 1
 seed = 42
 max_retries = 10
-timeout =  500
+timeout = 500
 
 #具体feature的配置
 [feature.default]
