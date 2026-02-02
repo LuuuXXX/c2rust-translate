@@ -86,6 +86,7 @@ pub fn run_c2rust_command(cmd_type: &str, feature: &str) -> Result<()> {
 }
 
 /// Run hybrid build test suite
+/// Gracefully skips if c2rust tools are not available
 pub fn run_hybrid_build(feature: &str) -> Result<()> {
     // Get build commands from config
     let project_root = util::find_project_root()?;
@@ -107,9 +108,22 @@ pub fn run_hybrid_build(feature: &str) -> Result<()> {
     }
 
     // Execute clean, build, and test commands
-    run_c2rust_command("clean", feature)?;
-    run_c2rust_command("build", feature)?;
-    run_c2rust_command("test", feature)?;
+    // If any c2rust-* binary is missing, skip gracefully
+    for cmd in &["clean", "build", "test"] {
+        match run_c2rust_command(cmd, feature) {
+            Ok(_) => {}
+            Err(e) => {
+                // Check if it's a "command not found" error
+                let err_msg = e.to_string();
+                if err_msg.contains("No such file") || err_msg.contains("not found") {
+                    println!("c2rust-{} not found, skipping hybrid build tests", cmd);
+                    return Ok(());
+                }
+                // Otherwise propagate the error
+                return Err(e);
+            }
+        }
+    }
 
     Ok(())
 }

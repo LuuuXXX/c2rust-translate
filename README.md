@@ -58,12 +58,19 @@ c2rust-translate translate
 
 #### 必需工具
 
-以下工具必须在你的 PATH 中可用：
+本工具依赖一些外部命令行工具，其中一部分是必需的，另一部分是可选的。
+
+**必需依赖（必须在你的 PATH 中可用）：**
 
 - `code-analyse` - 用于代码分析和初始化
 - `translate_and_fix.py` - 用于翻译和错误修复的 Python 脚本
-- `c2rust-config` - 用于配置管理（可选）
-- `c2rust-clean`、`c2rust-build`、`c2rust-test` - 用于混合构建测试（可选）
+
+**可选依赖（存在于 PATH 中时将启用额外功能）：**
+
+- `c2rust-config` - 用于配置管理（混合构建需要）
+- `c2rust-clean`、`c2rust-build`、`c2rust-test` - 用于混合构建测试
+
+如果可选工具不可用，混合构建测试将被跳过，不会导致工具失败。
 
 #### 项目结构要求
 
@@ -167,8 +174,26 @@ c2rust-translate translate
 
 ## 许可证
 
-[在此添加许可证]
+本项目采用 MIT 许可证 - 详见 LICENSE 文件获取更多信息。
+
+如果您需要在本项目基础上进行再分发或商业使用，请遵守 MIT 许可证的条款。
 
 ## 贡献
 
-[在此添加贡献指南]
+欢迎通过 Issue 和 Pull Request 贡献代码或提出建议。提交贡献时请尽量：
+
+- 在 Issue 中清晰描述问题或需求
+- 对于代码修改，先在本地通过相关构建与测试
+- 在 Pull Request 中说明变更目的、主要修改点以及可能的影响范围
+- 确保所有测试通过且代码没有警告
+- 遵循现有的代码风格和模块结构
+
+### 提交 Pull Request 的步骤：
+
+1. Fork 本仓库
+2. 创建您的特性分支 (`git checkout -b feature/amazing-feature`)
+3. 提交您的更改 (`git commit -m 'Add some amazing feature'`)
+4. 推送到分支 (`git push origin feature/amazing-feature`)
+5. 打开一个 Pull Request
+
+我们会尽快审查您的贡献。

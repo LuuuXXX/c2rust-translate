@@ -14,17 +14,37 @@ pub fn translate_feature(feature: &str) -> Result<()> {
     // Find the project root first
     let project_root = util::find_project_root()?;
     
-    // Step 1: Check if rust directory exists
+    // Step 1: Check if rust directory exists (with proper IO error handling)
     let feature_path = project_root.join(feature);
     let rust_dir = feature_path.join("rust");
 
-    if !rust_dir.exists() {
+    let rust_dir_exists = match std::fs::metadata(&rust_dir) {
+        Ok(_) => true,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+        Err(e) => {
+            return Err(e).context(format!(
+                "Failed to access rust directory at {}",
+                rust_dir.display()
+            ));
+        }
+    };
+
+    if !rust_dir_exists {
         println!("Rust directory does not exist. Initializing...");
         analyzer::initialize_feature(feature)?;
         
         // Verify rust directory was created
-        if !rust_dir.exists() {
-            anyhow::bail!("Error: Failed to initialize rust directory");
+        match std::fs::metadata(&rust_dir) {
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                anyhow::bail!("Error: Failed to initialize rust directory");
+            }
+            Err(e) => {
+                return Err(e).context(format!(
+                    "Failed to verify initialized rust directory at {}",
+                    rust_dir.display()
+                ));
+            }
         }
         
         // Commit the initialization
@@ -58,7 +78,7 @@ pub fn translate_feature(feature: &str) -> Result<()> {
         println!("Found {} empty .rs file(s) to process", empty_rs_files.len());
 
         for rs_file in empty_rs_files {
-            process_rs_file(feature, &rs_file, &rust_dir)?;
+            process_rs_file(feature, &rs_file)?;
         }
     }
 
@@ -66,7 +86,7 @@ pub fn translate_feature(feature: &str) -> Result<()> {
 }
 
 /// Process a single .rs file through the translation workflow
-fn process_rs_file(feature: &str, rs_file: &std::path::Path, _rust_dir: &std::path::Path) -> Result<()> {
+fn process_rs_file(feature: &str, rs_file: &std::path::Path) -> Result<()> {
     use std::fs;
 
     println!("\nProcessing file: {}", rs_file.display());
@@ -82,13 +102,22 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, _rust_dir: &std::pa
 
     println!("File type: {}", file_type);
 
-    // Step 2.2.2: Check if corresponding .c file exists
+    // Step 2.2.2: Check if corresponding .c file exists (with proper IO error handling)
     let c_file = rs_file.with_extension("c");
-    if !c_file.exists() {
-        anyhow::bail!(
-            "Corresponding C file not found for Rust file: {}",
-            rs_file.display()
-        );
+    match fs::metadata(&c_file) {
+        Ok(_) => {}
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            anyhow::bail!(
+                "Corresponding C file not found for Rust file: {}",
+                rs_file.display()
+            );
+        }
+        Err(err) => {
+            return Err(err).context(format!(
+                "Failed to access corresponding C file for Rust file: {}",
+                rs_file.display()
+            ));
+        }
     }
 
     // Step 2.2.3: Call translation tool
