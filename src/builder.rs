@@ -83,10 +83,9 @@ pub fn run_c2rust_command(cmd_type: &str, feature: &str) -> Result<()> {
 
 /// Run hybrid build test suite
 pub fn run_hybrid_build(feature: &str) -> Result<()> {
-    use std::path::PathBuf;
-
     // Get build commands from config
-    let config_path = PathBuf::from(feature).join(".c2rust/config.toml");
+    let project_root = find_project_root()?;
+    let config_path = project_root.join(".c2rust/config.toml");
     
     if !config_path.exists() {
         println!("Config file not found, skipping hybrid build tests");
