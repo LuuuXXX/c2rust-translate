@@ -2,14 +2,14 @@ use std::path::Path;
 use crate::error::{AutoTranslateError, Result};
 use crate::commands::execute_command_checked;
 
-/// Translate a C file to Rust using c2rust-translate
-pub fn translate_c_to_rust(c_file: &Path, feature_name: &str) -> Result<()> {
+/// Translate a C file to Rust using c2rust
+pub fn translate_c_to_rust(c_file: &Path, _feature_name: &str) -> Result<()> {
     let filename = c_file.to_str()
         .ok_or_else(|| AutoTranslateError::TranslationFailed("Invalid file path".to_string()))?;
     
     let output = execute_command_checked(
-        "c2rust-translate",
-        &["translate", "--feature", feature_name, filename],
+        "c2rust",
+        &["translate", "--feature", filename],
         None,
         &[]
     ).map_err(|e| AutoTranslateError::TranslationFailed(format!("Translation failed: {}", e)))?;

@@ -54,7 +54,7 @@ auto-translate --ld-preload /path/to/lib.so
 ## Requirements
 
 The following tools must be available in your PATH:
-- `c2rust-translate`: For translating C code to Rust
+- `c2rust`: For translating C code to Rust (command: `c2rust translate --feature <filename>`)
 - `c2rust-config`: For retrieving build configuration
 - `code-analyse`: For analyzing the translated code
 - `git`: For version control operations
