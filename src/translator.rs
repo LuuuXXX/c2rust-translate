@@ -1,15 +1,24 @@
 use anyhow::{Context, Result};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+
+/// Get the config.toml path from C2RUST_PROJECT_ROOT environment variable
+fn get_config_path() -> Result<PathBuf> {
+    let project_root = std::env::var("C2RUST_PROJECT_ROOT")
+        .context("C2RUST_PROJECT_ROOT environment variable not set")?;
+    Ok(PathBuf::from(project_root).join(".c2rust/config.toml"))
+}
 
 /// Translate a C file to Rust using the translation tool
 pub fn translate_c_to_rust(file_type: &str, c_file: &Path, rs_file: &Path) -> Result<()> {
+    let config_path = get_config_path()?;
+    
     let output = Command::new("python")
         .args(&[
             "translate_and_fix.py",
             "--config",
-            "config.toml",
+            config_path.to_str().unwrap(),
             "--type",
             file_type,
             "--code",
@@ -30,6 +39,8 @@ pub fn translate_c_to_rust(file_type: &str, c_file: &Path, rs_file: &Path) -> Re
 
 /// Fix translation errors using the translation tool
 pub fn fix_translation_error(file_type: &str, rs_file: &Path, error_msg: &str) -> Result<()> {
+    let config_path = get_config_path()?;
+    
     // Create a temporary file with error message
     let temp_dir = std::env::temp_dir();
     let error_file = temp_dir.join("build_error.txt");
@@ -39,7 +50,7 @@ pub fn fix_translation_error(file_type: &str, rs_file: &Path, error_msg: &str) -
         .args(&[
             "translate_and_fix.py",
             "--config",
-            "config.toml",
+            config_path.to_str().unwrap(),
             "--type",
             file_type,
             "--error",

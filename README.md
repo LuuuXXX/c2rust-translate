@@ -65,16 +65,22 @@ c2rust-translate translate
 - `c2rust-config` - 用于配置管理（可选）
 - `c2rust-clean`、`c2rust-build`、`c2rust-test` - 用于混合构建测试（可选）
 
+#### 环境变量
+
+需要设置以下环境变量：
+
+- `C2RUST_PROJECT_ROOT` - 项目根目录，用于定位配置文件 `.c2rust/config.toml`
+
 #### 翻译工具用法
 
 该工具使用以下参数调用 `translate_and_fix.py`：
 
 ```bash
 # 用于翻译
-python translate_and_fix.py --config config.toml --type <var|fn> --code <c文件> --output <rs文件>
+python translate_and_fix.py --config $C2RUST_PROJECT_ROOT/.c2rust/config.toml --type <var|fn> --code <c文件> --output <rs文件>
 
 # 用于修复错误
-python translate_and_fix.py --config config.toml --type <var|fn> --error <错误文件> --output <rs文件>
+python translate_and_fix.py --config $C2RUST_PROJECT_ROOT/.c2rust/config.toml --type <var|fn> --error <错误文件> --output <rs文件>
 ```
 
 #### 代码分析工具用法
@@ -86,12 +92,6 @@ code-analyse --init --feature <特性名称>
 # 更新
 code-analyse --update --feature <特性名称>
 ```
-
-#### 混合构建环境变量
-
-运行构建命令时，会设置以下环境变量：
-
-- `C2RUST_FEATURE_ROOT=<特性路径>` - 特性的根目录
 
 ## 示例
 

@@ -18,37 +18,12 @@ pub fn cargo_build(rust_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Run c2rust command without environment variables
+/// Run c2rust command
 pub fn run_c2rust_command(cmd_type: &str, feature: &str) -> Result<()> {
     let cmd_name = format!("c2rust-{}", cmd_type);
     
     let output = Command::new(&cmd_name)
         .args(&[cmd_type, "--", feature])
-        .output()
-        .with_context(|| format!("Failed to execute {}", cmd_name))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        eprintln!("Warning: {} failed: {}", cmd_name, stderr);
-        eprintln!("Please handle this manually");
-    }
-
-    Ok(())
-}
-
-/// Run c2rust command with environment variables for hybrid build
-pub fn run_c2rust_command_with_env(cmd_type: &str, feature: &str) -> Result<()> {
-    let cmd_name = format!("c2rust-{}", cmd_type);
-    
-    // Set environment variables for hybrid build
-    let feature_root = std::env::current_dir()?.join(feature);
-    
-    // Note: LD_PRELOAD is intentionally not set here as it requires the path to the
-    // hybrid build library, which is project-specific and should be configured separately.
-    // Users should set this environment variable based on their project requirements.
-    let output = Command::new(&cmd_name)
-        .args(&[cmd_type, "--", feature])
-        .env("C2RUST_FEATURE_ROOT", feature_root)
         .output()
         .with_context(|| format!("Failed to execute {}", cmd_name))?;
 
@@ -86,7 +61,7 @@ pub fn run_hybrid_build(feature: &str) -> Result<()> {
 
     // Execute clean, build, and test commands
     run_c2rust_command("clean", feature)?;
-    run_c2rust_command_with_env("build", feature)?;
+    run_c2rust_command("build", feature)?;
     run_c2rust_command("test", feature)?;
 
     Ok(())
