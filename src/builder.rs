@@ -11,13 +11,7 @@ use crate::util;
 /// differing dependency versions or feature flags) and allows each feature to be built,
 /// tested, and iterated on independently.
 pub fn cargo_build(feature: &str) -> Result<()> {
-    // Validate feature name to prevent path traversal attacks
-    if feature.contains('/') || feature.contains('\\') || feature.contains("..") || feature.is_empty() {
-        anyhow::bail!(
-            "Invalid feature name '{}': must be a simple directory name without path separators or '..'",
-            feature
-        );
-    }
+    validate_feature_name(feature)?;
 
     let project_root = util::find_project_root()?;
     let build_dir = project_root.join(feature).join("rust");
@@ -61,6 +55,17 @@ fn get_c2rust_command(cmd_type: &str, feature: &str) -> Result<String> {
     Ok(command)
 }
 
+/// Validate feature name to prevent path traversal attacks
+fn validate_feature_name(feature: &str) -> Result<()> {
+    if feature.contains('/') || feature.contains('\\') || feature.contains("..") || feature.is_empty() {
+        anyhow::bail!(
+            "Invalid feature name '{}': must be a simple directory name without path separators or '..'",
+            feature
+        );
+    }
+    Ok(())
+}
+
 /// Helper function to check if an error is a "command not found" error
 fn is_command_not_found(e: &anyhow::Error) -> bool {
     e.chain().any(|cause| {
@@ -70,6 +75,21 @@ fn is_command_not_found(e: &anyhow::Error) -> bool {
             false
         }
     })
+}
+
+/// Execute a command with graceful handling of "command not found" errors
+fn execute_with_graceful_skip(cmd_name: &str, result: Result<()>) -> Result<()> {
+    match result {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            if is_command_not_found(&e) {
+                println!("{} not found, skipping hybrid build tests", cmd_name);
+                Ok(())
+            } else {
+                Err(e)
+            }
+        }
+    }
 }
 
 /// Execute a c2rust command with the command from config
@@ -84,25 +104,19 @@ fn execute_c2rust_command(
     let parts = shell_words::split(actual_command)
         .with_context(|| format!("Failed to parse command: {}", actual_command))?;
     
+    if parts.is_empty() {
+        return Ok(()); // Nothing to execute
+    }
+    
     // Ensure we run the c2rust-* command from the project .c2rust directory
     let project_root = util::find_project_root()?;
     let c2rust_dir = project_root.join(".c2rust");
     
-    let mut command = if parts.is_empty() {
-        return Ok(()); // Nothing to execute
-    } else if parts.len() == 1 {
-        let mut cmd = Command::new(cmd_name);
-        cmd.current_dir(&c2rust_dir)
-            .args(&[cmd_type, "--", &parts[0]]);
-        cmd
-    } else {
-        let mut cmd = Command::new(cmd_name);
-        cmd.current_dir(&c2rust_dir)
-            .arg(cmd_type)
-            .arg("--")
-            .args(&parts);
-        cmd
-    };
+    let mut command = Command::new(cmd_name);
+    command.current_dir(&c2rust_dir)
+        .arg(cmd_type)
+        .arg("--")
+        .args(&parts);
     
     // Set hybrid build environment variables if requested (only for build command)
     if set_hybrid_env {
@@ -127,6 +141,7 @@ fn execute_c2rust_command(
 
 /// Run c2rust-clean command for a given feature
 pub fn c2rust_clean(feature: &str) -> Result<()> {
+    validate_feature_name(feature)?;
     let actual_command = get_c2rust_command("clean", feature)?;
     execute_c2rust_command("c2rust-clean", "clean", &actual_command, feature, false)
 }
@@ -134,12 +149,14 @@ pub fn c2rust_clean(feature: &str) -> Result<()> {
 /// Run c2rust-build command for a given feature
 /// Automatically detects and sets hybrid build environment variables if C2RUST_HYBRID_BUILD_LIB is set
 pub fn c2rust_build(feature: &str) -> Result<()> {
+    validate_feature_name(feature)?;
     let actual_command = get_c2rust_command("build", feature)?;
     execute_c2rust_command("c2rust-build", "build", &actual_command, feature, true)
 }
 
 /// Run c2rust-test command for a given feature
 pub fn c2rust_test(feature: &str) -> Result<()> {
+    validate_feature_name(feature)?;
     let actual_command = get_c2rust_command("test", feature)?;
     execute_c2rust_command("c2rust-test", "test", &actual_command, feature, false)
 }
@@ -166,41 +183,10 @@ pub fn run_hybrid_build(feature: &str) -> Result<()> {
         return Ok(());
     }
 
-    // Execute clean command
-    match c2rust_clean(feature) {
-        Ok(_) => {}
-        Err(e) => {
-            if is_command_not_found(&e) {
-                println!("c2rust-clean not found, skipping hybrid build tests");
-                return Ok(());
-            }
-            return Err(e);
-        }
-    }
-
-    // Execute build command (with automatic hybrid environment support)
-    match c2rust_build(feature) {
-        Ok(_) => {}
-        Err(e) => {
-            if is_command_not_found(&e) {
-                println!("c2rust-build not found, skipping hybrid build tests");
-                return Ok(());
-            }
-            return Err(e);
-        }
-    }
-
-    // Execute test command
-    match c2rust_test(feature) {
-        Ok(_) => {}
-        Err(e) => {
-            if is_command_not_found(&e) {
-                println!("c2rust-test not found, skipping hybrid build tests");
-                return Ok(());
-            }
-            return Err(e);
-        }
-    }
+    // Execute commands with graceful error handling
+    execute_with_graceful_skip("c2rust-clean", c2rust_clean(feature))?;
+    execute_with_graceful_skip("c2rust-build", c2rust_build(feature))?;
+    execute_with_graceful_skip("c2rust-test", c2rust_test(feature))?;
 
     Ok(())
 }
@@ -234,5 +220,20 @@ mod tests {
         // Create a regular anyhow error (not from io::Error)
         let regular_err = anyhow::anyhow!("some error");
         assert!(!is_command_not_found(&regular_err));
+    }
+    
+    #[test]
+    fn test_validate_feature_name() {
+        // Valid feature names
+        assert!(validate_feature_name("valid_feature").is_ok());
+        assert!(validate_feature_name("feature123").is_ok());
+        assert!(validate_feature_name("my-feature").is_ok());
+        
+        // Invalid feature names with path separators
+        assert!(validate_feature_name("invalid/feature").is_err());
+        assert!(validate_feature_name("invalid\\feature").is_err());
+        assert!(validate_feature_name("../feature").is_err());
+        assert!(validate_feature_name("feature/..").is_err());
+        assert!(validate_feature_name("").is_err());
     }
 }
