@@ -2,10 +2,24 @@ use anyhow::{Context, Result};
 use std::process::Command;
 use crate::util;
 
-/// Run cargo build in the .c2rust/<feature>/rust directory
+/// Run `cargo build` in the per-feature Rust project directory at `<feature>/rust`.
+///
+/// Each feature has its own Rust project under `<feature>/rust` (with its own
+/// `Cargo.toml`, dependencies, and build artifacts) rather than sharing a single
+/// `.c2rust/` directory. This avoids conflicts between features (for example,
+/// differing dependency versions or feature flags) and allows each feature to be built,
+/// tested, and iterated on independently.
 pub fn cargo_build(feature: &str) -> Result<()> {
+    // Validate feature name to prevent path traversal attacks
+    if feature.contains('/') || feature.contains('\\') || feature.contains("..") || feature.is_empty() {
+        anyhow::bail!(
+            "Invalid feature name '{}': must be a simple directory name without path separators or '..'",
+            feature
+        );
+    }
+
     let project_root = util::find_project_root()?;
-    let build_dir = project_root.join(".c2rust").join(feature).join("rust");
+    let build_dir = project_root.join(feature).join("rust");
     
     let output = Command::new("cargo")
         .arg("build")
