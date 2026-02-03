@@ -83,7 +83,6 @@ pub fn translate_feature(feature: &str) -> Result<()> {
                 println!("Build successful!");
             }
             Err(e) => {
-                eprintln!("Build failed with detailed error:\n{:#}", e);
                 return Err(e).context("Translation workflow aborted due to build failure");
             }
         }
