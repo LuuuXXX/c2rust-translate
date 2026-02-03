@@ -23,7 +23,7 @@ pub fn translate_feature(feature: &str) -> Result<()> {
     let project_root = util::find_project_root()?;
     
     // Step 1: Check if rust directory exists (with proper IO error handling)
-    let feature_path = project_root.join(feature);
+    let feature_path = project_root.join(".c2rust").join(feature);
     let rust_dir = feature_path.join("rust");
 
     let rust_dir_exists = match std::fs::metadata(&rust_dir) {
