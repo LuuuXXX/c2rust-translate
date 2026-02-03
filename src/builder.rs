@@ -14,7 +14,7 @@ pub fn cargo_build(feature: &str) -> Result<()> {
     validate_feature_name(feature)?;
 
     let project_root = util::find_project_root()?;
-    let build_dir = project_root.join(feature).join("rust");
+    let build_dir = project_root.join(".c2rust").join(feature).join("rust");
     
     let output = Command::new("cargo")
         .arg("build")
