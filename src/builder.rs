@@ -77,8 +77,8 @@ fn is_command_not_found(e: &anyhow::Error) -> bool {
     })
 }
 
-/// Execute a command and report error if tool is not found
-fn execute_with_error_check(cmd_name: &str, result: Result<()>) -> Result<()> {
+/// Report error if command result indicates tool was not found
+fn report_if_not_found(cmd_name: &str, result: Result<()>) -> Result<()> {
     match result {
         Ok(_) => Ok(()),
         Err(e) => {
@@ -100,6 +100,9 @@ fn execute_c2rust_command(
     feature: &str,
     set_hybrid_env: bool,
 ) -> Result<()> {
+    // Validate feature name to prevent path traversal (defense in depth)
+    validate_feature_name(feature)?;
+    
     // Parse the command using shell-words to handle quoted arguments and spaces correctly
     let parts = shell_words::split(actual_command)
         .with_context(|| format!("Failed to parse command: {}", actual_command))?;
@@ -184,9 +187,9 @@ pub fn run_hybrid_build(feature: &str) -> Result<()> {
     }
 
     // Execute commands with error reporting
-    execute_with_error_check("c2rust-clean", c2rust_clean(feature))?;
-    execute_with_error_check("c2rust-build", c2rust_build(feature))?;
-    execute_with_error_check("c2rust-test", c2rust_test(feature))?;
+    report_if_not_found("c2rust-clean", c2rust_clean(feature))?;
+    report_if_not_found("c2rust-build", c2rust_build(feature))?;
+    report_if_not_found("c2rust-test", c2rust_test(feature))?;
 
     Ok(())
 }
