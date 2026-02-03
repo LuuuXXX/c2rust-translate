@@ -2,10 +2,10 @@ use anyhow::{Context, Result};
 use std::process::Command;
 use crate::util;
 
-/// Run cargo build in the .c2rust directory
-pub fn cargo_build() -> Result<()> {
+/// Run cargo build in the .c2rust/<feature>/rust directory
+pub fn cargo_build(feature: &str) -> Result<()> {
     let project_root = util::find_project_root()?;
-    let build_dir = project_root.join(".c2rust");
+    let build_dir = project_root.join(".c2rust").join(feature).join("rust");
     
     let output = Command::new("cargo")
         .arg("build")

@@ -80,7 +80,7 @@ pub fn translate_feature(feature: &str) -> Result<()> {
         // Step 2.1: Try to build first
         println!("Building project...");
         last_build_error = None;
-        if let Err(e) = builder::cargo_build() {
+        if let Err(e) = builder::cargo_build(feature) {
             println!("Build failed: {}", e);
             last_build_error = Some(e);
         }
@@ -157,7 +157,7 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path) -> Result<()> {
     const MAX_FIX_ATTEMPTS: usize = 5;
     for attempt in 1..=MAX_FIX_ATTEMPTS {
         println!("Building after translation (attempt {}/{})", attempt, MAX_FIX_ATTEMPTS);
-        match builder::cargo_build() {
+        match builder::cargo_build(feature) {
             Ok(_) => {
                 println!("Build successful!");
                 break;
