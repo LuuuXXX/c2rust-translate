@@ -1,4 +1,3 @@
-use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -19,12 +18,15 @@ enum Commands {
     },
 }
 
-fn main() -> Result<()> {
+fn main() {
     let cli = Cli::parse();
 
-    match cli.command {
-        Commands::Translate { feature } => c2rust_translate::translate_feature(&feature)?,
-    }
+    let result = match cli.command {
+        Commands::Translate { feature } => c2rust_translate::translate_feature(&feature),
+    };
 
-    Ok(())
+    if let Err(e) = result {
+        eprintln!("Error: {:#}", e);
+        std::process::exit(1);
+    }
 }

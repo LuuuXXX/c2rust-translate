@@ -75,25 +75,22 @@ pub fn translate_feature(feature: &str) -> Result<()> {
     }
 
     // Step 2: Main loop - process all empty .rs files
-    let mut last_build_error: Option<anyhow::Error>;
     loop {
         // Step 2.1: Try to build first
         println!("Building project...");
-        last_build_error = None;
-        if let Err(e) = builder::cargo_build(feature) {
-            println!("Build failed: {}", e);
-            last_build_error = Some(e);
+        match builder::cargo_build(feature) {
+            Ok(_) => {
+                println!("Build successful!");
+            }
+            Err(e) => {
+                return Err(e).context("Translation workflow aborted due to build failure");
+            }
         }
 
         // Step 2.2: Scan for empty .rs files
         let empty_rs_files = file_scanner::find_empty_rs_files(&rust_dir)?;
         
         if empty_rs_files.is_empty() {
-            if let Some(e) = last_build_error {
-                // No files left to translate, but the project does not build.
-                // Return the build error instead of reporting successful completion.
-                return Err(e).context("Project build failed after translation completed");
-            }
             println!("No empty .rs files found. Translation complete!");
             break;
         }
