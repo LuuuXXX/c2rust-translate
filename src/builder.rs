@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use std::env;
 use std::process::Command;
 use crate::util;
 
@@ -60,40 +61,61 @@ fn get_c2rust_command(cmd_type: &str, feature: &str) -> Result<String> {
     Ok(command)
 }
 
-/// Run c2rust command with the command from config
-/// 
-/// Note: Currently does not set environment variables like LD_PRELOAD or C2RUST_FEATURE_ROOT.
-/// If your hybrid build requires specific environment variables, you may need to set them
-/// externally before running this tool.
-pub fn run_c2rust_command(cmd_type: &str, feature: &str) -> Result<()> {
-    let cmd_name = format!("c2rust-{}", cmd_type);
-    
-    // Get the actual command from config
-    let actual_command = get_c2rust_command(cmd_type, feature)?;
-    
+/// Helper function to check if an error is a "command not found" error
+fn is_command_not_found(e: &anyhow::Error) -> bool {
+    e.chain().any(|cause| {
+        if let Some(io_err) = cause.downcast_ref::<std::io::Error>() {
+            io_err.kind() == std::io::ErrorKind::NotFound
+        } else {
+            false
+        }
+    })
+}
+
+/// Execute a c2rust command with the command from config
+fn execute_c2rust_command(
+    cmd_name: &str,
+    cmd_type: &str,
+    actual_command: &str,
+    feature: &str,
+    set_hybrid_env: bool,
+) -> Result<()> {
     // Parse the command using shell-words to handle quoted arguments and spaces correctly
-    let parts = shell_words::split(&actual_command)
+    let parts = shell_words::split(actual_command)
         .with_context(|| format!("Failed to parse command: {}", actual_command))?;
     
     // Ensure we run the c2rust-* command from the project .c2rust directory
     let project_root = util::find_project_root()?;
     let c2rust_dir = project_root.join(".c2rust");
     
-    let output = if parts.is_empty() {
+    let mut command = if parts.is_empty() {
         return Ok(()); // Nothing to execute
     } else if parts.len() == 1 {
-        Command::new(&cmd_name)
-            .current_dir(&c2rust_dir)
-            .args(&[cmd_type, "--", &parts[0]])
-            .output()
+        let mut cmd = Command::new(cmd_name);
+        cmd.current_dir(&c2rust_dir)
+            .args(&[cmd_type, "--", &parts[0]]);
+        cmd
     } else {
-        Command::new(&cmd_name)
-            .current_dir(&c2rust_dir)
+        let mut cmd = Command::new(cmd_name);
+        cmd.current_dir(&c2rust_dir)
             .arg(cmd_type)
             .arg("--")
-            .args(&parts)
-            .output()
-    }.with_context(|| format!("Failed to execute {}", cmd_name))?;
+            .args(&parts);
+        cmd
+    };
+    
+    // Set hybrid build environment variables if requested (only for build command)
+    if set_hybrid_env {
+        if let Ok(hybrid_lib) = env::var("C2RUST_HYBER_BUILD_LIB") {
+            let feature_root = c2rust_dir.join(feature);
+            command.env("LD_PRELOAD", hybrid_lib);
+            command.env("C2RUST_FEATURE_ROOT", feature_root);
+        }
+    }
+    
+    let output = command
+        .output()
+        .with_context(|| format!("Failed to execute {}", cmd_name))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -101,6 +123,25 @@ pub fn run_c2rust_command(cmd_type: &str, feature: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Run c2rust-clean command for a given feature
+pub fn c2rust_clean(feature: &str) -> Result<()> {
+    let actual_command = get_c2rust_command("clean", feature)?;
+    execute_c2rust_command("c2rust-clean", "clean", &actual_command, feature, false)
+}
+
+/// Run c2rust-build command for a given feature
+/// Automatically detects and sets hybrid build environment variables if C2RUST_HYBER_BUILD_LIB is set
+pub fn c2rust_build(feature: &str) -> Result<()> {
+    let actual_command = get_c2rust_command("build", feature)?;
+    execute_c2rust_command("c2rust-build", "build", &actual_command, feature, true)
+}
+
+/// Run c2rust-test command for a given feature
+pub fn c2rust_test(feature: &str) -> Result<()> {
+    let actual_command = get_c2rust_command("test", feature)?;
+    execute_c2rust_command("c2rust-test", "test", &actual_command, feature, false)
 }
 
 /// Run hybrid build test suite
@@ -125,30 +166,39 @@ pub fn run_hybrid_build(feature: &str) -> Result<()> {
         return Ok(());
     }
 
-    // Execute clean, build, and test commands
-    // If any c2rust-* binary is missing, skip gracefully
-    for cmd in &["clean", "build", "test"] {
-        match run_c2rust_command(cmd, feature) {
-            Ok(_) => {}
-            Err(e) => {
-                // Check if it's a "command not found" error by examining the error chain
-                // for std::io::ErrorKind::NotFound
-                let is_not_found = e.chain()
-                    .any(|cause| {
-                        if let Some(io_err) = cause.downcast_ref::<std::io::Error>() {
-                            io_err.kind() == std::io::ErrorKind::NotFound
-                        } else {
-                            false
-                        }
-                    });
-                
-                if is_not_found {
-                    println!("c2rust-{} not found, skipping hybrid build tests", cmd);
-                    return Ok(());
-                }
-                // Otherwise propagate the error
-                return Err(e);
+    // Execute clean command
+    match c2rust_clean(feature) {
+        Ok(_) => {}
+        Err(e) => {
+            if is_command_not_found(&e) {
+                println!("c2rust-clean not found, skipping hybrid build tests");
+                return Ok(());
             }
+            return Err(e);
+        }
+    }
+
+    // Execute build command (with automatic hybrid environment support)
+    match c2rust_build(feature) {
+        Ok(_) => {}
+        Err(e) => {
+            if is_command_not_found(&e) {
+                println!("c2rust-build not found, skipping hybrid build tests");
+                return Ok(());
+            }
+            return Err(e);
+        }
+    }
+
+    // Execute test command
+    match c2rust_test(feature) {
+        Ok(_) => {}
+        Err(e) => {
+            if is_command_not_found(&e) {
+                println!("c2rust-test not found, skipping hybrid build tests");
+                return Ok(());
+            }
+            return Err(e);
         }
     }
 
@@ -157,6 +207,9 @@ pub fn run_hybrid_build(feature: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use std::io;
+    
     #[test]
     fn test_command_name_generation() {
         let cmd_name = format!("c2rust-{}", "build");
@@ -164,5 +217,22 @@ mod tests {
         
         let cmd_name = format!("c2rust-{}", "test");
         assert_eq!(cmd_name, "c2rust-test");
+    }
+    
+    #[test]
+    fn test_is_command_not_found() {
+        // Create an error that is a "command not found" error
+        let not_found_err = io::Error::new(io::ErrorKind::NotFound, "command not found");
+        let anyhow_err = anyhow::Error::from(not_found_err);
+        assert!(is_command_not_found(&anyhow_err));
+        
+        // Create an error that is not a "command not found" error
+        let other_err = io::Error::new(io::ErrorKind::PermissionDenied, "permission denied");
+        let anyhow_err = anyhow::Error::from(other_err);
+        assert!(!is_command_not_found(&anyhow_err));
+        
+        // Create a regular anyhow error (not from io::Error)
+        let regular_err = anyhow::anyhow!("some error");
+        assert!(!is_command_not_found(&regular_err));
     }
 }
