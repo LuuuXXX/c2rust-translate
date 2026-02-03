@@ -106,7 +106,7 @@ fn execute_c2rust_command(
     
     // Set hybrid build environment variables if requested (only for build command)
     if set_hybrid_env {
-        if let Ok(hybrid_lib) = env::var("C2RUST_HYBER_BUILD_LIB") {
+        if let Ok(hybrid_lib) = env::var("C2RUST_HYBRID_BUILD_LIB") {
             let feature_root = c2rust_dir.join(feature);
             command.env("LD_PRELOAD", hybrid_lib);
             command.env("C2RUST_FEATURE_ROOT", feature_root);
@@ -132,7 +132,7 @@ pub fn c2rust_clean(feature: &str) -> Result<()> {
 }
 
 /// Run c2rust-build command for a given feature
-/// Automatically detects and sets hybrid build environment variables if C2RUST_HYBER_BUILD_LIB is set
+/// Automatically detects and sets hybrid build environment variables if C2RUST_HYBRID_BUILD_LIB is set
 pub fn c2rust_build(feature: &str) -> Result<()> {
     let actual_command = get_c2rust_command("build", feature)?;
     execute_c2rust_command("c2rust-build", "build", &actual_command, feature, true)
