@@ -79,10 +79,10 @@ c2rust-translate translate
 ```
 项目根目录/
 ├── .c2rust/
-│   ├── config.toml    # 配置文件
-│   └── Cargo.toml     # Rust 项目配置（cargo build 在此执行）
+│   └── config.toml    # 配置文件
 └── <feature>/
     └── rust/          # 包含待翻译的 .rs 和 .c 文件
+                       # 每个特性都有自己的 Cargo.toml（cargo build 在此执行）
 ```
 
 #### 翻译工具用法
