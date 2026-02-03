@@ -4,19 +4,19 @@ use crate::util;
 
 /// Initialize code analysis for a feature
 pub fn initialize_feature(feature: &str) -> Result<()> {
-    println!("Running code-analyse --init --feature {}", feature);
+    println!("Running code_analyse --init --feature {}", feature);
     
     let project_root = util::find_project_root()?;
     
-    let output = Command::new("code-analyse")
+    let output = Command::new("code_analyse")
         .current_dir(&project_root)
         .args(&["--init", "--feature", feature])
         .output()
-        .context("Failed to execute code-analyse")?;
+        .context("Failed to execute code_analyse")?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("code-analyse failed: {}", stderr);
+        anyhow::bail!("code_analyse failed: {}", stderr);
     }
 
     Ok(())
@@ -26,15 +26,15 @@ pub fn initialize_feature(feature: &str) -> Result<()> {
 pub fn update_code_analysis(feature: &str) -> Result<()> {
     let project_root = util::find_project_root()?;
     
-    let output = Command::new("code-analyse")
+    let output = Command::new("code_analyse")
         .current_dir(&project_root)
         .args(&["--update", "--feature", feature])
         .output()
-        .context("Failed to execute code-analyse --update")?;
+        .context("Failed to execute code_analyse --update")?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("code-analyse update failed: {}", stderr);
+        anyhow::bail!("code_analyse update failed: {}", stderr);
     }
 
     Ok(())
