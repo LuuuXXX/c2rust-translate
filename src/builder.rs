@@ -77,14 +77,14 @@ fn is_command_not_found(e: &anyhow::Error) -> bool {
     })
 }
 
-/// Execute a command with graceful handling of "command not found" errors
-fn execute_with_graceful_skip(cmd_name: &str, result: Result<()>) -> Result<()> {
+/// Execute a command and report error if tool is not found
+fn execute_with_error_check(cmd_name: &str, result: Result<()>) -> Result<()> {
     match result {
         Ok(_) => Ok(()),
         Err(e) => {
             if is_command_not_found(&e) {
-                println!("{} not found, skipping hybrid build tests", cmd_name);
-                Ok(())
+                eprintln!("Error: {} not found", cmd_name);
+                Err(e)
             } else {
                 Err(e)
             }
@@ -162,15 +162,15 @@ pub fn c2rust_test(feature: &str) -> Result<()> {
 }
 
 /// Run hybrid build test suite
-/// Gracefully skips if c2rust tools are not available
+/// Reports error and exits if c2rust tools are not available
 pub fn run_hybrid_build(feature: &str) -> Result<()> {
     // Get build commands from config
     let project_root = util::find_project_root()?;
     let config_path = project_root.join(".c2rust/config.toml");
     
     if !config_path.exists() {
-        println!("Config file not found, skipping hybrid build tests");
-        return Ok(());
+        eprintln!("Error: Config file not found at {}", config_path.display());
+        anyhow::bail!("Config file not found, cannot run hybrid build tests");
     }
 
     // Check if c2rust-config is available before proceeding
@@ -179,14 +179,14 @@ pub fn run_hybrid_build(feature: &str) -> Result<()> {
         .output();
     
     if check_output.is_err() {
-        println!("c2rust-config not found, skipping hybrid build tests");
-        return Ok(());
+        eprintln!("Error: c2rust-config not found");
+        anyhow::bail!("c2rust-config not found, cannot run hybrid build tests");
     }
 
-    // Execute commands with graceful error handling
-    execute_with_graceful_skip("c2rust-clean", c2rust_clean(feature))?;
-    execute_with_graceful_skip("c2rust-build", c2rust_build(feature))?;
-    execute_with_graceful_skip("c2rust-test", c2rust_test(feature))?;
+    // Execute commands with error reporting
+    execute_with_error_check("c2rust-clean", c2rust_clean(feature))?;
+    execute_with_error_check("c2rust-build", c2rust_build(feature))?;
+    execute_with_error_check("c2rust-test", c2rust_test(feature))?;
 
     Ok(())
 }
