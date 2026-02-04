@@ -98,7 +98,7 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
 }
 
 /// Fix translation errors using the translation tool
-pub fn fix_translation_error(feature: &str, file_type: &str, rs_file: &Path, error_msg: &str) -> Result<()> {
+pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, error_msg: &str) -> Result<()> {
     util::validate_feature_name(feature)?;
     
     let project_root = util::find_project_root()?;
@@ -132,8 +132,8 @@ pub fn fix_translation_error(feature: &str, file_type: &str, rs_file: &Path, err
         .with_context(|| format!("Non-UTF8 path: {}", rs_file.display()))?;
 
     println!("Executing error fix command:");
-    println!("python {} --config {} --type {} --error {} --output {}", 
-        script_str, config_str, file_type, error_file_str, rs_file_str);
+    println!("python {} --config {} --type fix --code {} --output {} --error {}", 
+        script_str, config_str, rs_file_str, rs_file_str, error_file_str);
     println!();
 
     let output = Command::new("python")
@@ -142,11 +142,13 @@ pub fn fix_translation_error(feature: &str, file_type: &str, rs_file: &Path, err
             "--config",
             config_str,
             "--type",
-            file_type,
-            "--error",
-            error_file_str,
+            "fix",
+            "--code",
+            rs_file_str,
             "--output",
             rs_file_str,
+            "--error",
+            error_file_str,
         ])
         .output()
         .context("Failed to execute translate_and_fix.py for fixing")?;
