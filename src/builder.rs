@@ -31,6 +31,8 @@ pub fn cargo_build(feature: &str) -> Result<()> {
 }
 
 /// Get a specific config value from c2rust-config
+/// Note: Config values are retrieved without --feature flag as per the new design.
+/// The build.dir and build.cmd are expected to be global configurations.
 fn get_config_value(key: &str) -> Result<String> {
     let project_root = util::find_project_root()?;
     let c2rust_dir = project_root.join(".c2rust");
@@ -128,7 +130,9 @@ pub fn c2rust_clean(feature: &str) -> Result<()> {
     validate_feature_name(feature)?;
     let build_cmd = get_config_value("build.cmd")?;
     
-    // Construct clean command (typically "make clean", "cmake --build . --target clean", etc.)
+    // Construct clean command by appending "clean" to build command
+    // This follows the pattern: "make clean", "ninja clean", etc.
+    // For more complex build systems, the config should specify the full clean command in build.cmd
     let clean_cmd = format!("{} clean", build_cmd);
     
     execute_build_command(&clean_cmd, feature, false)
@@ -148,7 +152,9 @@ pub fn c2rust_test(feature: &str) -> Result<()> {
     validate_feature_name(feature)?;
     let build_cmd = get_config_value("build.cmd")?;
     
-    // Construct test command (typically "make test", "cmake --build . --target test", etc.)
+    // Construct test command by appending "test" to build command
+    // This follows the pattern: "make test", "ninja test", etc.
+    // For more complex build systems, the config should specify the appropriate test invocation in build.cmd
     let test_cmd = format!("{} test", build_cmd);
     
     execute_build_command(&test_cmd, feature, false)
