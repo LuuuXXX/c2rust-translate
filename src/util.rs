@@ -41,6 +41,17 @@ pub fn find_project_root() -> Result<PathBuf> {
     find_project_root_from(&current)
 }
 
+/// Validate feature name to prevent path traversal attacks
+pub fn validate_feature_name(feature: &str) -> Result<()> {
+    if feature.contains('/') || feature.contains('\\') || feature.contains("..") || feature.is_empty() {
+        anyhow::bail!(
+            "Invalid feature name '{}': must be a simple directory name without path separators or '..'",
+            feature
+        );
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -96,5 +107,27 @@ mod tests {
         
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), temp_dir.path());
+    }
+
+    #[test]
+    fn test_validate_feature_name_valid() {
+        assert!(validate_feature_name("valid_feature").is_ok());
+        assert!(validate_feature_name("feature123").is_ok());
+        assert!(validate_feature_name("my-feature").is_ok());
+    }
+    
+    #[test]
+    fn test_validate_feature_name_invalid() {
+        // Test path separator
+        assert!(validate_feature_name("feature/path").is_err());
+        assert!(validate_feature_name("feature\\path").is_err());
+        
+        // Test path traversal
+        assert!(validate_feature_name("..").is_err());
+        assert!(validate_feature_name("../feature").is_err());
+        assert!(validate_feature_name("feature/../other").is_err());
+        
+        // Test empty
+        assert!(validate_feature_name("").is_err());
     }
 }

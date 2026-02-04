@@ -12,12 +12,7 @@ pub fn translate_feature(feature: &str) -> Result<()> {
     println!("Starting translation for feature: {}", feature);
 
     // Validate feature name to prevent path traversal attacks
-    if feature.contains('/') || feature.contains('\\') || feature.contains("..") || feature.is_empty() {
-        anyhow::bail!(
-            "Invalid feature name '{}': must be a simple directory name without path separators or '..'",
-            feature
-        );
-    }
+    util::validate_feature_name(feature)?;
 
     // Find the project root first
     let project_root = util::find_project_root()?;
