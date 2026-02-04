@@ -129,18 +129,18 @@ fn execute_command_in_dir(
         None
     };
     
-    // Print the complete command being executed with all environment variables
+    // Print the command being executed, showing LD_PRELOAD and C2RUST_FEATURE_ROOT if set
+    // The output uses shell-like quoting to ensure it can be safely copy/pasted
     println!("Executing command:");
+    print!("  ");
     if let Some(ref lib_path) = hybrid_lib {
-        print!("  LD_PRELOAD={}", lib_path);
+        print!("LD_PRELOAD={} ", shell_words::quote(lib_path));
         if let Some(ref feature_root) = feature_root {
-            print!(" C2RUST_FEATURE_ROOT={}", feature_root.display());
+            print!("C2RUST_FEATURE_ROOT={} ", shell_words::quote(&feature_root.display().to_string()));
         }
-        print!(" ");
-    } else {
-        print!("  ");
     }
-    println!("{}", command_str);
+    // Print the actual command that will be executed (after shell-words parsing)
+    println!("{}", shell_words::join(&parts));
     println!("  Working directory: {}", exec_dir.display());
     
     let output = command
