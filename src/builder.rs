@@ -123,6 +123,7 @@ fn execute_command_in_dir(
         let c2rust_dir = project_root.join(".c2rust");
         let feature_root_path = c2rust_dir.join(feature);
         command.env("LD_PRELOAD", lib_path);
+        command.env("C2RUST_PROJECT_ROOT", &project_root);
         command.env("C2RUST_FEATURE_ROOT", &feature_root_path);
         Some(feature_root_path)
     } else {
