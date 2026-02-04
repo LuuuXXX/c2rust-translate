@@ -122,9 +122,11 @@ fn execute_command_in_dir(
     let feature_root = if let Some(ref lib_path) = hybrid_lib {
         let c2rust_dir = project_root.join(".c2rust");
         let feature_root_path = c2rust_dir.join(feature);
+        let rust_lib_path = feature_root_path.join("rust").join("target").join("debug").join("librust.so");
         command.env("LD_PRELOAD", lib_path);
         command.env("C2RUST_PROJECT_ROOT", &project_root);
         command.env("C2RUST_FEATURE_ROOT", &feature_root_path);
+        command.env("C2RUST_RUST_LIB", &rust_lib_path);
         Some(feature_root_path)
     } else {
         None
