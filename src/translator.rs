@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::io::Write;
 use crate::util;
 
@@ -107,7 +107,7 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
         script_str, config_str, file_type, c_file_str, rs_file_str);
     println!();
     
-    let output = Command::new("python")
+    let status = Command::new("python")
         .args(&[
             script_str,
             "--config",
@@ -119,12 +119,13 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
             "--output",
             rs_file_str,
         ])
-        .output()
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
         .context("Failed to execute translate_and_fix.py")?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("Translation failed: {}", stderr);
+    if !status.success() {
+        anyhow::bail!("Translation failed with exit code: {} (check output above for details)", status.code().unwrap_or(-1));
     }
 
     Ok(())
@@ -189,14 +190,15 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
         error_file_str,
     );
 
-    let output = Command::new("python")
+    let status = Command::new("python")
         .args(&args)
-        .output()
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
         .context("Failed to execute translate_and_fix.py for fixing")?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("Fix failed: {}", stderr);
+    if !status.success() {
+        anyhow::bail!("Fix failed with exit code: {} (check output above for details)", status.code().unwrap_or(-1));
     }
 
     // temp_file is automatically deleted when it goes out of scope
