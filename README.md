@@ -113,29 +113,29 @@ code-analyse --update --feature <特性名称>
 
 #### 混合构建配置工具用法
 
-`c2rust-config` 用于获取构建目录和命令配置。所有配置键都是必需的：
+`c2rust-config` 用于获取构建目录和命令配置。所有配置键都是必需的，并且是特性特定的（通过 `--feature` 参数指定）：
 
 ```bash
 # 获取构建目录（必需）
-c2rust-config config --make --list build.dir
+c2rust-config config --make --feature <特性名称> --list build.dir
 
 # 获取构建命令（必需）
-c2rust-config config --make --list build.cmd
+c2rust-config config --make --feature <特性名称> --list build.cmd
 
 # 获取测试目录（必需）
-c2rust-config config --make --list test.dir
+c2rust-config config --make --feature <特性名称> --list test.dir
 
 # 获取测试命令（必需）
-c2rust-config config --make --list test.cmd
+c2rust-config config --make --feature <特性名称> --list test.cmd
 
 # 获取清理目录（必需）
-c2rust-config config --make --list clean.dir
+c2rust-config config --make --feature <特性名称> --list clean.dir
 
 # 获取清理命令（必需）
-c2rust-config config --make --list clean.cmd
+c2rust-config config --make --feature <特性名称> --list clean.cmd
 ```
 
-这些配置用于在正确的目录下执行原生构建命令（make、cmake 等），而不是通过 `c2rust-{build,test,clean}` 包装命令。每个操作（build、test、clean）在各自配置的目录中执行各自的命令。对于构建操作，会自动应用 LD_PRELOAD 机制以拦截系统调用。
+这些配置用于在正确的目录下执行原生构建命令（make、cmake 等），而不是通过 `c2rust-{build,test,clean}` 包装命令。每个操作（build、test、clean）在各自配置的目录中执行各自的命令。配置是特性特定的，允许不同特性使用不同的构建配置。对于构建操作，会自动应用 LD_PRELOAD 机制以拦截系统调用。
 
 ## 示例
 

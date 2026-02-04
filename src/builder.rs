@@ -31,13 +31,13 @@ pub fn cargo_build(feature: &str) -> Result<()> {
 }
 
 /// Get a specific config value from c2rust-config
-fn get_config_value(key: &str) -> Result<String> {
+fn get_config_value(key: &str, feature: &str) -> Result<String> {
     let project_root = util::find_project_root()?;
     let c2rust_dir = project_root.join(".c2rust");
     
     let output = Command::new("c2rust-config")
         .current_dir(&c2rust_dir)
-        .args(&["config", "--make", "--list", key])
+        .args(&["config", "--make", "--feature", feature, "--list", key])
         .output()
         .with_context(|| format!("Failed to get {} from config", key))?;
 
@@ -77,7 +77,7 @@ fn execute_build_command(
     validate_feature_name(feature)?;
     
     // Get directory from config using the specified key
-    let dir_str = get_config_value(dir_key)?;
+    let dir_str = get_config_value(dir_key, feature)?;
     
     // Parse the command using shell-words to handle quoted arguments and spaces correctly
     let parts = shell_words::split(command_str)
@@ -145,7 +145,7 @@ fn execute_build_command(
 pub fn c2rust_clean(feature: &str) -> Result<()> {
     validate_feature_name(feature)?;
     
-    let clean_cmd = get_config_value("clean.cmd")?;
+    let clean_cmd = get_config_value("clean.cmd", feature)?;
     
     execute_build_command(&clean_cmd, "clean.dir", feature, false)
 }
@@ -154,7 +154,7 @@ pub fn c2rust_clean(feature: &str) -> Result<()> {
 /// Automatically detects and sets LD_PRELOAD if C2RUST_HYBRID_BUILD_LIB is set
 pub fn c2rust_build(feature: &str) -> Result<()> {
     validate_feature_name(feature)?;
-    let build_cmd = get_config_value("build.cmd")?;
+    let build_cmd = get_config_value("build.cmd", feature)?;
     
     execute_build_command(&build_cmd, "build.dir", feature, true)
 }
@@ -163,7 +163,7 @@ pub fn c2rust_build(feature: &str) -> Result<()> {
 pub fn c2rust_test(feature: &str) -> Result<()> {
     validate_feature_name(feature)?;
     
-    let test_cmd = get_config_value("test.cmd")?;
+    let test_cmd = get_config_value("test.cmd", feature)?;
     
     execute_build_command(&test_cmd, "test.dir", feature, false)
 }
