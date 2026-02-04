@@ -93,12 +93,11 @@ pub fn translate_feature(feature: &str) -> Result<()> {
         println!("Found {} empty .rs file(s) to process", empty_rs_files.len());
 
         for rs_file in empty_rs_files {
+            println!("Running hybrid build tests...");
+            builder::run_hybrid_build(feature)?;
             process_rs_file(feature, &rs_file)?;
         }
     }
-
-    println!("Running hybrid build tests...");
-    builder::run_hybrid_build(feature)?;
 
     Ok(())
 }
@@ -196,10 +195,6 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path) -> Result<()> {
 
     // Step 2.2.9: Save update result
     git::git_commit(&format!("Update code analysis for {}", feature), feature)?;
-
-    // Step 2.2.10 & 2.2.11: Hybrid build testing
-    println!("Running hybrid build tests...");
-    builder::run_hybrid_build(feature)?;
 
     Ok(())
 }
