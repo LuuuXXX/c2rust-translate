@@ -122,6 +122,15 @@ fn execute_command_in_dir(
         }
     }
     
+    // Print the complete command being executed
+    println!("Executing command: {}", command_str);
+    println!("  Working directory: {}", exec_dir.display());
+    if set_ld_preload {
+        if let Ok(hybrid_lib) = env::var("C2RUST_HYBRID_BUILD_LIB") {
+            println!("  LD_PRELOAD: {}", hybrid_lib);
+        }
+    }
+    
     let output = command
         .output()
         .with_context(|| format!("Failed to execute command: {}", command_str))?;
