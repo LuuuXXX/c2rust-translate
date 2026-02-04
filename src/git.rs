@@ -6,13 +6,14 @@ use crate::util;
 /// Only stages .c2rust/ directory and the specific feature directory to avoid committing unrelated changes
 pub fn git_commit(message: &str, feature: &str) -> Result<()> {
     let project_root = util::find_project_root()?;
+    let c2rust_dir = project_root.join(".c2rust");
     
     // Add only .c2rust directory and the specific feature directory (not all features)
     // This prevents accidentally committing unrelated local modifications
     let feature_rust_path = format!("{}/rust/", feature);
     let add_output = Command::new("git")
-        .current_dir(&project_root)
-        .args(&["add", ".c2rust/", &feature_rust_path])
+        .current_dir(&c2rust_dir)
+        .args(&["add", ".", &feature_rust_path])
         .output()
         .context("Failed to git add")?;
 
@@ -23,7 +24,7 @@ pub fn git_commit(message: &str, feature: &str) -> Result<()> {
 
     // Commit from the project root
     let commit_output = Command::new("git")
-        .current_dir(&project_root)
+        .current_dir(&c2rust_dir)
         .args(&["commit", "-m", message])
         .output()
         .context("Failed to git commit")?;
