@@ -4,6 +4,9 @@ use std::process::Command;
 use std::io::Write;
 use crate::util;
 
+// Script name used for C to Rust translation
+const TRANSLATE_SCRIPT: &str = "translate_and_fix.py";
+
 /// Get the config.toml path by searching for .c2rust directory
 fn get_config_path() -> Result<PathBuf> {
     let project_root = util::find_project_root()?;
@@ -16,6 +19,14 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
     let config_path = get_config_path()?;
     let work_dir = project_root.join(".c2rust").join(feature).join("rust");
     
+    // Verify working directory exists
+    if !work_dir.exists() {
+        anyhow::bail!(
+            "Working directory does not exist: {}. Expected directory structure: <project_root>/.c2rust/<feature>/rust",
+            work_dir.display()
+        );
+    }
+    
     let config_str = config_path.to_str()
         .with_context(|| format!("Non-UTF8 path: {}", config_path.display()))?;
     let c_file_str = c_file.to_str()
@@ -26,7 +37,7 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
     let output = Command::new("python")
         .current_dir(&work_dir)
         .args(&[
-            "translate_and_fix.py",
+            TRANSLATE_SCRIPT,
             "--config",
             config_str,
             "--type",
@@ -53,6 +64,14 @@ pub fn fix_translation_error(feature: &str, file_type: &str, rs_file: &Path, err
     let config_path = get_config_path()?;
     let work_dir = project_root.join(".c2rust").join(feature).join("rust");
     
+    // Verify working directory exists
+    if !work_dir.exists() {
+        anyhow::bail!(
+            "Working directory does not exist: {}. Expected directory structure: <project_root>/.c2rust/<feature>/rust",
+            work_dir.display()
+        );
+    }
+    
     // Create a unique temporary file with error message
     let mut temp_file = tempfile::NamedTempFile::new()
         .context("Failed to create temporary error file")?;
@@ -69,7 +88,7 @@ pub fn fix_translation_error(feature: &str, file_type: &str, rs_file: &Path, err
     let output = Command::new("python")
         .current_dir(&work_dir)
         .args(&[
-            "translate_and_fix.py",
+            TRANSLATE_SCRIPT,
             "--config",
             config_str,
             "--type",
