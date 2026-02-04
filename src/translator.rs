@@ -4,8 +4,17 @@ use std::process::Command;
 use std::io::Write;
 use crate::util;
 
-// Script name used for C to Rust translation
-const TRANSLATE_SCRIPT: &str = "translate_and_fix.py";
+/// Get the translate script path from environment variable
+fn get_translate_script_path() -> Result<String> {
+    std::env::var("C2RUST_TRANSLATE_DIT")
+        .context("Environment variable C2RUST_TRANSLATE_DIT is not set. Please set it to the directory containing translate_and_fix.py script.")
+        .and_then(|path| {
+            if path.trim().is_empty() {
+                anyhow::bail!("Environment variable C2RUST_TRANSLATE_DIT is empty. Please set it to the directory containing translate_and_fix.py script.");
+            }
+            Ok(path)
+        })
+}
 
 /// Get the config.toml path by searching for .c2rust directory
 fn get_config_path() -> Result<PathBuf> {
@@ -29,6 +38,12 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
         );
     }
     
+    // Get translate script path from environment variable
+    let translate_script_dir = get_translate_script_path()?;
+    let script_path = PathBuf::from(&translate_script_dir).join("translate_and_fix.py");
+    let script_str = script_path.to_str()
+        .with_context(|| format!("Non-UTF8 path: {}", script_path.display()))?;
+    
     let config_str = config_path.to_str()
         .with_context(|| format!("Non-UTF8 path: {}", config_path.display()))?;
     let c_file_str = c_file.to_str()
@@ -39,7 +54,7 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
     let output = Command::new("python")
         .current_dir(&work_dir)
         .args(&[
-            TRANSLATE_SCRIPT,
+            script_str,
             "--config",
             config_str,
             "--type",
@@ -82,6 +97,12 @@ pub fn fix_translation_error(feature: &str, file_type: &str, rs_file: &Path, err
     write!(temp_file, "{}", error_msg)
         .context("Failed to write error message to temp file")?;
     
+    // Get translate script path from environment variable
+    let translate_script_dir = get_translate_script_path()?;
+    let script_path = PathBuf::from(&translate_script_dir).join("translate_and_fix.py");
+    let script_str = script_path.to_str()
+        .with_context(|| format!("Non-UTF8 path: {}", script_path.display()))?;
+    
     let config_str = config_path.to_str()
         .with_context(|| format!("Non-UTF8 path: {}", config_path.display()))?;
     let error_file_str = temp_file.path().to_str()
@@ -92,7 +113,7 @@ pub fn fix_translation_error(feature: &str, file_type: &str, rs_file: &Path, err
     let output = Command::new("python")
         .current_dir(&work_dir)
         .args(&[
-            TRANSLATE_SCRIPT,
+            script_str,
             "--config",
             config_str,
             "--type",
@@ -118,6 +139,7 @@ pub fn fix_translation_error(feature: &str, file_type: &str, rs_file: &Path, err
 mod tests {
     use std::io::Write;
     use tempfile::NamedTempFile;
+    use super::*;
     
     #[test]
     fn test_temp_error_file_creation() {
@@ -131,5 +153,63 @@ mod tests {
 
         assert_eq!(content, test_msg);
         // temp_file is automatically deleted when it goes out of scope
+    }
+    
+    #[test]
+    fn test_get_translate_script_path_not_set() {
+        // Remove the environment variable if it exists
+        std::env::remove_var("C2RUST_TRANSLATE_DIT");
+        
+        let result = get_translate_script_path();
+        assert!(result.is_err());
+        
+        let err_msg = format!("{:#}", result.unwrap_err());
+        assert!(err_msg.contains("C2RUST_TRANSLATE_DIT"));
+        assert!(err_msg.contains("not set"));
+    }
+    
+    #[test]
+    fn test_get_translate_script_path_empty() {
+        // Set the environment variable to empty string
+        std::env::set_var("C2RUST_TRANSLATE_DIT", "");
+        
+        let result = get_translate_script_path();
+        assert!(result.is_err());
+        
+        let err_msg = format!("{:#}", result.unwrap_err());
+        assert!(err_msg.contains("C2RUST_TRANSLATE_DIT"));
+        assert!(err_msg.contains("empty"));
+        
+        // Clean up
+        std::env::remove_var("C2RUST_TRANSLATE_DIT");
+    }
+    
+    #[test]
+    fn test_get_translate_script_path_whitespace() {
+        // Set the environment variable to whitespace only
+        std::env::set_var("C2RUST_TRANSLATE_DIT", "   ");
+        
+        let result = get_translate_script_path();
+        assert!(result.is_err());
+        
+        let err_msg = format!("{:#}", result.unwrap_err());
+        assert!(err_msg.contains("C2RUST_TRANSLATE_DIT"));
+        assert!(err_msg.contains("empty"));
+        
+        // Clean up
+        std::env::remove_var("C2RUST_TRANSLATE_DIT");
+    }
+    
+    #[test]
+    fn test_get_translate_script_path_valid() {
+        // Set the environment variable to a valid path
+        std::env::set_var("C2RUST_TRANSLATE_DIT", "/path/to/scripts");
+        
+        let result = get_translate_script_path();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "/path/to/scripts");
+        
+        // Clean up
+        std::env::remove_var("C2RUST_TRANSLATE_DIT");
     }
 }
