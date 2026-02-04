@@ -45,6 +45,13 @@ fn get_config_path() -> Result<PathBuf> {
 /// 
 /// Returns a vector of arguments to be passed to translate_and_fix.py for fixing errors.
 /// The arguments follow the format: --config --type fix --code --output --error
+/// 
+/// # Parameters
+/// - `script_path`: Path to the translate_and_fix.py script
+/// - `config_path`: Path to the config.toml file
+/// - `code_file`: Path to the Rust file to be fixed (input)
+/// - `output_file`: Path where the fixed result should be written (typically same as code_file)
+/// - `error_file`: Path to the temporary file containing compiler error messages
 fn build_fix_args<'a>(
     script_path: &'a str,
     config_path: &'a str,
@@ -171,11 +178,14 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
         script_str, config_str, rs_file_str, rs_file_str, error_file_str);
     println!();
 
+    // Build fix command arguments.
+    // Note: rs_file_str is used for both code_file and output_file parameters,
+    // meaning the Python script reads from rs_file and overwrites it with the fix.
     let args = build_fix_args(
         script_str,
         config_str,
-        rs_file_str,
-        rs_file_str,
+        rs_file_str,  // code_file: input file to fix
+        rs_file_str,  // output_file: where to write fixed result (overwrites input)
         error_file_str,
     );
 
