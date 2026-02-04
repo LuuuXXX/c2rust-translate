@@ -97,17 +97,18 @@ fn validate_feature_name(feature: &str) -> Result<()> {
     Ok(())
 }
 
-/// Execute a build/test/clean command directly in the build directory
+/// Execute a build/test/clean command directly in the specified directory
 fn execute_build_command(
     command_str: &str,
+    dir_key: &str,
     feature: &str,
     set_ld_preload: bool,
 ) -> Result<()> {
     // Validate feature name to prevent path traversal (defense in depth)
     validate_feature_name(feature)?;
     
-    // Get build directory from config
-    let build_dir_str = get_config_value("build.dir")?;
+    // Get directory from config using the specified key
+    let dir_str = get_config_value(dir_key)?;
     
     // Parse the command using shell-words to handle quoted arguments and spaces correctly
     let parts = shell_words::split(command_str)
@@ -117,18 +118,18 @@ fn execute_build_command(
         return Ok(()); // Nothing to execute
     }
     
-    // Ensure we execute the command in the build directory
+    // Ensure we execute the command in the correct directory
     let project_root = util::find_project_root()?;
-    let build_dir = project_root.join(&build_dir_str);
+    let exec_dir = project_root.join(&dir_str);
     
-    if !build_dir.exists() {
-        anyhow::bail!("Build directory does not exist: {}", build_dir.display());
-    } else if !build_dir.is_dir() {
-        anyhow::bail!("Build path is not a directory: {}", build_dir.display());
+    if !exec_dir.exists() {
+        anyhow::bail!("Directory does not exist: {}", exec_dir.display());
+    } else if !exec_dir.is_dir() {
+        anyhow::bail!("Path is not a directory: {}", exec_dir.display());
     }
     
     let mut command = Command::new(&parts[0]);
-    command.current_dir(&build_dir);
+    command.current_dir(&exec_dir);
     
     if parts.len() > 1 {
         command.args(&parts[1..]);
@@ -186,7 +187,16 @@ pub fn c2rust_clean(feature: &str) -> Result<()> {
         format!("{} clean", build_cmd)
     };
     
-    execute_build_command(&clean_cmd, feature, false)
+    // Determine the clean directory.
+    // If `clean.dir` is configured, use it.
+    // Otherwise, fall back to `build.dir`.
+    let dir_key = if get_optional_config_value("clean.dir")?.is_some() {
+        "clean.dir"
+    } else {
+        "build.dir"
+    };
+    
+    execute_build_command(&clean_cmd, dir_key, feature, false)
 }
 
 /// Run build command for a given feature
@@ -195,7 +205,7 @@ pub fn c2rust_build(feature: &str) -> Result<()> {
     validate_feature_name(feature)?;
     let build_cmd = get_config_value("build.cmd")?;
     
-    execute_build_command(&build_cmd, feature, true)
+    execute_build_command(&build_cmd, "build.dir", feature, true)
 }
 
 /// Run test command for a given feature
@@ -213,7 +223,16 @@ pub fn c2rust_test(feature: &str) -> Result<()> {
         format!("{} test", build_cmd)
     };
     
-    execute_build_command(&test_cmd, feature, false)
+    // Determine the test directory.
+    // If `test.dir` is configured, use it.
+    // Otherwise, fall back to `build.dir`.
+    let dir_key = if get_optional_config_value("test.dir")?.is_some() {
+        "test.dir"
+    } else {
+        "build.dir"
+    };
+    
+    execute_build_command(&test_cmd, dir_key, feature, false)
 }
 
 /// Run hybrid build test suite
