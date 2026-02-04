@@ -146,9 +146,9 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path) -> Result<()> {
     }
 
     // Step 2.2.5 & 2.2.6: Build and fix errors in a loop (max 5 attempts)
-    const MAX_FIX_ATTEMPTS: usize = 5;
+    const MAX_FIX_ATTEMPTS: usize = 1;
     for attempt in 1..=MAX_FIX_ATTEMPTS {
-        println!("Building after translation (attempt {}/{})", attempt, MAX_FIX_ATTEMPTS);
+        println!("Building Rust Project after translation (attempt {}/{})", attempt, MAX_FIX_ATTEMPTS);
         match builder::cargo_build(feature) {
             Ok(_) => {
                 println!("Build successful!");
