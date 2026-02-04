@@ -41,6 +41,39 @@ fn get_config_path() -> Result<PathBuf> {
     Ok(project_root.join(".c2rust/config.toml"))
 }
 
+/// Build the argument list for the fix command
+/// 
+/// Returns a vector of arguments to be passed to translate_and_fix.py for fixing errors.
+/// The arguments follow the format: --config --type fix --code --output --error
+/// 
+/// # Parameters
+/// - `script_path`: Path to the translate_and_fix.py script
+/// - `config_path`: Path to the config.toml file
+/// - `code_file`: Path to the Rust file to be fixed (input)
+/// - `output_file`: Path where the fixed result should be written (typically same as code_file)
+/// - `error_file`: Path to the temporary file containing compiler error messages
+fn build_fix_args<'a>(
+    script_path: &'a str,
+    config_path: &'a str,
+    code_file: &'a str,
+    output_file: &'a str,
+    error_file: &'a str,
+) -> Vec<&'a str> {
+    vec![
+        script_path,
+        "--config",
+        config_path,
+        "--type",
+        "fix",
+        "--code",
+        code_file,
+        "--output",
+        output_file,
+        "--error",
+        error_file,
+    ]
+}
+
 /// Translate a C file to Rust using the translation tool
 pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_file: &Path) -> Result<()> {
     util::validate_feature_name(feature)?;
@@ -98,7 +131,13 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
 }
 
 /// Fix translation errors using the translation tool
-pub fn fix_translation_error(feature: &str, file_type: &str, rs_file: &Path, error_msg: &str) -> Result<()> {
+/// 
+/// # Parameters
+/// - `feature`: The feature name being translated
+/// - `_file_type`: Kept for backward compatibility but not used (fix always uses type="fix")
+/// - `rs_file`: The Rust file to be fixed (serves as both input --code and output --output)
+/// - `error_msg`: The compiler error message to be written to a temporary file
+pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, error_msg: &str) -> Result<()> {
     util::validate_feature_name(feature)?;
     
     let project_root = util::find_project_root()?;
@@ -131,23 +170,27 @@ pub fn fix_translation_error(feature: &str, file_type: &str, rs_file: &Path, err
     let rs_file_str = rs_file.to_str()
         .with_context(|| format!("Non-UTF8 path: {}", rs_file.display()))?;
 
+    // Note: --code and --output both point to rs_file, which means the Python script
+    // will read the original file and overwrite it with the fixed version.
+    // This is the intended behavior as specified in the requirements.
     println!("Executing error fix command:");
-    println!("python {} --config {} --type {} --error {} --output {}", 
-        script_str, config_str, file_type, error_file_str, rs_file_str);
+    println!("python {} --config {} --type fix --code {} --output {} --error {}", 
+        script_str, config_str, rs_file_str, rs_file_str, error_file_str);
     println!();
 
+    // Build fix command arguments.
+    // Note: rs_file_str is used for both code_file and output_file parameters,
+    // meaning the Python script reads from rs_file and overwrites it with the fix.
+    let args = build_fix_args(
+        script_str,
+        config_str,
+        rs_file_str,  // code_file: input file to fix
+        rs_file_str,  // output_file: where to write fixed result (overwrites input)
+        error_file_str,
+    );
+
     let output = Command::new("python")
-        .args(&[
-            script_str,
-            "--config",
-            config_str,
-            "--type",
-            file_type,
-            "--error",
-            error_file_str,
-            "--output",
-            rs_file_str,
-        ])
+        .args(&args)
         .output()
         .context("Failed to execute translate_and_fix.py for fixing")?;
 
@@ -307,5 +350,30 @@ mod tests {
         assert!(result.is_ok());
         // Should be trimmed
         assert_eq!(result.unwrap(), PathBuf::from("/path/to/scripts"));
+    }
+    
+    #[test]
+    fn test_build_fix_args() {
+        let script = "/path/to/translate_and_fix.py";
+        let config = "/project/.c2rust/config.toml";
+        let code = "/project/feature/rust/code.rs";
+        let output = "/project/feature/rust/code.rs";
+        let error = "/tmp/error.txt";
+        
+        let args = build_fix_args(script, config, code, output, error);
+        
+        // Verify the exact sequence of arguments
+        assert_eq!(args.len(), 11);
+        assert_eq!(args[0], script);
+        assert_eq!(args[1], "--config");
+        assert_eq!(args[2], config);
+        assert_eq!(args[3], "--type");
+        assert_eq!(args[4], "fix");
+        assert_eq!(args[5], "--code");
+        assert_eq!(args[6], code);
+        assert_eq!(args[7], "--output");
+        assert_eq!(args[8], output);
+        assert_eq!(args[9], "--error");
+        assert_eq!(args[10], error);
     }
 }
