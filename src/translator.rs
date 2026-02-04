@@ -122,20 +122,20 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
         .output()
         .context("Failed to execute translate_and_fix.py")?;
 
-    // 打印标准输出
+    // Print standard output
     if !output.stdout.is_empty() {
         println!("Script output:");
         println!("{}", String::from_utf8_lossy(&output.stdout));
     }
 
-    // 打印标准错误
-    if !output.stderr.is_empty() {
+    // Print standard error
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !stderr.is_empty() {
         eprintln!("Script stderr:");
-        eprintln!("{}", String::from_utf8_lossy(&output.stderr));
+        eprintln!("{}", stderr);
     }
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
         anyhow::bail!("Translation failed: {}", stderr);
     }
 
@@ -206,20 +206,20 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
         .output()
         .context("Failed to execute translate_and_fix.py for fixing")?;
 
-    // 打印标准输出
+    // Print standard output
     if !output.stdout.is_empty() {
         println!("Script output:");
         println!("{}", String::from_utf8_lossy(&output.stdout));
     }
 
-    // 打印标准错误
-    if !output.stderr.is_empty() {
+    // Print standard error
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !stderr.is_empty() {
         eprintln!("Script stderr:");
-        eprintln!("{}", String::from_utf8_lossy(&output.stderr));
+        eprintln!("{}", stderr);
     }
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
         anyhow::bail!("Fix failed: {}", stderr);
     }
 
