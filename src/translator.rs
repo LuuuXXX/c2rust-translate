@@ -7,6 +7,17 @@ use crate::util;
 // Script name used for C to Rust translation
 const TRANSLATE_SCRIPT: &str = "translate_and_fix.py";
 
+/// Validate feature name to prevent path traversal attacks
+fn validate_feature_name(feature: &str) -> Result<()> {
+    if feature.contains('/') || feature.contains('\\') || feature.contains("..") || feature.is_empty() {
+        anyhow::bail!(
+            "Invalid feature name '{}': must be a simple directory name without path separators or '..'",
+            feature
+        );
+    }
+    Ok(())
+}
+
 /// Get the config.toml path by searching for .c2rust directory
 fn get_config_path() -> Result<PathBuf> {
     let project_root = util::find_project_root()?;
@@ -15,6 +26,8 @@ fn get_config_path() -> Result<PathBuf> {
 
 /// Translate a C file to Rust using the translation tool
 pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_file: &Path) -> Result<()> {
+    validate_feature_name(feature)?;
+    
     let project_root = util::find_project_root()?;
     let config_path = get_config_path()?;
     let work_dir = project_root.join(".c2rust").join(feature).join("rust");
@@ -60,6 +73,8 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
 
 /// Fix translation errors using the translation tool
 pub fn fix_translation_error(feature: &str, file_type: &str, rs_file: &Path, error_msg: &str) -> Result<()> {
+    validate_feature_name(feature)?;
+    
     let project_root = util::find_project_root()?;
     let config_path = get_config_path()?;
     let work_dir = project_root.join(".c2rust").join(feature).join("rust");
@@ -112,6 +127,7 @@ pub fn fix_translation_error(feature: &str, file_type: &str, rs_file: &Path, err
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use std::io::Write;
     use tempfile::NamedTempFile;
     
@@ -127,5 +143,27 @@ mod tests {
 
         assert_eq!(content, test_msg);
         // temp_file is automatically deleted when it goes out of scope
+    }
+    
+    #[test]
+    fn test_validate_feature_name_valid() {
+        assert!(validate_feature_name("valid_feature").is_ok());
+        assert!(validate_feature_name("feature123").is_ok());
+        assert!(validate_feature_name("my-feature").is_ok());
+    }
+    
+    #[test]
+    fn test_validate_feature_name_invalid() {
+        // Test path separator
+        assert!(validate_feature_name("feature/path").is_err());
+        assert!(validate_feature_name("feature\\path").is_err());
+        
+        // Test path traversal
+        assert!(validate_feature_name("..").is_err());
+        assert!(validate_feature_name("../feature").is_err());
+        assert!(validate_feature_name("feature/../other").is_err());
+        
+        // Test empty
+        assert!(validate_feature_name("").is_err());
     }
 }
