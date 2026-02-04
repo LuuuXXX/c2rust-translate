@@ -146,9 +146,8 @@ pub fn c2rust_clean(feature: &str) -> Result<()> {
     validate_feature_name(feature)?;
     
     let clean_cmd = get_config_value("clean.cmd")?;
-    let clean_dir = "clean.dir";
     
-    execute_build_command(&clean_cmd, clean_dir, feature, false)
+    execute_build_command(&clean_cmd, "clean.dir", feature, false)
 }
 
 /// Run build command for a given feature
@@ -165,9 +164,8 @@ pub fn c2rust_test(feature: &str) -> Result<()> {
     validate_feature_name(feature)?;
     
     let test_cmd = get_config_value("test.cmd")?;
-    let test_dir = "test.dir";
     
-    execute_build_command(&test_cmd, test_dir, feature, false)
+    execute_build_command(&test_cmd, "test.dir", feature, false)
 }
 
 /// Run hybrid build test suite
