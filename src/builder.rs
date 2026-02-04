@@ -199,8 +199,11 @@ pub fn run_hybrid_build(feature: &str) -> Result<()> {
     }
 
     // Execute commands
+    println!("Try to clean c project");
     c2rust_clean(feature)?;
+    println!("Try to build c project");
     c2rust_build(feature)?;
+    println!("Try to test c project");
     c2rust_test(feature)?;
 
     Ok(())
