@@ -69,6 +69,11 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
     let rs_file_str = rs_file.to_str()
         .with_context(|| format!("Non-UTF8 path: {}", rs_file.display()))?;
     
+    println!("Executing translation command:");
+    println!("python {} --config {} --type {} --code {} --output {}", 
+        script_str, config_str, file_type, c_file_str, rs_file_str);
+    println!();
+    
     let output = Command::new("python")
         .args(&[
             script_str,
@@ -125,6 +130,11 @@ pub fn fix_translation_error(feature: &str, file_type: &str, rs_file: &Path, err
         .with_context(|| format!("Non-UTF8 path: {}", temp_file.path().display()))?;
     let rs_file_str = rs_file.to_str()
         .with_context(|| format!("Non-UTF8 path: {}", rs_file.display()))?;
+
+    println!("Executing error fix command:");
+    println!("python {} --config {} --type {} --error {} --output {}", 
+        script_str, config_str, file_type, error_file_str, rs_file_str);
+    println!();
 
     let output = Command::new("python")
         .args(&[
