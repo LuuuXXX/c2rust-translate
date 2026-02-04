@@ -11,7 +11,7 @@ use crate::util;
 /// differing dependency versions or feature flags) and allows each feature to be built,
 /// tested, and iterated on independently.
 pub fn cargo_build(feature: &str) -> Result<()> {
-    validate_feature_name(feature)?;
+    util::validate_feature_name(feature)?;
 
     let project_root = util::find_project_root()?;
     let build_dir = project_root.join(".c2rust").join(feature).join("rust");
@@ -55,17 +55,6 @@ fn get_config_value(key: &str, feature: &str) -> Result<String> {
     Ok(value)
 }
 
-/// Validate feature name to prevent path traversal attacks
-fn validate_feature_name(feature: &str) -> Result<()> {
-    if feature.contains('/') || feature.contains('\\') || feature.contains("..") || feature.is_empty() {
-        anyhow::bail!(
-            "Invalid feature name '{}': must be a simple directory name without path separators or '..'",
-            feature
-        );
-    }
-    Ok(())
-}
-
 /// Execute a command in a configured directory
 fn execute_command_in_dir(
     command_str: &str,
@@ -74,7 +63,7 @@ fn execute_command_in_dir(
     set_ld_preload: bool,
 ) -> Result<()> {
     // Validate feature name to prevent path traversal (defense in depth)
-    validate_feature_name(feature)?;
+    util::validate_feature_name(feature)?;
     
     // Get directory from config using the specified key
     let dir_str = get_config_value(dir_key, feature)?;
@@ -162,7 +151,7 @@ fn execute_command_in_dir(
 
 /// Run clean command for a given feature
 pub fn c2rust_clean(feature: &str) -> Result<()> {
-    validate_feature_name(feature)?;
+    util::validate_feature_name(feature)?;
     
     let clean_cmd = get_config_value("clean.cmd", feature)?;
     
@@ -172,7 +161,7 @@ pub fn c2rust_clean(feature: &str) -> Result<()> {
 /// Run build command for a given feature
 /// Automatically detects and sets LD_PRELOAD if C2RUST_HYBRID_BUILD_LIB is set
 pub fn c2rust_build(feature: &str) -> Result<()> {
-    validate_feature_name(feature)?;
+    util::validate_feature_name(feature)?;
     let build_cmd = get_config_value("build.cmd", feature)?;
     
     execute_command_in_dir(&build_cmd, "build.dir", feature, true)
@@ -180,7 +169,7 @@ pub fn c2rust_build(feature: &str) -> Result<()> {
 
 /// Run test command for a given feature
 pub fn c2rust_test(feature: &str) -> Result<()> {
-    validate_feature_name(feature)?;
+    util::validate_feature_name(feature)?;
     
     let test_cmd = get_config_value("test.cmd", feature)?;
     
@@ -215,24 +204,4 @@ pub fn run_hybrid_build(feature: &str) -> Result<()> {
     c2rust_test(feature)?;
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    
-    #[test]
-    fn test_validate_feature_name() {
-        // Valid feature names
-        assert!(validate_feature_name("valid_feature").is_ok());
-        assert!(validate_feature_name("feature123").is_ok());
-        assert!(validate_feature_name("my-feature").is_ok());
-        
-        // Invalid feature names with path separators
-        assert!(validate_feature_name("invalid/feature").is_err());
-        assert!(validate_feature_name("invalid\\feature").is_err());
-        assert!(validate_feature_name("../feature").is_err());
-        assert!(validate_feature_name("feature/..").is_err());
-        assert!(validate_feature_name("").is_err());
-    }
 }

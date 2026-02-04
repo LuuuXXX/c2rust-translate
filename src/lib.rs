@@ -12,12 +12,7 @@ pub fn translate_feature(feature: &str) -> Result<()> {
     println!("Starting translation for feature: {}", feature);
 
     // Validate feature name to prevent path traversal attacks
-    if feature.contains('/') || feature.contains('\\') || feature.contains("..") || feature.is_empty() {
-        anyhow::bail!(
-            "Invalid feature name '{}': must be a simple directory name without path separators or '..'",
-            feature
-        );
-    }
+    util::validate_feature_name(feature)?;
 
     // Find the project root first
     let project_root = util::find_project_root()?;
@@ -142,7 +137,7 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path) -> Result<()> {
 
     // Step 2.2.3: Call translation tool
     println!("Translating {} file...", file_type);
-    translator::translate_c_to_rust(file_type, &c_file, rs_file)?;
+    translator::translate_c_to_rust(feature, file_type, &c_file, rs_file)?;
 
     // Step 2.2.4: Verify translation result
     let metadata = fs::metadata(rs_file)?;
@@ -171,7 +166,7 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path) -> Result<()> {
                 println!("Build failed, attempting to fix errors...");
                 
                 // Try to fix the error
-                translator::fix_translation_error(file_type, rs_file, &build_error.to_string())?;
+                translator::fix_translation_error(feature, file_type, rs_file, &build_error.to_string())?;
 
                 // Verify fix result
                 let metadata = fs::metadata(rs_file)?;
