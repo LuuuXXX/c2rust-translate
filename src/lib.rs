@@ -97,6 +97,9 @@ pub fn translate_feature(feature: &str) -> Result<()> {
         }
     }
 
+    println!("Running hybrid build tests...");
+    builder::run_hybrid_build(feature)?;
+
     Ok(())
 }
 
