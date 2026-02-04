@@ -98,6 +98,12 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
 }
 
 /// Fix translation errors using the translation tool
+/// 
+/// # Parameters
+/// - `feature`: The feature name being translated
+/// - `_file_type`: Kept for backward compatibility but not used (fix always uses type="fix")
+/// - `rs_file`: The Rust file to be fixed (serves as both input --code and output --output)
+/// - `error_msg`: The compiler error message to be written to a temporary file
 pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, error_msg: &str) -> Result<()> {
     util::validate_feature_name(feature)?;
     
@@ -131,6 +137,9 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
     let rs_file_str = rs_file.to_str()
         .with_context(|| format!("Non-UTF8 path: {}", rs_file.display()))?;
 
+    // Note: --code and --output both point to rs_file, which means the Python script
+    // will read the original file and overwrite it with the fixed version.
+    // This is the intended behavior as specified in the requirements.
     println!("Executing error fix command:");
     println!("python {} --config {} --type fix --code {} --output {} --error {}", 
         script_str, config_str, rs_file_str, rs_file_str, error_file_str);
