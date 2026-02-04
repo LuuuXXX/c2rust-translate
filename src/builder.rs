@@ -31,8 +31,6 @@ pub fn cargo_build(feature: &str) -> Result<()> {
 }
 
 /// Get a specific config value from c2rust-config
-/// Note: Config values are retrieved without --feature flag as per the new design.
-/// The build.dir and build.cmd are expected to be global configurations.
 fn get_config_value(key: &str) -> Result<String> {
     let project_root = util::find_project_root()?;
     let c2rust_dir = project_root.join(".c2rust");
@@ -55,35 +53,6 @@ fn get_config_value(key: &str) -> Result<String> {
     }
 
     Ok(value)
-}
-
-/// Get an optional config value from c2rust-config
-/// Returns None if the key is not found (non-zero exit from c2rust-config),
-/// Returns Some(value) if the key exists and has a non-empty value,
-/// Returns an error for empty values or execution failures.
-fn get_optional_config_value(key: &str) -> Result<Option<String>> {
-    let project_root = util::find_project_root()?;
-    let c2rust_dir = project_root.join(".c2rust");
-    
-    let output = Command::new("c2rust-config")
-        .current_dir(&c2rust_dir)
-        .args(&["config", "--make", "--list", key])
-        .output()
-        .with_context(|| format!("Failed to execute c2rust-config for {}", key))?;
-
-    // If the command failed (non-zero exit), treat it as key not found
-    if !output.status.success() {
-        return Ok(None);
-    }
-
-    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    
-    // If the key exists but is empty, that's a configuration error
-    if value.is_empty() {
-        anyhow::bail!("Config key '{}' is set but empty", key);
-    }
-
-    Ok(Some(value))
 }
 
 /// Validate feature name to prevent path traversal attacks
@@ -176,27 +145,10 @@ fn execute_build_command(
 pub fn c2rust_clean(feature: &str) -> Result<()> {
     validate_feature_name(feature)?;
     
-    // Determine the clean command.
-    // If `clean.cmd` is configured, use it as the full clean command.
-    // Otherwise, fall back to appending "clean" to `build.cmd`
-    // (e.g., "make clean", "ninja clean", etc.).
-    let clean_cmd = if let Some(cmd) = get_optional_config_value("clean.cmd")? {
-        cmd
-    } else {
-        let build_cmd = get_config_value("build.cmd")?;
-        format!("{} clean", build_cmd)
-    };
+    let clean_cmd = get_config_value("clean.cmd")?;
+    let clean_dir = "clean.dir";
     
-    // Determine the clean directory.
-    // If `clean.dir` is configured, use it.
-    // Otherwise, fall back to `build.dir`.
-    let dir_key = if get_optional_config_value("clean.dir")?.is_some() {
-        "clean.dir"
-    } else {
-        "build.dir"
-    };
-    
-    execute_build_command(&clean_cmd, dir_key, feature, false)
+    execute_build_command(&clean_cmd, clean_dir, feature, false)
 }
 
 /// Run build command for a given feature
@@ -212,27 +164,10 @@ pub fn c2rust_build(feature: &str) -> Result<()> {
 pub fn c2rust_test(feature: &str) -> Result<()> {
     validate_feature_name(feature)?;
     
-    // Determine the test command.
-    // If `test.cmd` is configured, use it as the full test command.
-    // Otherwise, fall back to appending "test" to `build.cmd`
-    // (e.g., "make test", "ninja test", etc.).
-    let test_cmd = if let Some(cmd) = get_optional_config_value("test.cmd")? {
-        cmd
-    } else {
-        let build_cmd = get_config_value("build.cmd")?;
-        format!("{} test", build_cmd)
-    };
+    let test_cmd = get_config_value("test.cmd")?;
+    let test_dir = "test.dir";
     
-    // Determine the test directory.
-    // If `test.dir` is configured, use it.
-    // Otherwise, fall back to `build.dir`.
-    let dir_key = if get_optional_config_value("test.dir")?.is_some() {
-        "test.dir"
-    } else {
-        "build.dir"
-    };
-    
-    execute_build_command(&test_cmd, dir_key, feature, false)
+    execute_build_command(&test_cmd, test_dir, feature, false)
 }
 
 /// Run hybrid build test suite
