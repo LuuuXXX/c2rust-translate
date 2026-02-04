@@ -122,7 +122,6 @@ fn execute_build_command(
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let exit_status = output.status;
         
         let error_details = if !stderr.is_empty() {
             format!("stderr: {}", stderr)
@@ -133,9 +132,9 @@ fn execute_build_command(
         };
         
         anyhow::bail!(
-            "Command '{}' failed with exit status {}: {}",
+            "Command '{}' failed with {}: {}",
             command_str,
-            exit_status,
+            output.status,
             error_details
         );
     }
