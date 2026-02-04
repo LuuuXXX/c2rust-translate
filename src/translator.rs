@@ -57,7 +57,6 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
         .with_context(|| format!("Non-UTF8 path: {}", rs_file.display()))?;
     
     let output = Command::new("python")
-        .current_dir(&work_dir)
         .args(&[
             script_str,
             "--config",
@@ -115,7 +114,6 @@ pub fn fix_translation_error(feature: &str, file_type: &str, rs_file: &Path, err
         .with_context(|| format!("Non-UTF8 path: {}", rs_file.display()))?;
 
     let output = Command::new("python")
-        .current_dir(&work_dir)
         .args(&[
             script_str,
             "--config",
