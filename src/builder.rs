@@ -113,22 +113,24 @@ fn execute_command_in_dir(
     }
     
     // Set LD_PRELOAD for build command if requested
-    if set_ld_preload {
-        if let Ok(hybrid_lib) = env::var("C2RUST_HYBRID_BUILD_LIB") {
-            let c2rust_dir = project_root.join(".c2rust");
-            let feature_root = c2rust_dir.join(feature);
-            command.env("LD_PRELOAD", hybrid_lib);
-            command.env("C2RUST_FEATURE_ROOT", feature_root);
-        }
+    let hybrid_lib = if set_ld_preload {
+        env::var("C2RUST_HYBRID_BUILD_LIB").ok()
+    } else {
+        None
+    };
+    
+    if let Some(ref lib_path) = hybrid_lib {
+        let c2rust_dir = project_root.join(".c2rust");
+        let feature_root = c2rust_dir.join(feature);
+        command.env("LD_PRELOAD", lib_path);
+        command.env("C2RUST_FEATURE_ROOT", feature_root);
     }
     
     // Print the complete command being executed
     println!("Executing command: {}", command_str);
     println!("  Working directory: {}", exec_dir.display());
-    if set_ld_preload {
-        if let Ok(hybrid_lib) = env::var("C2RUST_HYBRID_BUILD_LIB") {
-            println!("  LD_PRELOAD: {}", hybrid_lib);
-        }
+    if let Some(ref lib_path) = hybrid_lib {
+        println!("  LD_PRELOAD: {}", lib_path);
     }
     
     let output = command
