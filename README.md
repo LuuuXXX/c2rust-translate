@@ -69,9 +69,9 @@ c2rust-translate translate
 
 - `c2rust-config` - 用于配置管理（混合构建需要）
 
-如果可选工具不可用，混合构建测试将被跳过，不会导致工具失败。
-
 **注意：** 混合构建不再使用 `c2rust-{build,test,clean}` 包装命令。相反，它直接从 `c2rust-config` 获取构建目录和命令，然后在项目目录中执行原生的构建命令（如 make、cmake 等）。对于构建操作，会保留 LD_PRELOAD 机制以拦截系统调用。
+
+如果 `c2rust-config` 不可用或配置缺失，混合构建测试将失败并停止翻译流程。确保 `c2rust-config` 已正确安装并配置了 `build.dir` 和 `build.cmd` 键。可选地，还可以配置 `clean.cmd` 和 `test.cmd` 用于自定义清理和测试命令。
 
 #### 项目结构要求
 
@@ -113,11 +113,17 @@ code-analyse --update --feature <特性名称>
 `c2rust-config` 用于获取构建目录和命令配置：
 
 ```bash
-# 获取构建目录
+# 获取构建目录（必需）
 c2rust-config config --make --list build.dir
 
-# 获取构建命令
+# 获取构建命令（必需）
 c2rust-config config --make --list build.cmd
+
+# 获取清理命令（可选，默认为 "build.cmd clean"）
+c2rust-config config --make --list clean.cmd
+
+# 获取测试命令（可选，默认为 "build.cmd test"）
+c2rust-config config --make --list test.cmd
 ```
 
 这些配置用于在正确的目录下执行原生构建命令（make、cmake 等），而不是通过 `c2rust-{build,test,clean}` 包装命令。对于构建操作，会自动应用 LD_PRELOAD 机制以拦截系统调用。

@@ -94,6 +94,8 @@ fn execute_build_command(
     
     if !build_dir.exists() {
         anyhow::bail!("Build directory does not exist: {}", build_dir.display());
+    } else if !build_dir.is_dir() {
+        anyhow::bail!("Build path is not a directory: {}", build_dir.display());
     }
     
     let mut command = Command::new(&parts[0]);
@@ -119,7 +121,23 @@ fn execute_build_command(
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("Command failed: {}", stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let exit_status = output.status;
+        
+        let error_details = if !stderr.is_empty() {
+            format!("stderr: {}", stderr)
+        } else if !stdout.is_empty() {
+            format!("stdout: {}", stdout)
+        } else {
+            String::from("no output")
+        };
+        
+        anyhow::bail!(
+            "Command '{}' failed with exit status {}: {}",
+            command_str,
+            exit_status,
+            error_details
+        );
     }
 
     Ok(())
@@ -128,12 +146,18 @@ fn execute_build_command(
 /// Run clean command for a given feature
 pub fn c2rust_clean(feature: &str) -> Result<()> {
     validate_feature_name(feature)?;
-    let build_cmd = get_config_value("build.cmd")?;
     
-    // Construct clean command by appending "clean" to build command
-    // This follows the pattern: "make clean", "ninja clean", etc.
-    // For more complex build systems, the config should specify the full clean command in build.cmd
-    let clean_cmd = format!("{} clean", build_cmd);
+    // Determine the clean command.
+    // If `clean.cmd` is configured, use it as the full clean command.
+    // Otherwise, fall back to appending "clean" to `build.cmd`
+    // (e.g., "make clean", "ninja clean", etc.).
+    let clean_cmd = match get_config_value("clean.cmd") {
+        Ok(cmd) => cmd,
+        Err(_) => {
+            let build_cmd = get_config_value("build.cmd")?;
+            format!("{} clean", build_cmd)
+        }
+    };
     
     execute_build_command(&clean_cmd, feature, false)
 }
@@ -150,12 +174,18 @@ pub fn c2rust_build(feature: &str) -> Result<()> {
 /// Run test command for a given feature
 pub fn c2rust_test(feature: &str) -> Result<()> {
     validate_feature_name(feature)?;
-    let build_cmd = get_config_value("build.cmd")?;
     
-    // Construct test command by appending "test" to build command
-    // This follows the pattern: "make test", "ninja test", etc.
-    // For more complex build systems, the config should specify the appropriate test invocation in build.cmd
-    let test_cmd = format!("{} test", build_cmd);
+    // Determine the test command.
+    // If `test.cmd` is configured, use it as the full test command.
+    // Otherwise, fall back to appending "test" to `build.cmd`
+    // (e.g., "make test", "ninja test", etc.).
+    let test_cmd = match get_config_value("test.cmd") {
+        Ok(cmd) => cmd,
+        Err(_) => {
+            let build_cmd = get_config_value("build.cmd")?;
+            format!("{} test", build_cmd)
+        }
+    };
     
     execute_build_command(&test_cmd, feature, false)
 }
