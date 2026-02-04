@@ -30,29 +30,29 @@ pub fn cargo_build(feature: &str) -> Result<()> {
     Ok(())
 }
 
-/// Get a specific command from c2rust-config
-fn get_c2rust_command(cmd_type: &str, feature: &str) -> Result<String> {
+/// Get a specific config value from c2rust-config
+fn get_config_value(key: &str) -> Result<String> {
     let project_root = util::find_project_root()?;
     let c2rust_dir = project_root.join(".c2rust");
     
     let output = Command::new("c2rust-config")
         .current_dir(&c2rust_dir)
-        .args(&["config", "--make", "--feature", feature, "--list", cmd_type])
+        .args(&["config", "--make", "--list", key])
         .output()
-        .with_context(|| format!("Failed to get {} command from config", cmd_type))?;
+        .with_context(|| format!("Failed to get {} from config", key))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("Failed to retrieve {} command: {}", cmd_type, stderr);
+        anyhow::bail!("Failed to retrieve {}: {}", key, stderr);
     }
 
-    let command = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
     
-    if command.is_empty() {
-        anyhow::bail!("Empty {} command from config", cmd_type);
+    if value.is_empty() {
+        anyhow::bail!("Empty {} value from config", key);
     }
 
-    Ok(command)
+    Ok(value)
 }
 
 /// Validate feature name to prevent path traversal attacks
@@ -66,64 +66,45 @@ fn validate_feature_name(feature: &str) -> Result<()> {
     Ok(())
 }
 
-/// Helper function to check if an error is a "command not found" error
-fn is_command_not_found(e: &anyhow::Error) -> bool {
-    e.chain().any(|cause| {
-        if let Some(io_err) = cause.downcast_ref::<std::io::Error>() {
-            io_err.kind() == std::io::ErrorKind::NotFound
-        } else {
-            false
-        }
-    })
-}
-
-/// Report error if command result indicates tool was not found
-fn report_if_not_found(cmd_name: &str, result: Result<()>) -> Result<()> {
-    match result {
-        Ok(_) => Ok(()),
-        Err(e) => {
-            if is_command_not_found(&e) {
-                eprintln!("Error: {} not found", cmd_name);
-                Err(e)
-            } else {
-                Err(e)
-            }
-        }
-    }
-}
-
-/// Execute a c2rust command with the command from config
-fn execute_c2rust_command(
-    cmd_name: &str,
-    cmd_type: &str,
-    actual_command: &str,
+/// Execute a build/test/clean command directly in the build directory
+fn execute_build_command(
+    command_str: &str,
     feature: &str,
-    set_hybrid_env: bool,
+    set_ld_preload: bool,
 ) -> Result<()> {
     // Validate feature name to prevent path traversal (defense in depth)
     validate_feature_name(feature)?;
     
+    // Get build directory from config
+    let build_dir_str = get_config_value("build.dir")?;
+    
     // Parse the command using shell-words to handle quoted arguments and spaces correctly
-    let parts = shell_words::split(actual_command)
-        .with_context(|| format!("Failed to parse command: {}", actual_command))?;
+    let parts = shell_words::split(command_str)
+        .with_context(|| format!("Failed to parse command: {}", command_str))?;
     
     if parts.is_empty() {
         return Ok(()); // Nothing to execute
     }
     
-    // Ensure we run the c2rust-* command from the project .c2rust directory
+    // Ensure we execute the command in the build directory
     let project_root = util::find_project_root()?;
-    let c2rust_dir = project_root.join(".c2rust");
+    let build_dir = project_root.join(&build_dir_str);
     
-    let mut command = Command::new(cmd_name);
-    command.current_dir(&c2rust_dir)
-        .arg(cmd_type)
-        .arg("--")
-        .args(&parts);
+    if !build_dir.exists() {
+        anyhow::bail!("Build directory does not exist: {}", build_dir.display());
+    }
     
-    // Set hybrid build environment variables if requested (only for build command)
-    if set_hybrid_env {
+    let mut command = Command::new(&parts[0]);
+    command.current_dir(&build_dir);
+    
+    if parts.len() > 1 {
+        command.args(&parts[1..]);
+    }
+    
+    // Set LD_PRELOAD for build command if requested
+    if set_ld_preload {
         if let Ok(hybrid_lib) = env::var("C2RUST_HYBRID_BUILD_LIB") {
+            let c2rust_dir = project_root.join(".c2rust");
             let feature_root = c2rust_dir.join(feature);
             command.env("LD_PRELOAD", hybrid_lib);
             command.env("C2RUST_FEATURE_ROOT", feature_root);
@@ -132,40 +113,49 @@ fn execute_c2rust_command(
     
     let output = command
         .output()
-        .with_context(|| format!("Failed to execute {}", cmd_name))?;
+        .with_context(|| format!("Failed to execute command: {}", command_str))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("{} failed: {}", cmd_name, stderr);
+        anyhow::bail!("Command failed: {}", stderr);
     }
 
     Ok(())
 }
 
-/// Run c2rust-clean command for a given feature
+/// Run clean command for a given feature
 pub fn c2rust_clean(feature: &str) -> Result<()> {
     validate_feature_name(feature)?;
-    let actual_command = get_c2rust_command("clean", feature)?;
-    execute_c2rust_command("c2rust-clean", "clean", &actual_command, feature, false)
+    let build_cmd = get_config_value("build.cmd")?;
+    
+    // Construct clean command (typically "make clean", "cmake --build . --target clean", etc.)
+    let clean_cmd = format!("{} clean", build_cmd);
+    
+    execute_build_command(&clean_cmd, feature, false)
 }
 
-/// Run c2rust-build command for a given feature
-/// Automatically detects and sets hybrid build environment variables if C2RUST_HYBRID_BUILD_LIB is set
+/// Run build command for a given feature
+/// Automatically detects and sets LD_PRELOAD if C2RUST_HYBRID_BUILD_LIB is set
 pub fn c2rust_build(feature: &str) -> Result<()> {
     validate_feature_name(feature)?;
-    let actual_command = get_c2rust_command("build", feature)?;
-    execute_c2rust_command("c2rust-build", "build", &actual_command, feature, true)
+    let build_cmd = get_config_value("build.cmd")?;
+    
+    execute_build_command(&build_cmd, feature, true)
 }
 
-/// Run c2rust-test command for a given feature
+/// Run test command for a given feature
 pub fn c2rust_test(feature: &str) -> Result<()> {
     validate_feature_name(feature)?;
-    let actual_command = get_c2rust_command("test", feature)?;
-    execute_c2rust_command("c2rust-test", "test", &actual_command, feature, false)
+    let build_cmd = get_config_value("build.cmd")?;
+    
+    // Construct test command (typically "make test", "cmake --build . --target test", etc.)
+    let test_cmd = format!("{} test", build_cmd);
+    
+    execute_build_command(&test_cmd, feature, false)
 }
 
 /// Run hybrid build test suite
-/// Reports error and exits if c2rust tools are not available
+/// Reports error and exits if c2rust-config is not available
 pub fn run_hybrid_build(feature: &str) -> Result<()> {
     // Get build commands from config
     let project_root = util::find_project_root()?;
@@ -186,10 +176,10 @@ pub fn run_hybrid_build(feature: &str) -> Result<()> {
         anyhow::bail!("c2rust-config not found, cannot run hybrid build tests");
     }
 
-    // Execute commands with error reporting
-    report_if_not_found("c2rust-clean", c2rust_clean(feature))?;
-    report_if_not_found("c2rust-build", c2rust_build(feature))?;
-    report_if_not_found("c2rust-test", c2rust_test(feature))?;
+    // Execute commands
+    c2rust_clean(feature)?;
+    c2rust_build(feature)?;
+    c2rust_test(feature)?;
 
     Ok(())
 }
@@ -197,33 +187,6 @@ pub fn run_hybrid_build(feature: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io;
-    
-    #[test]
-    fn test_command_name_generation() {
-        let cmd_name = format!("c2rust-{}", "build");
-        assert_eq!(cmd_name, "c2rust-build");
-        
-        let cmd_name = format!("c2rust-{}", "test");
-        assert_eq!(cmd_name, "c2rust-test");
-    }
-    
-    #[test]
-    fn test_is_command_not_found() {
-        // Create an error that is a "command not found" error
-        let not_found_err = io::Error::new(io::ErrorKind::NotFound, "command not found");
-        let anyhow_err = anyhow::Error::from(not_found_err);
-        assert!(is_command_not_found(&anyhow_err));
-        
-        // Create an error that is not a "command not found" error
-        let other_err = io::Error::new(io::ErrorKind::PermissionDenied, "permission denied");
-        let anyhow_err = anyhow::Error::from(other_err);
-        assert!(!is_command_not_found(&anyhow_err));
-        
-        // Create a regular anyhow error (not from io::Error)
-        let regular_err = anyhow::anyhow!("some error");
-        assert!(!is_command_not_found(&regular_err));
-    }
     
     #[test]
     fn test_validate_feature_name() {
