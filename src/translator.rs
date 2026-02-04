@@ -11,10 +11,11 @@ use crate::util;
 fn get_translate_script_dir() -> Result<PathBuf> {
     match std::env::var("C2RUST_TRANSLATE_DIT") {
         Ok(path) => {
-            if path.trim().is_empty() {
+            let trimmed = path.trim();
+            if trimmed.is_empty() {
                 anyhow::bail!("Environment variable C2RUST_TRANSLATE_DIT is empty. Please set it to the directory containing translate_and_fix.py script.");
             }
-            Ok(PathBuf::from(path))
+            Ok(PathBuf::from(trimmed))
         }
         Err(std::env::VarError::NotPresent) => {
             anyhow::bail!("Environment variable C2RUST_TRANSLATE_DIT is not set. Please set it to the directory containing translate_and_fix.py script.");
@@ -159,12 +160,12 @@ mod tests {
     /// Guard to ensure environment variable is restored even on panic
     struct EnvVarGuard {
         key: &'static str,
-        original_value: Option<String>,
+        original_value: Option<std::ffi::OsString>,
     }
     
     impl EnvVarGuard {
         fn new(key: &'static str) -> Self {
-            let original_value = std::env::var(key).ok();
+            let original_value = std::env::var_os(key);
             Self { key, original_value }
         }
         
@@ -264,5 +265,37 @@ mod tests {
         
         let path = result.unwrap();
         assert_eq!(path, PathBuf::from("/path/to/scripts/translate_and_fix.py"));
+    }
+    
+    #[test]
+    #[serial]
+    #[cfg(unix)]
+    fn test_get_translate_script_dir_non_utf8() {
+        use std::os::unix::ffi::OsStringExt;
+        
+        let _guard = EnvVarGuard::new("C2RUST_TRANSLATE_DIT");
+        
+        // Create an invalid UTF-8 sequence
+        let invalid_utf8 = std::ffi::OsString::from_vec(vec![0xFF, 0xFE, 0xFD]);
+        std::env::set_var("C2RUST_TRANSLATE_DIT", &invalid_utf8);
+        
+        let result = get_translate_script_dir();
+        assert!(result.is_err());
+        
+        let err_msg = format!("{:#}", result.unwrap_err());
+        assert!(err_msg.contains("C2RUST_TRANSLATE_DIT"));
+        assert!(err_msg.contains("non-UTF8"));
+    }
+    
+    #[test]
+    #[serial]
+    fn test_get_translate_script_dir_whitespace_trimming() {
+        let _guard = EnvVarGuard::new("C2RUST_TRANSLATE_DIT");
+        _guard.set("  /path/to/scripts  ");
+        
+        let result = get_translate_script_dir();
+        assert!(result.is_ok());
+        // Should be trimmed
+        assert_eq!(result.unwrap(), PathBuf::from("/path/to/scripts"));
     }
 }
