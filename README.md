@@ -98,7 +98,7 @@ c2rust-translate translate
 python translate_and_fix.py --config <项目根>/.c2rust/config.toml --type <var|fn> --code <c文件> --output <rs文件>
 
 # 用于修复错误
-python translate_and_fix.py --config <项目根>/.c2rust/config.toml --type <var|fn> --error <错误文件> --output <rs文件>
+python translate_and_fix.py --config <项目根>/.c2rust/config.toml --type fix --code <code.rs> --output <output.rs> --error <error.txt>
 ```
 
 #### 代码分析工具用法

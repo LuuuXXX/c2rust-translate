@@ -41,6 +41,32 @@ fn get_config_path() -> Result<PathBuf> {
     Ok(project_root.join(".c2rust/config.toml"))
 }
 
+/// Build the argument list for the fix command
+/// 
+/// Returns a vector of arguments to be passed to translate_and_fix.py for fixing errors.
+/// The arguments follow the format: --config --type fix --code --output --error
+fn build_fix_args<'a>(
+    script_path: &'a str,
+    config_path: &'a str,
+    code_file: &'a str,
+    output_file: &'a str,
+    error_file: &'a str,
+) -> Vec<&'a str> {
+    vec![
+        script_path,
+        "--config",
+        config_path,
+        "--type",
+        "fix",
+        "--code",
+        code_file,
+        "--output",
+        output_file,
+        "--error",
+        error_file,
+    ]
+}
+
 /// Translate a C file to Rust using the translation tool
 pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_file: &Path) -> Result<()> {
     util::validate_feature_name(feature)?;
@@ -145,20 +171,16 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
         script_str, config_str, rs_file_str, rs_file_str, error_file_str);
     println!();
 
+    let args = build_fix_args(
+        script_str,
+        config_str,
+        rs_file_str,
+        rs_file_str,
+        error_file_str,
+    );
+
     let output = Command::new("python")
-        .args(&[
-            script_str,
-            "--config",
-            config_str,
-            "--type",
-            "fix",
-            "--code",
-            rs_file_str,
-            "--output",
-            rs_file_str,
-            "--error",
-            error_file_str,
-        ])
+        .args(&args)
         .output()
         .context("Failed to execute translate_and_fix.py for fixing")?;
 
@@ -318,5 +340,30 @@ mod tests {
         assert!(result.is_ok());
         // Should be trimmed
         assert_eq!(result.unwrap(), PathBuf::from("/path/to/scripts"));
+    }
+    
+    #[test]
+    fn test_build_fix_args() {
+        let script = "/path/to/translate_and_fix.py";
+        let config = "/project/.c2rust/config.toml";
+        let code = "/project/feature/rust/code.rs";
+        let output = "/project/feature/rust/code.rs";
+        let error = "/tmp/error.txt";
+        
+        let args = build_fix_args(script, config, code, output, error);
+        
+        // Verify the exact sequence of arguments
+        assert_eq!(args.len(), 11);
+        assert_eq!(args[0], script);
+        assert_eq!(args[1], "--config");
+        assert_eq!(args[2], config);
+        assert_eq!(args[3], "--type");
+        assert_eq!(args[4], "fix");
+        assert_eq!(args[5], "--code");
+        assert_eq!(args[6], code);
+        assert_eq!(args[7], "--output");
+        assert_eq!(args[8], output);
+        assert_eq!(args[9], "--error");
+        assert_eq!(args[10], error);
     }
 }
