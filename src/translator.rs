@@ -4,8 +4,36 @@ use std::process::Command;
 use std::io::Write;
 use crate::util;
 
-// Script name used for C to Rust translation
-const TRANSLATE_SCRIPT: &str = "translate_and_fix.py";
+/// Get the translate script directory from environment variable
+/// 
+/// The environment variable should contain the path to the directory
+/// containing the translate_and_fix.py script.
+fn get_translate_script_dir() -> Result<PathBuf> {
+    match std::env::var("C2RUST_TRANSLATE_DIT") {
+        Ok(path) => {
+            let trimmed = path.trim();
+            if trimmed.is_empty() {
+                anyhow::bail!("Environment variable C2RUST_TRANSLATE_DIT is empty. Please set it to the directory containing translate_and_fix.py script.");
+            }
+            Ok(PathBuf::from(trimmed))
+        }
+        Err(std::env::VarError::NotPresent) => {
+            anyhow::bail!("Environment variable C2RUST_TRANSLATE_DIT is not set. Please set it to the directory containing translate_and_fix.py script.");
+        }
+        Err(std::env::VarError::NotUnicode(_)) => {
+            anyhow::bail!("Environment variable C2RUST_TRANSLATE_DIT contains non-UTF8 data. Please ensure it contains a valid UTF-8 path.");
+        }
+    }
+}
+
+/// Get the full path to the translate_and_fix.py script
+/// 
+/// This reads the directory path from C2RUST_TRANSLATE_DIT environment variable
+/// and appends the script filename.
+fn get_translate_script_full_path() -> Result<PathBuf> {
+    let translate_script_dir = get_translate_script_dir()?;
+    Ok(translate_script_dir.join("translate_and_fix.py"))
+}
 
 /// Get the config.toml path by searching for .c2rust directory
 fn get_config_path() -> Result<PathBuf> {
@@ -29,6 +57,11 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
         );
     }
     
+    // Get translate script path from environment variable
+    let script_path = get_translate_script_full_path()?;
+    let script_str = script_path.to_str()
+        .with_context(|| format!("Non-UTF8 path: {}", script_path.display()))?;
+    
     let config_str = config_path.to_str()
         .with_context(|| format!("Non-UTF8 path: {}", config_path.display()))?;
     let c_file_str = c_file.to_str()
@@ -37,9 +70,8 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
         .with_context(|| format!("Non-UTF8 path: {}", rs_file.display()))?;
     
     let output = Command::new("python")
-        .current_dir(&work_dir)
         .args(&[
-            TRANSLATE_SCRIPT,
+            script_str,
             "--config",
             config_str,
             "--type",
@@ -82,6 +114,11 @@ pub fn fix_translation_error(feature: &str, file_type: &str, rs_file: &Path, err
     write!(temp_file, "{}", error_msg)
         .context("Failed to write error message to temp file")?;
     
+    // Get translate script path from environment variable
+    let script_path = get_translate_script_full_path()?;
+    let script_str = script_path.to_str()
+        .with_context(|| format!("Non-UTF8 path: {}", script_path.display()))?;
+    
     let config_str = config_path.to_str()
         .with_context(|| format!("Non-UTF8 path: {}", config_path.display()))?;
     let error_file_str = temp_file.path().to_str()
@@ -90,9 +127,8 @@ pub fn fix_translation_error(feature: &str, file_type: &str, rs_file: &Path, err
         .with_context(|| format!("Non-UTF8 path: {}", rs_file.display()))?;
 
     let output = Command::new("python")
-        .current_dir(&work_dir)
         .args(&[
-            TRANSLATE_SCRIPT,
+            script_str,
             "--config",
             config_str,
             "--type",
@@ -118,6 +154,38 @@ pub fn fix_translation_error(feature: &str, file_type: &str, rs_file: &Path, err
 mod tests {
     use std::io::Write;
     use tempfile::NamedTempFile;
+    use super::*;
+    use serial_test::serial;
+    
+    /// Guard to ensure environment variable is restored even on panic
+    struct EnvVarGuard {
+        key: &'static str,
+        original_value: Option<std::ffi::OsString>,
+    }
+    
+    impl EnvVarGuard {
+        fn new(key: &'static str) -> Self {
+            let original_value = std::env::var_os(key);
+            Self { key, original_value }
+        }
+        
+        fn set(&self, value: &str) {
+            std::env::set_var(self.key, value);
+        }
+        
+        fn remove(&self) {
+            std::env::remove_var(self.key);
+        }
+    }
+    
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            match &self.original_value {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
     
     #[test]
     fn test_temp_error_file_creation() {
@@ -131,5 +199,103 @@ mod tests {
 
         assert_eq!(content, test_msg);
         // temp_file is automatically deleted when it goes out of scope
+    }
+    
+    #[test]
+    #[serial]
+    fn test_get_translate_script_dir_not_set() {
+        let _guard = EnvVarGuard::new("C2RUST_TRANSLATE_DIT");
+        _guard.remove();
+        
+        let result = get_translate_script_dir();
+        assert!(result.is_err());
+        
+        let err_msg = format!("{:#}", result.unwrap_err());
+        assert!(err_msg.contains("C2RUST_TRANSLATE_DIT"));
+        assert!(err_msg.contains("not set"));
+    }
+    
+    #[test]
+    #[serial]
+    fn test_get_translate_script_dir_empty() {
+        let _guard = EnvVarGuard::new("C2RUST_TRANSLATE_DIT");
+        _guard.set("");
+        
+        let result = get_translate_script_dir();
+        assert!(result.is_err());
+        
+        let err_msg = format!("{:#}", result.unwrap_err());
+        assert!(err_msg.contains("C2RUST_TRANSLATE_DIT"));
+        assert!(err_msg.contains("empty"));
+    }
+    
+    #[test]
+    #[serial]
+    fn test_get_translate_script_dir_whitespace() {
+        let _guard = EnvVarGuard::new("C2RUST_TRANSLATE_DIT");
+        _guard.set("   ");
+        
+        let result = get_translate_script_dir();
+        assert!(result.is_err());
+        
+        let err_msg = format!("{:#}", result.unwrap_err());
+        assert!(err_msg.contains("C2RUST_TRANSLATE_DIT"));
+        assert!(err_msg.contains("empty"));
+    }
+    
+    #[test]
+    #[serial]
+    fn test_get_translate_script_dir_valid() {
+        let _guard = EnvVarGuard::new("C2RUST_TRANSLATE_DIT");
+        _guard.set("/path/to/scripts");
+        
+        let result = get_translate_script_dir();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), PathBuf::from("/path/to/scripts"));
+    }
+    
+    #[test]
+    #[serial]
+    fn test_get_translate_script_full_path() {
+        let _guard = EnvVarGuard::new("C2RUST_TRANSLATE_DIT");
+        _guard.set("/path/to/scripts");
+        
+        let result = get_translate_script_full_path();
+        assert!(result.is_ok());
+        
+        let path = result.unwrap();
+        assert_eq!(path, PathBuf::from("/path/to/scripts/translate_and_fix.py"));
+    }
+    
+    #[test]
+    #[serial]
+    #[cfg(unix)]
+    fn test_get_translate_script_dir_non_utf8() {
+        use std::os::unix::ffi::OsStringExt;
+        
+        let _guard = EnvVarGuard::new("C2RUST_TRANSLATE_DIT");
+        
+        // Create an invalid UTF-8 sequence
+        let invalid_utf8 = std::ffi::OsString::from_vec(vec![0xFF, 0xFE, 0xFD]);
+        std::env::set_var("C2RUST_TRANSLATE_DIT", &invalid_utf8);
+        
+        let result = get_translate_script_dir();
+        assert!(result.is_err());
+        
+        let err_msg = format!("{:#}", result.unwrap_err());
+        assert!(err_msg.contains("C2RUST_TRANSLATE_DIT"));
+        assert!(err_msg.contains("non-UTF8"));
+    }
+    
+    #[test]
+    #[serial]
+    fn test_get_translate_script_dir_whitespace_trimming() {
+        let _guard = EnvVarGuard::new("C2RUST_TRANSLATE_DIT");
+        _guard.set("  /path/to/scripts  ");
+        
+        let result = get_translate_script_dir();
+        assert!(result.is_ok());
+        // Should be trimmed
+        assert_eq!(result.unwrap(), PathBuf::from("/path/to/scripts"));
     }
 }
