@@ -16,6 +16,12 @@ fn get_translate_script_path() -> Result<String> {
         })
 }
 
+/// Get the full path to the translate_and_fix.py script
+fn get_translate_script_full_path() -> Result<PathBuf> {
+    let translate_script_dir = get_translate_script_path()?;
+    Ok(PathBuf::from(&translate_script_dir).join("translate_and_fix.py"))
+}
+
 /// Get the config.toml path by searching for .c2rust directory
 fn get_config_path() -> Result<PathBuf> {
     let project_root = util::find_project_root()?;
@@ -39,8 +45,7 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
     }
     
     // Get translate script path from environment variable
-    let translate_script_dir = get_translate_script_path()?;
-    let script_path = PathBuf::from(&translate_script_dir).join("translate_and_fix.py");
+    let script_path = get_translate_script_full_path()?;
     let script_str = script_path.to_str()
         .with_context(|| format!("Non-UTF8 path: {}", script_path.display()))?;
     
@@ -98,8 +103,7 @@ pub fn fix_translation_error(feature: &str, file_type: &str, rs_file: &Path, err
         .context("Failed to write error message to temp file")?;
     
     // Get translate script path from environment variable
-    let translate_script_dir = get_translate_script_path()?;
-    let script_path = PathBuf::from(&translate_script_dir).join("translate_and_fix.py");
+    let script_path = get_translate_script_full_path()?;
     let script_str = script_path.to_str()
         .with_context(|| format!("Non-UTF8 path: {}", script_path.display()))?;
     
@@ -155,9 +159,15 @@ mod tests {
         // temp_file is automatically deleted when it goes out of scope
     }
     
+    // Note: These tests manipulate environment variables and should be run serially
+    // to avoid race conditions. In production, consider using the `serial_test` crate.
+    
     #[test]
     fn test_get_translate_script_path_not_set() {
-        // Remove the environment variable if it exists
+        // Save current value if it exists
+        let saved_value = std::env::var("C2RUST_TRANSLATE_DIT").ok();
+        
+        // Remove the environment variable
         std::env::remove_var("C2RUST_TRANSLATE_DIT");
         
         let result = get_translate_script_path();
@@ -166,10 +176,18 @@ mod tests {
         let err_msg = format!("{:#}", result.unwrap_err());
         assert!(err_msg.contains("C2RUST_TRANSLATE_DIT"));
         assert!(err_msg.contains("not set"));
+        
+        // Restore original value if it existed
+        if let Some(value) = saved_value {
+            std::env::set_var("C2RUST_TRANSLATE_DIT", value);
+        }
     }
     
     #[test]
     fn test_get_translate_script_path_empty() {
+        // Save current value if it exists
+        let saved_value = std::env::var("C2RUST_TRANSLATE_DIT").ok();
+        
         // Set the environment variable to empty string
         std::env::set_var("C2RUST_TRANSLATE_DIT", "");
         
@@ -180,12 +198,18 @@ mod tests {
         assert!(err_msg.contains("C2RUST_TRANSLATE_DIT"));
         assert!(err_msg.contains("empty"));
         
-        // Clean up
-        std::env::remove_var("C2RUST_TRANSLATE_DIT");
+        // Restore original value or remove if it didn't exist
+        match saved_value {
+            Some(value) => std::env::set_var("C2RUST_TRANSLATE_DIT", value),
+            None => std::env::remove_var("C2RUST_TRANSLATE_DIT"),
+        }
     }
     
     #[test]
     fn test_get_translate_script_path_whitespace() {
+        // Save current value if it exists
+        let saved_value = std::env::var("C2RUST_TRANSLATE_DIT").ok();
+        
         // Set the environment variable to whitespace only
         std::env::set_var("C2RUST_TRANSLATE_DIT", "   ");
         
@@ -196,12 +220,18 @@ mod tests {
         assert!(err_msg.contains("C2RUST_TRANSLATE_DIT"));
         assert!(err_msg.contains("empty"));
         
-        // Clean up
-        std::env::remove_var("C2RUST_TRANSLATE_DIT");
+        // Restore original value or remove if it didn't exist
+        match saved_value {
+            Some(value) => std::env::set_var("C2RUST_TRANSLATE_DIT", value),
+            None => std::env::remove_var("C2RUST_TRANSLATE_DIT"),
+        }
     }
     
     #[test]
     fn test_get_translate_script_path_valid() {
+        // Save current value if it exists
+        let saved_value = std::env::var("C2RUST_TRANSLATE_DIT").ok();
+        
         // Set the environment variable to a valid path
         std::env::set_var("C2RUST_TRANSLATE_DIT", "/path/to/scripts");
         
@@ -209,7 +239,31 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "/path/to/scripts");
         
-        // Clean up
-        std::env::remove_var("C2RUST_TRANSLATE_DIT");
+        // Restore original value or remove if it didn't exist
+        match saved_value {
+            Some(value) => std::env::set_var("C2RUST_TRANSLATE_DIT", value),
+            None => std::env::remove_var("C2RUST_TRANSLATE_DIT"),
+        }
+    }
+    
+    #[test]
+    fn test_get_translate_script_full_path() {
+        // Save current value if it exists
+        let saved_value = std::env::var("C2RUST_TRANSLATE_DIT").ok();
+        
+        // Set the environment variable to a valid path
+        std::env::set_var("C2RUST_TRANSLATE_DIT", "/path/to/scripts");
+        
+        let result = get_translate_script_full_path();
+        assert!(result.is_ok());
+        
+        let path = result.unwrap();
+        assert_eq!(path, PathBuf::from("/path/to/scripts/translate_and_fix.py"));
+        
+        // Restore original value or remove if it didn't exist
+        match saved_value {
+            Some(value) => std::env::set_var("C2RUST_TRANSLATE_DIT", value),
+            None => std::env::remove_var("C2RUST_TRANSLATE_DIT"),
+        }
     }
 }
