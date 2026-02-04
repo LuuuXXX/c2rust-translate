@@ -142,12 +142,8 @@ fn execute_command_in_dir(
         if let Some(ref feature_root) = feature_root {
             print!("C2RUST_FEATURE_ROOT={} ", shell_words::quote(&feature_root.display().to_string()));
         }
-        if let Some(ref project_root) = project_root {
-            print!("C2RUST_PROJECT_ROOT={} ", shell_words::quote(&project_root.display().to_string()));
-        }
-        if let Some(ref rust_lib_path) = rust_lib_path {
-            print!("C2RUST_RUST_LIB={} ", shell_words::quote(&rust_lib_path.display().to_string()));
-        }
+        print!("C2RUST_PROJECT_ROOT={} ", shell_words::quote(&project_root.display().to_string()));
+        print!("C2RUST_RUST_LIB={} ", shell_words::quote(&rust_lib_path.display().to_string()));
     }
     // Print the actual command that will be executed (after shell-words parsing)
     println!("{}", shell_words::join(&parts));
