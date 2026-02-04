@@ -70,11 +70,6 @@ pub fn translate_feature(feature: &str) -> Result<()> {
             }
         }
         
-        // Create .gitkeep file to ensure directory can be tracked by git
-        let gitkeep_path = rust_dir.join(".gitkeep");
-        std::fs::write(&gitkeep_path, "")
-            .context(format!("Failed to create .gitkeep at {}", gitkeep_path.display()))?;
-        
         // Commit the initialization
         git::git_commit(&format!("Initialize {} rust directory", feature), feature)?;
     }
