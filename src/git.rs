@@ -10,8 +10,8 @@ pub fn git_commit(message: &str, feature: &str) -> Result<()> {
     
     // Add only .c2rust directory and the specific feature directory (not all features)
     // This prevents accidentally committing unrelated local modifications
-    // Path is relative to .c2rust directory (../<feature>/rust/)
-    let feature_rust_path = format!("../{}/rust/", feature);
+    // Path is relative to .c2rust directory (.c2rust/<feature>/rust/)
+    let feature_rust_path = format!("{}/rust/", feature);
     let add_output = Command::new("git")
         .current_dir(&c2rust_dir)
         .args(&["add", ".", &feature_rust_path])
@@ -23,7 +23,7 @@ pub fn git_commit(message: &str, feature: &str) -> Result<()> {
         anyhow::bail!("git add failed: {}", stderr);
     }
 
-    // Commit from the project root
+    // Commit from the .c2rust directory
     let commit_output = Command::new("git")
         .current_dir(&c2rust_dir)
         .args(&["commit", "-m", message])
