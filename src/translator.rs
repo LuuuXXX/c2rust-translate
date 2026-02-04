@@ -125,7 +125,7 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
         .context("Failed to execute translate_and_fix.py")?;
 
     if !status.success() {
-        anyhow::bail!("Translation failed with exit code: {}", status.code().unwrap_or(-1));
+        anyhow::bail!("Translation failed with exit code: {} (check output above for details)", status.code().unwrap_or(-1));
     }
 
     Ok(())
@@ -198,7 +198,7 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
         .context("Failed to execute translate_and_fix.py for fixing")?;
 
     if !status.success() {
-        anyhow::bail!("Fix failed with exit code: {}", status.code().unwrap_or(-1));
+        anyhow::bail!("Fix failed with exit code: {} (check output above for details)", status.code().unwrap_or(-1));
     }
 
     // temp_file is automatically deleted when it goes out of scope
