@@ -66,8 +66,8 @@ fn validate_feature_name(feature: &str) -> Result<()> {
     Ok(())
 }
 
-/// Execute a build/test/clean command directly in the specified directory
-fn execute_build_command(
+/// Execute a command in a configured directory
+fn execute_command_in_dir(
     command_str: &str,
     dir_key: &str,
     feature: &str,
@@ -79,12 +79,31 @@ fn execute_build_command(
     // Get directory from config using the specified key
     let dir_str = get_config_value(dir_key, feature)?;
     
+    // Validate that dir_str is a relative path without path traversal
+    if std::path::Path::new(&dir_str).is_absolute() {
+        anyhow::bail!(
+            "Directory path from config must be relative, got: {}",
+            dir_str
+        );
+    }
+    if dir_str.contains("..") {
+        anyhow::bail!(
+            "Directory path from config cannot contain '..', got: {}",
+            dir_str
+        );
+    }
+    
     // Parse the command using shell-words to handle quoted arguments and spaces correctly
     let parts = shell_words::split(command_str)
         .with_context(|| format!("Failed to parse command: {}", command_str))?;
     
     if parts.is_empty() {
         return Ok(()); // Nothing to execute
+    }
+    
+    // Validate that the command is non-empty
+    if parts[0].is_empty() {
+        anyhow::bail!("Command cannot be empty");
     }
     
     // Ensure we execute the command in the correct directory
@@ -147,7 +166,7 @@ pub fn c2rust_clean(feature: &str) -> Result<()> {
     
     let clean_cmd = get_config_value("clean.cmd", feature)?;
     
-    execute_build_command(&clean_cmd, "clean.dir", feature, false)
+    execute_command_in_dir(&clean_cmd, "clean.dir", feature, false)
 }
 
 /// Run build command for a given feature
@@ -156,7 +175,7 @@ pub fn c2rust_build(feature: &str) -> Result<()> {
     validate_feature_name(feature)?;
     let build_cmd = get_config_value("build.cmd", feature)?;
     
-    execute_build_command(&build_cmd, "build.dir", feature, true)
+    execute_command_in_dir(&build_cmd, "build.dir", feature, true)
 }
 
 /// Run test command for a given feature
@@ -165,7 +184,7 @@ pub fn c2rust_test(feature: &str) -> Result<()> {
     
     let test_cmd = get_config_value("test.cmd", feature)?;
     
-    execute_build_command(&test_cmd, "test.dir", feature, false)
+    execute_command_in_dir(&test_cmd, "test.dir", feature, false)
 }
 
 /// Run hybrid build test suite

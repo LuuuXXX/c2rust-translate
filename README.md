@@ -65,9 +65,9 @@ c2rust-translate translate
 - `code-analyse` - 用于代码分析和初始化
 - `translate_and_fix.py` - 用于翻译和错误修复的 Python 脚本
 
-**可选依赖（存在于 PATH 中时将启用额外功能）：**
+**必需依赖（存在于 PATH 中）：**
 
-- `c2rust-config` - 用于配置管理（混合构建需要）
+- `c2rust-config` - 用于配置管理（混合构建必需）
 
 **注意：** 混合构建不再使用 `c2rust-{build,test,clean}` 包装命令。相反，它直接从 `c2rust-config` 获取构建目录和命令，然后在项目目录中执行原生的构建命令（如 make、cmake 等）。对于构建操作，会保留 LD_PRELOAD 机制以拦截系统调用。
 
