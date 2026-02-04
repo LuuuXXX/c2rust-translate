@@ -11,24 +11,22 @@ fn get_config_path() -> Result<PathBuf> {
 }
 
 /// Translate a C file to Rust using the translation tool
-pub fn translate_c_to_rust(file_type: &str, c_file: &Path, rs_file: &Path) -> Result<()> {
+pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_file: &Path) -> Result<()> {
     let project_root = util::find_project_root()?;
     let config_path = get_config_path()?;
-    let script_path = project_root.join("translate_and_fix.py");
+    let work_dir = project_root.join(".c2rust").join(feature).join("rust");
     
     let config_str = config_path.to_str()
         .with_context(|| format!("Non-UTF8 path: {}", config_path.display()))?;
-    let script_str = script_path.to_str()
-        .with_context(|| format!("Non-UTF8 path: {}", script_path.display()))?;
     let c_file_str = c_file.to_str()
         .with_context(|| format!("Non-UTF8 path: {}", c_file.display()))?;
     let rs_file_str = rs_file.to_str()
         .with_context(|| format!("Non-UTF8 path: {}", rs_file.display()))?;
     
     let output = Command::new("python")
-        .current_dir(&project_root)
+        .current_dir(&work_dir)
         .args(&[
-            script_str,
+            "translate_and_fix.py",
             "--config",
             config_str,
             "--type",
@@ -50,10 +48,10 @@ pub fn translate_c_to_rust(file_type: &str, c_file: &Path, rs_file: &Path) -> Re
 }
 
 /// Fix translation errors using the translation tool
-pub fn fix_translation_error(file_type: &str, rs_file: &Path, error_msg: &str) -> Result<()> {
+pub fn fix_translation_error(feature: &str, file_type: &str, rs_file: &Path, error_msg: &str) -> Result<()> {
     let project_root = util::find_project_root()?;
     let config_path = get_config_path()?;
-    let script_path = project_root.join("translate_and_fix.py");
+    let work_dir = project_root.join(".c2rust").join(feature).join("rust");
     
     // Create a unique temporary file with error message
     let mut temp_file = tempfile::NamedTempFile::new()
@@ -63,17 +61,15 @@ pub fn fix_translation_error(file_type: &str, rs_file: &Path, error_msg: &str) -
     
     let config_str = config_path.to_str()
         .with_context(|| format!("Non-UTF8 path: {}", config_path.display()))?;
-    let script_str = script_path.to_str()
-        .with_context(|| format!("Non-UTF8 path: {}", script_path.display()))?;
     let error_file_str = temp_file.path().to_str()
         .with_context(|| format!("Non-UTF8 path: {}", temp_file.path().display()))?;
     let rs_file_str = rs_file.to_str()
         .with_context(|| format!("Non-UTF8 path: {}", rs_file.display()))?;
 
     let output = Command::new("python")
-        .current_dir(&project_root)
+        .current_dir(&work_dir)
         .args(&[
-            script_str,
+            "translate_and_fix.py",
             "--config",
             config_str,
             "--type",
