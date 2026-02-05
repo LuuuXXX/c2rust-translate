@@ -176,4 +176,50 @@ mod tests {
         assert_eq!(state.processed_count, 1);
         assert_eq!(state.processed_files.len(), 1);
     }
+
+    #[test]
+    fn test_set_and_get_total_count() {
+        let mut state = ProgressState::default();
+        assert_eq!(state.get_total_count(), 0);
+
+        state.set_total_count(10);
+        assert_eq!(state.get_total_count(), 10);
+
+        state.set_total_count(25);
+        assert_eq!(state.get_total_count(), 25);
+    }
+
+    #[test]
+    fn test_total_count_serialization() {
+        // Create a state with total_count set
+        let mut state = ProgressState::default();
+        state.processed_count = 3;
+        state.processed_files.push("file1.rs".to_string());
+        state.set_total_count(10);
+
+        // Serialize to JSON
+        let json = serde_json::to_string(&state).unwrap();
+        
+        // Deserialize back
+        let restored: ProgressState = serde_json::from_str(&json).unwrap();
+        
+        assert_eq!(restored.processed_count, 3);
+        assert_eq!(restored.processed_files.len(), 1);
+        assert_eq!(restored.get_total_count(), 10);
+    }
+
+    #[test]
+    fn test_total_count_backward_compatibility() {
+        // Test that old progress.json files without total_count field can be loaded
+        let json_without_total = r#"{
+            "processed_count": 5,
+            "processed_files": ["file1.rs", "file2.rs"]
+        }"#;
+        
+        let state: ProgressState = serde_json::from_str(json_without_total).unwrap();
+        
+        assert_eq!(state.processed_count, 5);
+        assert_eq!(state.processed_files.len(), 2);
+        assert_eq!(state.get_total_count(), 0); // Should default to 0
+    }
 }
