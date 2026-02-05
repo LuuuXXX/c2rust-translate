@@ -74,19 +74,6 @@ pub fn translate_feature(feature: &str) -> Result<()> {
         git::git_commit(&format!("Initialize {} rust directory", feature), feature)?;
     }
 
-    // Translate type.h to type.rs
-    let type_h_path = rust_dir.join("src").join("types.h");
-    let type_rs_path = rust_dir.join("src").join("types.rs");
-    
-    if type_h_path.exists() {
-        println!("{}", "Translating types.h to types.rs...".bright_blue());
-        translator::translate_c_to_rust(feature, "var", &type_h_path, &type_rs_path)?;
-        println!("{}", "✓ Type header translation complete".bright_green());
-        
-        // Commit the type header translation
-        git::git_commit(&format!("Translate type.h to type.rs for {} feature", feature), feature)?;
-    }
-
     // Load or initialize progress state
     let mut progress_state = progress::ProgressState::load(feature)?;
 
