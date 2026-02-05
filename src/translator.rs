@@ -149,6 +149,18 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
         anyhow::bail!("Translation failed with exit code: {} (check output above for details)", status.code().unwrap_or(-1));
     }
 
+    // Read and display the translated Rust code
+    if let Ok(rs_content) = std::fs::read_to_string(rs_file) {
+        let lines: Vec<&str> = rs_content.lines().collect();
+        
+        println!("│ {}", "─ Translated Rust Code ─".bright_green());
+        for (i, line) in lines.iter().enumerate() {
+            println!("│ {} {}", format!("{:3}", i + 1).dimmed(), line);
+        }
+        println!("│ {} lines total", lines.len());
+        println!("│");
+    }
+
     Ok(())
 }
 
