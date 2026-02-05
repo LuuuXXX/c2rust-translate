@@ -152,12 +152,17 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
     // Read and display the translated Rust code
     if let Ok(rs_content) = std::fs::read_to_string(rs_file) {
         let lines: Vec<&str> = rs_content.lines().collect();
+        let total_lines = lines.len();
+        let display_lines = std::cmp::min(total_lines, 100);
         
         println!("│ {}", "─ Translated Rust Code ─".bright_green());
-        for (i, line) in lines.iter().enumerate() {
+        for (i, line) in lines.iter().take(display_lines).enumerate() {
             println!("│ {} {}", format!("{:3}", i + 1).dimmed(), line);
         }
-        println!("│ {} lines total", lines.len());
+        if total_lines > display_lines {
+            println!("│ {} (showing {} of {} lines)", "...".dimmed(), display_lines, total_lines);
+        }
+        println!("│ {} lines total", total_lines);
         println!("│");
     }
 
