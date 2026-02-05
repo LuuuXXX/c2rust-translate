@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::io::Write;
 use crate::util;
 use colored::Colorize;
@@ -157,7 +157,7 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
         rs_file_str.bright_yellow());
     println!("│");
     
-    let status = Command::new("python")
+    let output = Command::new("python")
         .args([
             script_str,
             "--config",
@@ -169,13 +169,25 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
             "--output",
             rs_file_str,
         ])
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
+        .output()
         .context("Failed to execute translate_and_fix.py")?;
 
-    if !status.success() {
-        anyhow::bail!("Translation failed with exit code: {} (check output above for details)", status.code().unwrap_or(-1));
+    // Log and display stdout
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if !stdout.is_empty() {
+        print!("{}", stdout);
+        crate::logger::log_message(&stdout);
+    }
+
+    // Log and display stderr
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !stderr.is_empty() {
+        eprint!("{}", stderr);
+        crate::logger::log_message(&stderr);
+    }
+
+    if !output.status.success() {
+        anyhow::bail!("Translation failed with exit code: {} (check output above for details)", output.status.code().unwrap_or(-1));
     }
 
     // Read and display the translated Rust code
@@ -263,15 +275,27 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
         error_file_str,
     );
 
-    let status = Command::new("python")
+    let output = Command::new("python")
         .args(&args)
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
+        .output()
         .context("Failed to execute translate_and_fix.py for fixing")?;
 
-    if !status.success() {
-        anyhow::bail!("Fix failed with exit code: {} (check output above for details)", status.code().unwrap_or(-1));
+    // Log and display stdout
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if !stdout.is_empty() {
+        print!("{}", stdout);
+        crate::logger::log_message(&stdout);
+    }
+
+    // Log and display stderr
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !stderr.is_empty() {
+        eprint!("{}", stderr);
+        crate::logger::log_message(&stderr);
+    }
+
+    if !output.status.success() {
+        anyhow::bail!("Fix failed with exit code: {} (check output above for details)", output.status.code().unwrap_or(-1));
     }
 
     // Read and display the fixed Rust code
