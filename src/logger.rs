@@ -18,13 +18,14 @@ pub fn init_logger() -> Result<()> {
     // Generate timestamped filename with milliseconds to avoid collisions
     let timestamp = Local::now().format("%Y%m%d_%H%M%S%.3f");
     let log_filename = format!("translate_{}.log", timestamp);
-    let log_path = output_dir.join(log_filename);
+    let log_path = output_dir.join(&log_filename);
     
     // Create the log file
-    let file = OpenOptions::new()
+    let (file, actual_path) = OpenOptions::new()
         .create_new(true)
         .write(true)
         .open(&log_path)
+        .map(|f| (f, log_path))
         .or_else(|_| {
             // If file exists (unlikely with milliseconds but possible), append a counter
             for i in 1..100 {
@@ -35,20 +36,15 @@ pub fn init_logger() -> Result<()> {
                     .write(true)
                     .open(&alternate_path)
                 {
-                    Ok(f) => {
-                        println!("Log file created: {}", alternate_path.display());
-                        return Ok(f);
-                    }
+                    Ok(f) => return Ok((f, alternate_path)),
                     Err(_) => continue,
                 }
             }
             anyhow::bail!("Failed to create log file: too many files with same timestamp")
         })
-        .with_context(|| format!("Failed to create log file: {}", log_path.display()))?;
+        .with_context(|| format!("Failed to create log file in directory: {}", output_dir.display()))?;
     
-    if file.metadata().is_ok() {
-        println!("Log file created: {}", log_path.display());
-    }
+    println!("Log file created: {}", actual_path.display());
     
     // Initialize or update the global logger
     match GLOBAL_LOGGER.get() {
