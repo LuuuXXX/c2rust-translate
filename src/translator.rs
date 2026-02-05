@@ -265,6 +265,29 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
         anyhow::bail!("Fix failed with exit code: {} (check output above for details)", status.code().unwrap_or(-1));
     }
 
+    // Read and display the fixed Rust code
+    match std::fs::read_to_string(rs_file) {
+        Ok(rs_content) => {
+            let lines: Vec<&str> = rs_content.lines().collect();
+            let total_lines = lines.len();
+            let display_lines = std::cmp::min(total_lines, 100);
+            
+            println!("│ {}", "─ Fixed Rust Code ─".bright_green());
+            for (i, line) in lines.iter().take(display_lines).enumerate() {
+                println!("│ {} {}", format!("{:3}", i + 1).dimmed(), line);
+            }
+            if total_lines > display_lines {
+                println!("│ {} (showing {} of {} lines)", "...".dimmed(), display_lines, total_lines);
+            }
+            println!("│ {} lines total", total_lines);
+            println!("│");
+        }
+        Err(e) => {
+            println!("│ {} Could not read fixed file for preview: {}", "⚠".yellow(), e);
+            println!("│");
+        }
+    }
+
     // temp_file is automatically deleted when it goes out of scope
     Ok(())
 }
