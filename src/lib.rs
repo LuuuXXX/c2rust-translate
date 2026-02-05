@@ -92,10 +92,16 @@ pub fn translate_feature(feature: &str) -> Result<()> {
 
         println!("Found {} empty .rs file(s) to process", empty_rs_files.len());
 
-        for rs_file in empty_rs_files {
+        for (index, rs_file) in empty_rs_files.iter().enumerate() {
+            println!(
+                "Progress: {}/{} - {}",
+                index + 1,
+                empty_rs_files.len(),
+                rs_file.display()
+            );
             println!("Running hybrid build tests...");
             builder::run_hybrid_build(feature)?;
-            process_rs_file(feature, &rs_file)?;
+            process_rs_file(feature, rs_file)?;
         }
     }
 
