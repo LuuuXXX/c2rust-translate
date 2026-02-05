@@ -9,6 +9,9 @@ pub struct ProgressState {
     pub processed_count: usize,
     /// List of processed file paths (relative to rust directory)
     pub processed_files: Vec<String>,
+    /// Total number of files to process (for display purposes)
+    #[serde(default)]
+    pub total_count: usize,
 }
 
 impl ProgressState {
@@ -88,6 +91,16 @@ impl ProgressState {
     /// Get the current progress count (1-indexed for display)
     pub fn get_current_position(&self) -> usize {
         self.processed_count + 1
+    }
+
+    /// Set the total count of files to process
+    pub fn set_total_count(&mut self, total: usize) {
+        self.total_count = total;
+    }
+
+    /// Get the total count of files to process
+    pub fn get_total_count(&self) -> usize {
+        self.total_count
     }
 }
 
