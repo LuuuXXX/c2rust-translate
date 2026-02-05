@@ -14,7 +14,7 @@ pub fn git_commit(message: &str, feature: &str) -> Result<()> {
     let feature_rust_path = format!("{}/rust/", feature);
     let add_output = Command::new("git")
         .current_dir(&c2rust_dir)
-        .args(["add", ".", &feature_rust_path])
+        .args(&["add", ".", &feature_rust_path])
         .output()
         .context("Failed to git add")?;
 
@@ -26,7 +26,7 @@ pub fn git_commit(message: &str, feature: &str) -> Result<()> {
     // Commit from the .c2rust directory
     let commit_output = Command::new("git")
         .current_dir(&c2rust_dir)
-        .args(["commit", "-m", message])
+        .args(&["commit", "-m", message])
         .output()
         .context("Failed to git commit")?;
 

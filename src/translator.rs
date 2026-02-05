@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::io::Write;
 use crate::util;
-use colored::Colorize;
 
 /// Get the translate script directory from environment variable
 /// 
@@ -91,21 +90,6 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
         );
     }
     
-    // Read and display C code content (first 15 lines for preview)
-    if let Ok(c_content) = std::fs::read_to_string(c_file) {
-        let lines: Vec<&str> = c_content.lines().collect();
-        let preview_lines = lines.iter().take(15).count();
-        
-        println!("│ {}", "─ C Source Preview ─".bright_cyan());
-        for (i, line) in lines.iter().take(15).enumerate() {
-            println!("│ {} {}", format!("{:3}", i + 1).dimmed(), line);
-        }
-        if lines.len() > 15 {
-            println!("│ {} (showing {} of {} lines)", "...".dimmed(), preview_lines, lines.len());
-        }
-        println!("│");
-    }
-    
     // Get translate script path from environment variable
     let script_path = get_translate_script_full_path()?;
     let script_str = script_path.to_str()
@@ -118,18 +102,13 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
     let rs_file_str = rs_file.to_str()
         .with_context(|| format!("Non-UTF8 path: {}", rs_file.display()))?;
     
-    println!("│ {}", "Executing translation command:".bright_blue());
-    println!("│ {} python {} --config {} --type {} --code {} --output {}", 
-        "→".bright_blue(),
-        script_str.dimmed(), 
-        config_str.dimmed(), 
-        file_type.bright_yellow(), 
-        c_file_str.bright_yellow(), 
-        rs_file_str.bright_yellow());
-    println!("│");
+    println!("Executing translation command:");
+    println!("python {} --config {} --type {} --code {} --output {}", 
+        script_str, config_str, file_type, c_file_str, rs_file_str);
+    println!();
     
     let status = Command::new("python")
-        .args([
+        .args(&[
             script_str,
             "--config",
             config_str,
@@ -174,21 +153,6 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
         );
     }
     
-    // Display error preview (first 10 lines)
-    let error_lines: Vec<&str> = error_msg.lines().collect();
-    println!("│ {}", "─ Build Error Preview ─".yellow());
-    for (i, line) in error_lines.iter().take(10).enumerate() {
-        if i == 0 {
-            println!("│ {}", line.bright_red());
-        } else {
-            println!("│ {}", line.dimmed());
-        }
-    }
-    if error_lines.len() > 10 {
-        println!("│ {} (showing 10 of {} lines)", "...".dimmed(), error_lines.len());
-    }
-    println!("│");
-    
     // Create a unique temporary file with error message
     let mut temp_file = tempfile::NamedTempFile::new()
         .context("Failed to create temporary error file")?;
@@ -210,15 +174,10 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
     // Note: --code and --output both point to rs_file, which means the Python script
     // will read the original file and overwrite it with the fixed version.
     // This is the intended behavior as specified in the requirements.
-    println!("│ {}", "Executing error fix command:".yellow());
-    println!("│ {} python {} --config {} --type fix --code {} --output {} --error {}", 
-        "→".yellow(),
-        script_str.dimmed(), 
-        config_str.dimmed(), 
-        rs_file_str.bright_yellow(), 
-        rs_file_str.bright_yellow(), 
-        error_file_str.dimmed());
-    println!("│");
+    println!("Executing error fix command:");
+    println!("python {} --config {} --type fix --code {} --output {} --error {}", 
+        script_str, config_str, rs_file_str, rs_file_str, error_file_str);
+    println!();
 
     // Build fix command arguments.
     // Note: rs_file_str is used for both code_file and output_file parameters,
