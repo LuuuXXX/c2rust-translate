@@ -99,6 +99,8 @@ pub fn translate_feature(feature: &str) -> Result<()> {
                 empty_rs_files.len(),
                 rs_file.display()
             );
+            println!("Updating code analysis...");
+            analyzer::update_code_analysis(feature)?;
             println!("Running hybrid build tests...");
             builder::run_hybrid_build(feature)?;
             process_rs_file(feature, rs_file)?;
