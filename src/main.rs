@@ -22,28 +22,21 @@ fn main() {
     let cli = Cli::parse();
 
     // Initialize logging before running the command
-    let logger_result = match &cli.command {
-        Commands::Translate { .. } => c2rust_translate::logger::DualWriter::init(),
-    };
-
-    let _logger = match logger_result {
-        Ok(logger) => {
-            println!("Logger initialized successfully");
-            Some(logger)
-        }
-        Err(e) => {
+    if matches!(cli.command, Commands::Translate { .. }) {
+        if let Err(e) = c2rust_translate::logger::init_logger() {
             eprintln!("Warning: Failed to initialize logger: {:#}", e);
             eprintln!("Continuing without file logging...");
-            None
         }
-    };
+    }
 
     let result = match cli.command {
         Commands::Translate { feature } => c2rust_translate::translate_feature(&feature),
     };
 
     if let Err(e) = result {
-        eprintln!("Error: {:#}", e);
+        let error_msg = format!("Error: {:#}", e);
+        eprintln!("{}", error_msg);
+        c2rust_translate::logger::log_message(&error_msg);
         std::process::exit(1);
     }
 }

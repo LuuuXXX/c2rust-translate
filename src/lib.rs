@@ -12,7 +12,9 @@ use colored::Colorize;
 
 /// Main translation workflow for a feature
 pub fn translate_feature(feature: &str) -> Result<()> {
-    println!("{}", format!("Starting translation for feature: {}", feature).bright_cyan().bold());
+    let msg = format!("Starting translation for feature: {}", feature);
+    println!("{}", msg.bright_cyan().bold());
+    logger::log_message(&msg);
 
     // Validate feature name to prevent path traversal attacks
     util::validate_feature_name(feature)?;
@@ -101,7 +103,9 @@ pub fn translate_feature(feature: &str) -> Result<()> {
         let empty_rs_files = file_scanner::find_empty_rs_files(&rust_dir)?;
         
         if empty_rs_files.is_empty() {
-            println!("\n{}", "✓ No empty .rs files found. Translation complete!".bright_green().bold());
+            let msg = "✓ No empty .rs files found. Translation complete!";
+            println!("\n{}", msg.bright_green().bold());
+            logger::log_message(msg);
             break;
         }
 
@@ -135,11 +139,16 @@ pub fn translate_feature(feature: &str) -> Result<()> {
             let current_position = progress_state.get_current_position();
             let total_count = progress_state.get_total_count();
             
+            let progress_msg = format!("═══ Progress: File ({}/{}) ═══", current_position, total_count);
             println!(
                 "\n{}",
-                format!("═══ Progress: File ({}/{}) ═══", current_position, total_count).bright_magenta().bold()
+                progress_msg.bright_magenta().bold()
             );
-            println!("{} {}", "→ Processing:".bright_cyan(), rs_file.display());
+            logger::log_message(&progress_msg);
+            
+            let processing_msg = format!("→ Processing: {}", rs_file.display());
+            println!("{}", processing_msg.bright_cyan());
+            logger::log_message(&processing_msg);
             
             process_rs_file(feature, rs_file)?;
             
