@@ -75,11 +75,11 @@ pub fn translate_feature(feature: &str) -> Result<()> {
     }
 
     // Translate type.h to type.rs
-    let type_h_path = rust_dir.join("src").join("type.h");
-    let type_rs_path = rust_dir.join("src").join("type.rs");
+    let type_h_path = rust_dir.join("src").join("types.h");
+    let type_rs_path = rust_dir.join("src").join("types.rs");
     
     if type_h_path.exists() {
-        println!("{}", "Translating type.h to type.rs...".bright_blue());
+        println!("{}", "Translating types.h to types.rs...".bright_blue());
         translator::translate_c_to_rust(feature, "fn", &type_h_path, &type_rs_path)?;
         println!("{}", "✓ Type header translation complete".bright_green());
         
