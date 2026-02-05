@@ -1,7 +1,9 @@
 use std::fs;
 use tempfile::TempDir;
+use serial_test::serial;
 
 #[test]
+#[serial]
 fn test_progress_file_in_rust_directory() {
     // Create a temporary directory structure
     let temp_dir = TempDir::new().unwrap();
@@ -37,6 +39,7 @@ fn test_progress_file_in_rust_directory() {
 }
 
 #[test]
+#[serial]
 fn test_logger_creates_output_directory() {
     // Create a temporary directory structure
     let temp_dir = TempDir::new().unwrap();

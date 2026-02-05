@@ -41,8 +41,13 @@ fn log_to_file(text: &str) {
     if let Some(logger_mutex) = GLOBAL_LOGGER.get() {
         if let Ok(mut logger_opt) = logger_mutex.lock() {
             if let Some(file) = logger_opt.as_mut() {
-                let _ = writeln!(file, "{}", text);
-                let _ = file.flush();
+                if let Err(e) = writeln!(file, "{}", text) {
+                    eprintln!("Warning: Failed to write to log file: {}", e);
+                    return;
+                }
+                if let Err(e) = file.flush() {
+                    eprintln!("Warning: Failed to flush log file: {}", e);
+                }
             }
         }
     }
