@@ -75,6 +75,35 @@ fn build_fix_args<'a>(
     ]
 }
 
+/// Display Rust code from a file with formatted output
+/// 
+/// # Parameters
+/// - `file_path`: Path to the Rust file to display
+/// - `header`: Header text to display (e.g., "─ Translated Rust Code ─")
+/// - `max_lines`: Maximum number of lines to display
+fn display_rust_code(file_path: &Path, header: &str, max_lines: usize) {
+    match std::fs::read_to_string(file_path) {
+        Ok(content) => {
+            let lines: Vec<&str> = content.lines().collect();
+            let total_lines = lines.len();
+            let display_lines = std::cmp::min(total_lines, max_lines);
+            
+            println!("│ {}", header.bright_green());
+            for (i, line) in lines.iter().take(display_lines).enumerate() {
+                println!("│ {} {}", format!("{:3}", i + 1).dimmed(), line);
+            }
+            if total_lines > display_lines {
+                println!("│ {} (showing {} of {} lines)", "...".dimmed(), display_lines, total_lines);
+            }
+            println!("│");
+        }
+        Err(e) => {
+            println!("│ {} Could not read file for preview: {}", "⚠".yellow(), e);
+            println!("│");
+        }
+    }
+}
+
 /// Translate a C file to Rust using the translation tool
 pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_file: &Path) -> Result<()> {
     util::validate_feature_name(feature)?;
@@ -148,6 +177,9 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
     if !status.success() {
         anyhow::bail!("Translation failed with exit code: {} (check output above for details)", status.code().unwrap_or(-1));
     }
+
+    // Read and display the translated Rust code
+    display_rust_code(rs_file, "─ Translated Rust Code ─", 100);
 
     Ok(())
 }
@@ -241,6 +273,9 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
     if !status.success() {
         anyhow::bail!("Fix failed with exit code: {} (check output above for details)", status.code().unwrap_or(-1));
     }
+
+    // Read and display the fixed Rust code
+    display_rust_code(rs_file, "─ Fixed Rust Code ─", 100);
 
     // temp_file is automatically deleted when it goes out of scope
     Ok(())
