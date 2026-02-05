@@ -45,7 +45,7 @@ fn get_config_value(key: &str, feature: &str) -> Result<String> {
     
     let output = Command::new("c2rust-config")
         .current_dir(&c2rust_dir)
-        .args(&["config", "--make", "--feature", feature, "--list", key])
+        .args(["config", "--make", "--feature", feature, "--list", key])
         .output()
         .with_context(|| format!("Failed to get {} from config", key))?;
 

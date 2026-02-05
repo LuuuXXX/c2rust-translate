@@ -10,7 +10,7 @@ pub fn find_empty_rs_files(rust_dir: &Path) -> Result<Vec<PathBuf>> {
     for entry in WalkDir::new(rust_dir) {
         let entry = entry?;
         let path = entry.path();
-        if path.extension().map_or(false, |ext| ext == "rs") {
+        if path.extension().is_some_and(|ext| ext == "rs") {
             let metadata = fs::metadata(path)?;
             if metadata.len() == 0 {
                 empty_files.push(path.to_path_buf());
@@ -23,10 +23,10 @@ pub fn find_empty_rs_files(rust_dir: &Path) -> Result<Vec<PathBuf>> {
 
 /// Extract file type from filename (var_ or fun_ prefix)
 pub fn extract_file_type(filename: &str) -> Option<(&'static str, &str)> {
-    if filename.starts_with("var_") {
-        Some(("var", &filename[4..]))
-    } else if filename.starts_with("fun_") {
-        Some(("fn", &filename[4..]))
+    if let Some(stripped) = filename.strip_prefix("var_") {
+        Some(("var", stripped))
+    } else if let Some(stripped) = filename.strip_prefix("fun_") {
+        Some(("fn", stripped))
     } else {
         None
     }

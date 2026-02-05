@@ -129,7 +129,7 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
     println!("│");
     
     let status = Command::new("python")
-        .args(&[
+        .args([
             script_str,
             "--config",
             config_str,
