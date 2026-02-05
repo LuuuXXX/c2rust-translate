@@ -22,6 +22,7 @@ pub fn cargo_build(feature: &str) -> Result<()> {
     
     let output = Command::new("cargo")
         .arg("build")
+        .args(["--message-format", "short"])
         .current_dir(&build_dir)
         .output()
         .context("Failed to execute cargo build")?;

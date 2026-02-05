@@ -106,6 +106,16 @@ pub fn translate_feature(feature: &str) -> Result<()> {
             continue;
         }
         
+        // Set total count for progress display (total unprocessed + already processed).
+        // To maintain consistent progress across runs, never decrease the total count;
+        // only update it if we observe more empty files than previously recorded.
+        let current_total = progress_state.get_total_count();
+        let new_total = std::cmp::max(current_total, empty_rs_files.len());
+        if new_total != current_total {
+            progress_state.set_total_count(new_total);
+            progress_state.save(feature)?;
+        }
+        
         println!("{}", format!("Found {} empty .rs file(s) to process ({} already processed)", 
             unprocessed_files.len(), 
             empty_rs_files.len() - unprocessed_files.len()).cyan());
@@ -113,10 +123,11 @@ pub fn translate_feature(feature: &str) -> Result<()> {
         for rs_file in unprocessed_files.iter() {
             // Get current progress position (persisted across runs)
             let current_position = progress_state.get_current_position();
+            let total_count = progress_state.get_total_count();
             
             println!(
                 "\n{}",
-                format!("═══ Progress: File #{} ═══", current_position).bright_magenta().bold()
+                format!("═══ Progress: File ({}/{}) ═══", current_position, total_count).bright_magenta().bold()
             );
             println!("{} {}", "→ Processing:".bright_cyan(), rs_file.display());
             
