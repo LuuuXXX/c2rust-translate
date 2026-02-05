@@ -81,6 +81,9 @@ pub fn translate_feature(feature: &str) -> Result<()> {
             println!("{}", "Translating type.h to type.rs...".bright_blue());
             translator::translate_c_to_rust(feature, "type", &type_h_path, &type_rs_path)?;
             println!("{}", "✓ Type header translation complete".bright_green());
+            
+            // Commit the type header translation
+            git::git_commit(&format!("Translate type.h to type.rs for {} feature", feature), feature)?;
         }
     }
 
