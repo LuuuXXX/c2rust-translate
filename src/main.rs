@@ -21,6 +21,23 @@ enum Commands {
 fn main() {
     let cli = Cli::parse();
 
+    // Initialize logging before running the command
+    let logger_result = match &cli.command {
+        Commands::Translate { .. } => c2rust_translate::logger::DualWriter::init(),
+    };
+
+    let _logger = match logger_result {
+        Ok(logger) => {
+            println!("Logger initialized successfully");
+            Some(logger)
+        }
+        Err(e) => {
+            eprintln!("Warning: Failed to initialize logger: {:#}", e);
+            eprintln!("Continuing without file logging...");
+            None
+        }
+    };
+
     let result = match cli.command {
         Commands::Translate { feature } => c2rust_translate::translate_feature(&feature),
     };

@@ -21,6 +21,7 @@ impl ProgressState {
         let progress_file = project_root
             .join(".c2rust")
             .join(feature)
+            .join("rust")
             .join("progress.json");
         Ok(progress_file)
     }

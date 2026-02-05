@@ -5,6 +5,7 @@ pub mod git;
 pub mod translator;
 pub mod util;
 pub mod progress;
+pub mod logger;
 
 use anyhow::{Context, Result};
 use colored::Colorize;
