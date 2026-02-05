@@ -87,6 +87,15 @@ pub fn translate_feature(feature: &str) -> Result<()> {
             }
         }
 
+        println!("{}", "Updating code analysis...".bright_blue());
+        analyzer::update_code_analysis(feature)?;
+        println!("{}", "✓ Code analysis updated".bright_green());
+            
+        git::git_commit(&format!("Update code analysis for {}", feature), feature)?;
+
+        println!("{}", "Running hybrid build tests...".bright_blue());
+        builder::run_hybrid_build(feature)?;
+        
         // Step 2.2: Scan for empty .rs files
         let empty_rs_files = file_scanner::find_empty_rs_files(&rust_dir)?;
         
@@ -130,12 +139,6 @@ pub fn translate_feature(feature: &str) -> Result<()> {
                 format!("═══ Progress: File ({}/{}) ═══", current_position, total_count).bright_magenta().bold()
             );
             println!("{} {}", "→ Processing:".bright_cyan(), rs_file.display());
-            
-            println!("\n{}", "Updating code analysis...".bright_blue());
-            analyzer::update_code_analysis(feature)?;
-            
-            println!("{}", "Running hybrid build tests...".bright_blue());
-            builder::run_hybrid_build(feature)?;
             
             process_rs_file(feature, rs_file)?;
             
@@ -254,6 +257,9 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path) -> Result<()> {
 
     // Step 2.2.9: Save update result
     git::git_commit(&format!("Update code analysis for {}", feature), feature)?;
+
+    println!("{}", "Running hybrid build tests...".bright_blue());
+    builder::run_hybrid_build(feature)?;
     
     println!("{}", "└─ File processing complete".bright_white().bold());
 
