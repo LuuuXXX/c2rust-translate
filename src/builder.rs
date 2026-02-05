@@ -144,10 +144,10 @@ fn execute_command_in_dir(
     
     // Color code based on command type
     let colored_label = match command_type {
-        "build" => format!("│ {} Executing build command:", "→".bright_blue()).bright_blue().to_string(),
-        "test" => format!("│ {} Executing test command:", "→".bright_green()).bright_green().to_string(),
-        "clean" => format!("│ {} Executing clean command:", "→".bright_red()).bright_red().to_string(),
-        _ => format!("│ → Executing {} command:", command_type).to_string(),
+        "build" => "│ → Executing build command:".bright_blue().to_string(),
+        "test" => "│ → Executing test command:".bright_green().to_string(),
+        "clean" => "│ → Executing clean command:".bright_red().to_string(),
+        _ => format!("│ → Executing {} command:", command_type),
     };
     
     println!("{}", colored_label);

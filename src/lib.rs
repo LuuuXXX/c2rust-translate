@@ -95,16 +95,28 @@ pub fn translate_feature(feature: &str) -> Result<()> {
             break;
         }
 
-        println!("{}", format!("Found {} empty .rs file(s) to process", empty_rs_files.len()).cyan());
+        // Filter out already processed files
+        let unprocessed_files: Vec<_> = empty_rs_files
+            .iter()
+            .filter(|f| !progress_state.is_processed(f, &rust_dir))
+            .collect();
+        
+        if unprocessed_files.is_empty() {
+            println!("{}", "All files have been processed already.".cyan());
+            continue;
+        }
+        
+        println!("{}", format!("Found {} empty .rs file(s) to process ({} already processed)", 
+            unprocessed_files.len(), 
+            empty_rs_files.len() - unprocessed_files.len()).cyan());
 
-        for rs_file in empty_rs_files.iter() {
+        for rs_file in unprocessed_files.iter() {
             // Get current progress position (persisted across runs)
             let current_position = progress_state.get_current_position();
-            let total_files = progress_state.processed_count + empty_rs_files.len();
             
             println!(
                 "\n{}",
-                format!("═══ Progress: {}/{} ═══", current_position, total_files).bright_magenta().bold()
+                format!("═══ Progress: File #{} ═══", current_position).bright_magenta().bold()
             );
             println!("{} {}", "→ Processing:".bright_cyan(), rs_file.display());
             
