@@ -212,25 +212,53 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
                 
                 // Spawn threads to handle stdout and stderr concurrently
                 let stdout_handle = thread::spawn(move || {
-                    for line in stdout_reader.lines().map_while(Result::ok) {
-                        println!("{}", line);
-                        crate::logger::log_message(&line);
+                    for line_result in stdout_reader.lines() {
+                        match line_result {
+                            Ok(line) => {
+                                println!("{}", line);
+                                crate::logger::log_message(&line);
+                            }
+                            Err(e) => {
+                                let msg = format!("Warning: failed to read line from translation stdout: {}", e);
+                                eprintln!("{}", msg);
+                                crate::logger::log_message(&msg);
+                                break;
+                            }
+                        }
                     }
                 });
                 
                 let stderr_handle = thread::spawn(move || {
-                    for line in stderr_reader.lines().map_while(Result::ok) {
-                        eprintln!("{}", line);
-                        crate::logger::log_message(&line);
+                    for line_result in stderr_reader.lines() {
+                        match line_result {
+                            Ok(line) => {
+                                eprintln!("{}", line);
+                                crate::logger::log_message(&line);
+                            }
+                            Err(e) => {
+                                let msg = format!("Warning: failed to read line from translation stderr: {}", e);
+                                eprintln!("{}", msg);
+                                crate::logger::log_message(&msg);
+                                break;
+                            }
+                        }
                     }
                 });
                 
                 // Wait for the child process to finish
                 let status = child.wait().context("Failed to wait for translation command")?;
                 
-                // Wait for output threads to finish
-                let _ = stdout_handle.join();
-                let _ = stderr_handle.join();
+                // Wait for output threads to finish and detect any panics
+                if let Err(_) = stdout_handle.join() {
+                    let msg = "Warning: stdout handling thread panicked while capturing translation output";
+                    eprintln!("{}", msg);
+                    crate::logger::log_message(msg);
+                }
+                if let Err(_) = stderr_handle.join() {
+                    let msg = "Warning: stderr handling thread panicked while capturing translation output";
+                    eprintln!("{}", msg);
+                    crate::logger::log_message(msg);
+                }
                 
                 // Log translation stage footer
                 let stage_footer = "=== Translation Output End ===";
@@ -371,25 +399,53 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
                 
                 // Spawn threads to handle stdout and stderr concurrently
                 let stdout_handle = thread::spawn(move || {
-                    for line in stdout_reader.lines().map_while(Result::ok) {
-                        println!("{}", line);
-                        crate::logger::log_message(&line);
+                    for line_result in stdout_reader.lines() {
+                        match line_result {
+                            Ok(line) => {
+                                println!("{}", line);
+                                crate::logger::log_message(&line);
+                            }
+                            Err(e) => {
+                                let msg = format!("Warning: failed to read line from fix stdout: {}", e);
+                                eprintln!("{}", msg);
+                                crate::logger::log_message(&msg);
+                                break;
+                            }
+                        }
                     }
                 });
                 
                 let stderr_handle = thread::spawn(move || {
-                    for line in stderr_reader.lines().map_while(Result::ok) {
-                        eprintln!("{}", line);
-                        crate::logger::log_message(&line);
+                    for line_result in stderr_reader.lines() {
+                        match line_result {
+                            Ok(line) => {
+                                eprintln!("{}", line);
+                                crate::logger::log_message(&line);
+                            }
+                            Err(e) => {
+                                let msg = format!("Warning: failed to read line from fix stderr: {}", e);
+                                eprintln!("{}", msg);
+                                crate::logger::log_message(&msg);
+                                break;
+                            }
+                        }
                     }
                 });
                 
                 // Wait for the child process to finish
                 let status = child.wait().context("Failed to wait for fix command")?;
                 
-                // Wait for output threads to finish
-                let _ = stdout_handle.join();
-                let _ = stderr_handle.join();
+                // Wait for output threads to finish and detect any panics
+                if let Err(_) = stdout_handle.join() {
+                    let msg = "Warning: stdout handling thread panicked while capturing fix output";
+                    eprintln!("{}", msg);
+                    crate::logger::log_message(msg);
+                }
+                if let Err(_) = stderr_handle.join() {
+                    let msg = "Warning: stderr handling thread panicked while capturing fix output";
+                    eprintln!("{}", msg);
+                    crate::logger::log_message(msg);
+                }
                 
                 // Log fix stage footer
                 let stage_footer = "=== Fix Output End ===";
