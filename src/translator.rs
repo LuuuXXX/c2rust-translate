@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::io::Write;
+use std::io::{Write, BufRead, BufReader};
 use crate::util;
 use colored::Colorize;
 
@@ -157,7 +157,7 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
         rs_file_str.bright_yellow());
     println!("│");
     
-    let status = Command::new("python")
+    let command = Command::new("python")
         .args([
             script_str,
             "--config",
@@ -169,13 +169,64 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
             "--output",
             rs_file_str,
         ])
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
-        .context("Failed to execute translate_and_fix.py")?;
-
-    if !status.success() {
-        anyhow::bail!("Translation failed with exit code: {} (check output above for details)", status.code().unwrap_or(-1));
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn();
+    
+    match command {
+        Ok(mut child) => {
+            // Get handles to stdout and stderr
+            if let (Some(stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take()) {
+                use std::thread;
+                
+                // Log translation stage header
+                let stage_header = "=== Translation Output Start ===";
+                crate::logger::log_message(stage_header);
+                
+                // Create readers for stdout and stderr
+                let stdout_reader = BufReader::new(stdout);
+                let stderr_reader = BufReader::new(stderr);
+                
+                // Spawn threads to handle stdout and stderr concurrently
+                let stdout_handle = thread::spawn(move || {
+                    for line in stdout_reader.lines() {
+                        if let Ok(line) = line {
+                            println!("{}", line);
+                            crate::logger::log_message(&line);
+                        }
+                    }
+                });
+                
+                let stderr_handle = thread::spawn(move || {
+                    for line in stderr_reader.lines() {
+                        if let Ok(line) = line {
+                            eprintln!("{}", line);
+                            crate::logger::log_message(&line);
+                        }
+                    }
+                });
+                
+                // Wait for the child process to finish
+                let status = child.wait().context("Failed to wait for translation command")?;
+                
+                // Wait for output threads to finish
+                let _ = stdout_handle.join();
+                let _ = stderr_handle.join();
+                
+                // Log translation stage footer
+                let stage_footer = "=== Translation Output End ===";
+                crate::logger::log_message(stage_footer);
+                
+                if !status.success() {
+                    anyhow::bail!("Translation failed with exit code: {} (check output above for details)", status.code().unwrap_or(-1));
+                }
+            } else {
+                anyhow::bail!("Failed to capture stdout/stderr from translation command");
+            }
+        }
+        Err(e) => {
+            return Err(e).context("Failed to execute translate_and_fix.py");
+        }
     }
 
     // Read and display the translated Rust code
@@ -263,15 +314,66 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
         error_file_str,
     );
 
-    let status = Command::new("python")
+    let command = Command::new("python")
         .args(&args)
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
-        .context("Failed to execute translate_and_fix.py for fixing")?;
-
-    if !status.success() {
-        anyhow::bail!("Fix failed with exit code: {} (check output above for details)", status.code().unwrap_or(-1));
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn();
+    
+    match command {
+        Ok(mut child) => {
+            // Get handles to stdout and stderr
+            if let (Some(stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take()) {
+                use std::thread;
+                
+                // Log fix stage header
+                let stage_header = "=== Fix Output Start ===";
+                crate::logger::log_message(stage_header);
+                
+                // Create readers for stdout and stderr
+                let stdout_reader = BufReader::new(stdout);
+                let stderr_reader = BufReader::new(stderr);
+                
+                // Spawn threads to handle stdout and stderr concurrently
+                let stdout_handle = thread::spawn(move || {
+                    for line in stdout_reader.lines() {
+                        if let Ok(line) = line {
+                            println!("{}", line);
+                            crate::logger::log_message(&line);
+                        }
+                    }
+                });
+                
+                let stderr_handle = thread::spawn(move || {
+                    for line in stderr_reader.lines() {
+                        if let Ok(line) = line {
+                            eprintln!("{}", line);
+                            crate::logger::log_message(&line);
+                        }
+                    }
+                });
+                
+                // Wait for the child process to finish
+                let status = child.wait().context("Failed to wait for fix command")?;
+                
+                // Wait for output threads to finish
+                let _ = stdout_handle.join();
+                let _ = stderr_handle.join();
+                
+                // Log fix stage footer
+                let stage_footer = "=== Fix Output End ===";
+                crate::logger::log_message(stage_footer);
+                
+                if !status.success() {
+                    anyhow::bail!("Fix failed with exit code: {} (check output above for details)", status.code().unwrap_or(-1));
+                }
+            } else {
+                anyhow::bail!("Failed to capture stdout/stderr from fix command");
+            }
+        }
+        Err(e) => {
+            return Err(e).context("Failed to execute translate_and_fix.py for fixing");
+        }
     }
 
     // Read and display the fixed Rust code
