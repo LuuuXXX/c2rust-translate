@@ -80,7 +80,7 @@ pub fn translate_feature(feature: &str) -> Result<()> {
     
     if type_h_path.exists() {
         println!("{}", "Translating types.h to types.rs...".bright_blue());
-        translator::translate_c_to_rust(feature, "fn", &type_h_path, &type_rs_path)?;
+        translator::translate_c_to_rust(feature, "var", &type_h_path, &type_rs_path)?;
         println!("{}", "✓ Type header translation complete".bright_green());
         
         // Commit the type header translation
