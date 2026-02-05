@@ -24,6 +24,7 @@ pub fn cargo_build(feature: &str) -> Result<()> {
         .arg("build")
         // .args(["--message-format", "short"])
         .current_dir(&build_dir)
+        .env("RUSTFLAGS", "-A warnings")
         .output()
         .context("Failed to execute cargo build")?;
 
