@@ -89,17 +89,26 @@ fn display_rust_code(file_path: &Path, header: &str, max_lines: usize) {
             let display_lines = std::cmp::min(total_lines, max_lines);
             
             println!("│ {}", header.bright_green());
+            crate::logger::log_message(&format!("│ {}", header));
             for (i, line) in lines.iter().take(display_lines).enumerate() {
-                println!("│ {} {}", format!("{:3}", i + 1).dimmed(), line);
+                let line_text = format!("│ {:3} {}", i + 1, line);
+                println!("{}", line_text.dimmed());
+                crate::logger::log_message(&line_text);
             }
             if total_lines > display_lines {
-                println!("│ {} (showing {} of {} lines)", "...".dimmed(), display_lines, total_lines);
+                let more_text = format!("│ ... (showing {} of {} lines)", display_lines, total_lines);
+                println!("{}", more_text.dimmed());
+                crate::logger::log_message(&more_text);
             }
             println!("│");
+            crate::logger::log_message("│");
         }
         Err(e) => {
-            println!("│ {} Could not read file for preview: {}", "⚠".yellow(), e);
+            let error_text = format!("│ ⚠ Could not read file for preview: {}", e);
+            println!("{}", error_text.yellow());
+            crate::logger::log_message(&error_text);
             println!("│");
+            crate::logger::log_message("│");
         }
     }
 }
@@ -125,14 +134,21 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
         let lines: Vec<&str> = c_content.lines().collect();
         let preview_lines = lines.iter().take(15).count();
         
-        println!("│ {}", "─ C Source Preview ─".bright_cyan());
+        let header = "─ C Source Preview ─";
+        println!("│ {}", header.bright_cyan());
+        crate::logger::log_message(&format!("│ {}", header));
         for (i, line) in lines.iter().take(15).enumerate() {
-            println!("│ {} {}", format!("{:3}", i + 1).dimmed(), line);
+            let line_text = format!("│ {:3} {}", i + 1, line);
+            println!("{}", line_text.dimmed());
+            crate::logger::log_message(&line_text);
         }
         if lines.len() > 15 {
-            println!("│ {} (showing {} of {} lines)", "...".dimmed(), preview_lines, lines.len());
+            let more_text = format!("│ ... (showing {} of {} lines)", preview_lines, lines.len());
+            println!("{}", more_text.dimmed());
+            crate::logger::log_message(&more_text);
         }
         println!("│");
+        crate::logger::log_message("│");
     }
     
     // Get translate script path from environment variable
@@ -147,7 +163,12 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
     let rs_file_str = rs_file.to_str()
         .with_context(|| format!("Non-UTF8 path: {}", rs_file.display()))?;
     
-    println!("│ {}", "Executing translation command:".bright_blue());
+    let cmd_header = "Executing translation command:";
+    println!("│ {}", cmd_header.bright_blue());
+    crate::logger::log_message(&format!("│ {}", cmd_header));
+    
+    let cmd_line = format!("│ → python {} --config {} --type {} --code {} --output {}", 
+        script_str, config_str, file_type, c_file_str, rs_file_str);
     println!("│ {} python {} --config {} --type {} --code {} --output {}", 
         "→".bright_blue(),
         script_str.dimmed(), 
@@ -155,7 +176,9 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
         file_type.bright_yellow(), 
         c_file_str.bright_yellow(), 
         rs_file_str.bright_yellow());
+    crate::logger::log_message(&cmd_line);
     println!("│");
+    crate::logger::log_message("│");
     
     let command = Command::new("python")
         .args([
@@ -255,18 +278,27 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
     
     // Display error preview (first 10 lines)
     let error_lines: Vec<&str> = error_msg.lines().collect();
-    println!("│ {}", "─ Build Error Preview ─".yellow());
+    let error_header = "─ Build Error Preview ─";
+    println!("│ {}", error_header.yellow());
+    crate::logger::log_message(&format!("│ {}", error_header));
     for (i, line) in error_lines.iter().take(10).enumerate() {
         if i == 0 {
-            println!("│ {}", line.bright_red());
+            let line_text = format!("│ {}", line);
+            println!("{}", line_text.bright_red());
+            crate::logger::log_message(&line_text);
         } else {
-            println!("│ {}", line.dimmed());
+            let line_text = format!("│ {}", line);
+            println!("{}", line_text.dimmed());
+            crate::logger::log_message(&line_text);
         }
     }
     if error_lines.len() > 10 {
-        println!("│ {} (showing 10 of {} lines)", "...".dimmed(), error_lines.len());
+        let more_text = format!("│ ... (showing 10 of {} lines)", error_lines.len());
+        println!("{}", more_text.dimmed());
+        crate::logger::log_message(&more_text);
     }
     println!("│");
+    crate::logger::log_message("│");
     
     // Create a unique temporary file with error message
     let mut temp_file = tempfile::NamedTempFile::new()
@@ -289,7 +321,12 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
     // Note: --code and --output both point to rs_file, which means the Python script
     // will read the original file and overwrite it with the fixed version.
     // This is the intended behavior as specified in the requirements.
-    println!("│ {}", "Executing error fix command:".yellow());
+    let cmd_header = "Executing error fix command:";
+    println!("│ {}", cmd_header.yellow());
+    crate::logger::log_message(&format!("│ {}", cmd_header));
+    
+    let cmd_line = format!("│ → python {} --config {} --type fix --code {} --output {} --error {}", 
+        script_str, config_str, rs_file_str, rs_file_str, error_file_str);
     println!("│ {} python {} --config {} --type fix --code {} --output {} --error {}", 
         "→".yellow(),
         script_str.dimmed(), 
@@ -297,7 +334,9 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
         rs_file_str.bright_yellow(), 
         rs_file_str.bright_yellow(), 
         error_file_str.dimmed());
+    crate::logger::log_message(&cmd_line);
     println!("│");
+    crate::logger::log_message("│");
 
     // Build fix command arguments.
     // Note: rs_file_str is used for both code_file and output_file parameters,
