@@ -189,20 +189,16 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
                 
                 // Spawn threads to handle stdout and stderr concurrently
                 let stdout_handle = thread::spawn(move || {
-                    for line in stdout_reader.lines() {
-                        if let Ok(line) = line {
-                            println!("{}", line);
-                            crate::logger::log_message(&line);
-                        }
+                    for line in stdout_reader.lines().map_while(Result::ok) {
+                        println!("{}", line);
+                        crate::logger::log_message(&line);
                     }
                 });
                 
                 let stderr_handle = thread::spawn(move || {
-                    for line in stderr_reader.lines() {
-                        if let Ok(line) = line {
-                            eprintln!("{}", line);
-                            crate::logger::log_message(&line);
-                        }
+                    for line in stderr_reader.lines().map_while(Result::ok) {
+                        eprintln!("{}", line);
+                        crate::logger::log_message(&line);
                     }
                 });
                 
@@ -336,20 +332,16 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
                 
                 // Spawn threads to handle stdout and stderr concurrently
                 let stdout_handle = thread::spawn(move || {
-                    for line in stdout_reader.lines() {
-                        if let Ok(line) = line {
-                            println!("{}", line);
-                            crate::logger::log_message(&line);
-                        }
+                    for line in stdout_reader.lines().map_while(Result::ok) {
+                        println!("{}", line);
+                        crate::logger::log_message(&line);
                     }
                 });
                 
                 let stderr_handle = thread::spawn(move || {
-                    for line in stderr_reader.lines() {
-                        if let Ok(line) = line {
-                            eprintln!("{}", line);
-                            crate::logger::log_message(&line);
-                        }
+                    for line in stderr_reader.lines().map_while(Result::ok) {
+                        eprintln!("{}", line);
+                        crate::logger::log_message(&line);
                     }
                 });
                 
