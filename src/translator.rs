@@ -231,10 +231,16 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
     
     // Wait for output threads to complete
     if let Some(handle) = stdout_handle {
-        let _ = handle.join();
+        if handle.join().is_err() {
+            eprintln!("Warning: stdout capture thread panicked");
+            crate::logger::log_message("Warning: stdout capture thread panicked");
+        }
     }
     if let Some(handle) = stderr_handle {
-        let _ = handle.join();
+        if handle.join().is_err() {
+            eprintln!("Warning: stderr capture thread panicked");
+            crate::logger::log_message("Warning: stderr capture thread panicked");
+        }
     }
 
     if !status.success() {
@@ -362,10 +368,16 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
     
     // Wait for output threads to complete
     if let Some(handle) = stdout_handle {
-        let _ = handle.join();
+        if handle.join().is_err() {
+            eprintln!("Warning: stdout capture thread panicked");
+            crate::logger::log_message("Warning: stdout capture thread panicked");
+        }
     }
     if let Some(handle) = stderr_handle {
-        let _ = handle.join();
+        if handle.join().is_err() {
+            eprintln!("Warning: stderr capture thread panicked");
+            crate::logger::log_message("Warning: stderr capture thread panicked");
+        }
     }
 
     if !status.success() {
