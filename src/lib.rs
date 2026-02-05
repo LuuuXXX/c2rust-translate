@@ -4,12 +4,14 @@ pub mod file_scanner;
 pub mod git;
 pub mod translator;
 pub mod util;
+pub mod progress;
 
 use anyhow::{Context, Result};
+use colored::Colorize;
 
 /// Main translation workflow for a feature
 pub fn translate_feature(feature: &str) -> Result<()> {
-    println!("Starting translation for feature: {}", feature);
+    println!("{}", format!("Starting translation for feature: {}", feature).bright_cyan().bold());
 
     // Validate feature name to prevent path traversal attacks
     util::validate_feature_name(feature)?;
@@ -41,7 +43,7 @@ pub fn translate_feature(feature: &str) -> Result<()> {
     };
 
     if !rust_dir_exists {
-        println!("Rust directory does not exist. Initializing...");
+        println!("{}", "Rust directory does not exist. Initializing...".yellow());
         analyzer::initialize_feature(feature)?;
         
         // Verify rust directory was created and is actually a directory
@@ -69,13 +71,16 @@ pub fn translate_feature(feature: &str) -> Result<()> {
         git::git_commit(&format!("Initialize {} rust directory", feature), feature)?;
     }
 
+    // Load or initialize progress state
+    let mut progress_state = progress::ProgressState::load(feature)?;
+
     // Step 2: Main loop - process all empty .rs files
     loop {
         // Step 2.1: Try to build first
-        println!("Building project...");
+        println!("\n{}", "Building project...".bright_blue().bold());
         match builder::cargo_build(feature) {
             Ok(_) => {
-                println!("Build successful!");
+                println!("{}", "✓ Build successful!".bright_green().bold());
             }
             Err(e) => {
                 return Err(e).context("Translation workflow aborted due to build failure");
@@ -86,24 +91,46 @@ pub fn translate_feature(feature: &str) -> Result<()> {
         let empty_rs_files = file_scanner::find_empty_rs_files(&rust_dir)?;
         
         if empty_rs_files.is_empty() {
-            println!("No empty .rs files found. Translation complete!");
+            println!("\n{}", "✓ No empty .rs files found. Translation complete!".bright_green().bold());
             break;
         }
 
-        println!("Found {} empty .rs file(s) to process", empty_rs_files.len());
+        // Filter out already processed files
+        let unprocessed_files: Vec<_> = empty_rs_files
+            .iter()
+            .filter(|f| !progress_state.is_processed(f, &rust_dir))
+            .collect();
+        
+        if unprocessed_files.is_empty() {
+            println!("{}", "All files have been processed already.".cyan());
+            continue;
+        }
+        
+        println!("{}", format!("Found {} empty .rs file(s) to process ({} already processed)", 
+            unprocessed_files.len(), 
+            empty_rs_files.len() - unprocessed_files.len()).cyan());
 
-        for (index, rs_file) in empty_rs_files.iter().enumerate() {
+        for rs_file in unprocessed_files.iter() {
+            // Get current progress position (persisted across runs)
+            let current_position = progress_state.get_current_position();
+            
             println!(
-                "Progress: {}/{} - {}",
-                index + 1,
-                empty_rs_files.len(),
-                rs_file.display()
+                "\n{}",
+                format!("═══ Progress: File #{} ═══", current_position).bright_magenta().bold()
             );
-            println!("Updating code analysis...");
+            println!("{} {}", "→ Processing:".bright_cyan(), rs_file.display());
+            
+            println!("\n{}", "Updating code analysis...".bright_blue());
             analyzer::update_code_analysis(feature)?;
-            println!("Running hybrid build tests...");
+            
+            println!("{}", "Running hybrid build tests...".bright_blue());
             builder::run_hybrid_build(feature)?;
+            
             process_rs_file(feature, rs_file)?;
+            
+            // Mark file as processed and save progress
+            progress_state.mark_processed(rs_file, &rust_dir)?;
+            progress_state.save(feature)?;
         }
     }
 
@@ -114,7 +141,7 @@ pub fn translate_feature(feature: &str) -> Result<()> {
 fn process_rs_file(feature: &str, rs_file: &std::path::Path) -> Result<()> {
     use std::fs;
 
-    println!("\nProcessing file: {}", rs_file.display());
+    println!("\n{}", format!("┌─ Processing file: {}", rs_file.display()).bright_white().bold());
 
     // Step 2.2.1: Extract type from filename
     let file_stem = rs_file
@@ -122,15 +149,18 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path) -> Result<()> {
         .and_then(|s| s.to_str())
         .context("Invalid filename")?;
 
-    let (file_type, _name) = file_scanner::extract_file_type(file_stem)
+    let (file_type, name) = file_scanner::extract_file_type(file_stem)
         .ok_or_else(|| anyhow::anyhow!("Unknown file prefix: {}", file_stem))?;
 
-    println!("File type: {}", file_type);
+    println!("│ {} {}", "File type:".cyan(), file_type.bright_yellow());
+    println!("│ {} {}", "Name:".cyan(), name.bright_yellow());
 
     // Step 2.2.2: Check if corresponding .c file exists (with proper IO error handling)
     let c_file = rs_file.with_extension("c");
     match fs::metadata(&c_file) {
-        Ok(_) => {}
+        Ok(_) => {
+            println!("│ {} {}", "C source:".cyan(), c_file.display().to_string().bright_yellow());
+        }
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
             anyhow::bail!(
                 "Corresponding C file not found for Rust file: {}",
@@ -146,7 +176,8 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path) -> Result<()> {
     }
 
     // Step 2.2.3: Call translation tool
-    println!("Translating {} file...", file_type);
+    println!("│");
+    println!("│ {}", format!("Translating {} to Rust...", file_type).bright_blue().bold());
     translator::translate_c_to_rust(feature, file_type, &c_file, rs_file)?;
 
     // Step 2.2.4: Verify translation result
@@ -154,14 +185,16 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path) -> Result<()> {
     if metadata.len() == 0 {
         anyhow::bail!("Translation failed: output file is empty");
     }
+    println!("│ {}", format!("✓ Translation complete ({} bytes)", metadata.len()).bright_green());
 
     // Step 2.2.5 & 2.2.6: Build and fix errors in a loop (max 5 attempts)
     const MAX_FIX_ATTEMPTS: usize = 3;
     for attempt in 1..=MAX_FIX_ATTEMPTS {
-        println!("Building Rust Project after translation (attempt {}/{})", attempt, MAX_FIX_ATTEMPTS);
+        println!("│");
+        println!("│ {}", format!("Building Rust project (attempt {}/{})", attempt, MAX_FIX_ATTEMPTS).bright_blue().bold());
         match builder::cargo_build(feature) {
             Ok(_) => {
-                println!("Build successful!");
+                println!("│ {}", "✓ Build successful!".bright_green().bold());
                 break;
             }
             Err(build_error) => {
@@ -173,7 +206,7 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path) -> Result<()> {
                     ));
                 }
                 
-                println!("Build failed, attempting to fix errors...");
+                println!("│ {}", "⚠ Build failed, attempting to fix errors...".yellow().bold());
                 
                 // Try to fix the error
                 translator::fix_translation_error(feature, file_type, rs_file, &build_error.to_string())?;
@@ -183,6 +216,7 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path) -> Result<()> {
                 if metadata.len() == 0 {
                     anyhow::bail!("Fix failed: output file is empty");
                 }
+                println!("│ {}", "✓ Fix applied".bright_green());
             }
         }
     }
@@ -192,17 +226,25 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path) -> Result<()> {
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or("<unknown>");
+    
+    println!("│");
+    println!("│ {}", "Committing changes...".bright_blue());
     git::git_commit(&format!(
         "Translate {} from C to Rust (feature: {})",
         rs_file_name, feature
     ), feature)?;
+    println!("│ {}", "✓ Changes committed".bright_green());
 
     // Step 2.2.8: Update code analysis
-    println!("Updating code analysis...");
+    println!("│");
+    println!("│ {}", "Updating code analysis...".bright_blue());
     analyzer::update_code_analysis(feature)?;
+    println!("│ {}", "✓ Code analysis updated".bright_green());
 
     // Step 2.2.9: Save update result
     git::git_commit(&format!("Update code analysis for {}", feature), feature)?;
+    
+    println!("{}", "└─ File processing complete".bright_white().bold());
 
     Ok(())
 }

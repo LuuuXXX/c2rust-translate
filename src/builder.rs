@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
 use std::env;
 use std::process::Command;
+use std::time::Instant;
 use crate::util;
+use colored::Colorize;
 
 /// Run `cargo build` in the per-feature Rust project directory at `<feature>/rust`.
 ///
@@ -16,16 +18,22 @@ pub fn cargo_build(feature: &str) -> Result<()> {
     let project_root = util::find_project_root()?;
     let build_dir = project_root.join(".c2rust").join(feature).join("rust");
     
+    let start_time = Instant::now();
+    
     let output = Command::new("cargo")
         .arg("build")
         .current_dir(&build_dir)
         .output()
         .context("Failed to execute cargo build")?;
 
+    let duration = start_time.elapsed();
+
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         anyhow::bail!("Build error: {}", stderr);
     }
+    
+    println!("  {} (took {:.2}s)", "Build completed".bright_green(), duration.as_secs_f64());
 
     Ok(())
 }
@@ -37,7 +45,7 @@ fn get_config_value(key: &str, feature: &str) -> Result<String> {
     
     let output = Command::new("c2rust-config")
         .current_dir(&c2rust_dir)
-        .args(&["config", "--make", "--feature", feature, "--list", key])
+        .args(["config", "--make", "--feature", feature, "--list", key])
         .output()
         .with_context(|| format!("Failed to get {} from config", key))?;
 
@@ -61,6 +69,7 @@ fn execute_command_in_dir(
     dir_key: &str,
     feature: &str,
     set_ld_preload: bool,
+    command_type: &str, // "build", "test", or "clean"
 ) -> Result<()> {
     // Validate feature name to prevent path traversal (defense in depth)
     util::validate_feature_name(feature)?;
@@ -133,25 +142,35 @@ fn execute_command_in_dir(
         None
     };
     
-    // Print the command being executed, showing LD_PRELOAD and C2RUST_FEATURE_ROOT if set
-    // The output uses shell-like quoting to ensure it can be safely copy/pasted
-    println!("Executing command:");
-    print!("  ");
+    // Color code based on command type
+    let colored_label = match command_type {
+        "build" => "│ → Executing build command:".bright_blue().to_string(),
+        "test" => "│ → Executing test command:".bright_green().to_string(),
+        "clean" => "│ → Executing clean command:".bright_red().to_string(),
+        _ => format!("│ → Executing {} command:", command_type),
+    };
+    
+    println!("{}", colored_label);
+    print!("│   ");
     if let Some(ref lib_path) = hybrid_lib {
-        print!("LD_PRELOAD={} ", shell_words::quote(lib_path));
+        print!("LD_PRELOAD={} ", shell_words::quote(lib_path).dimmed());
         if let Some(ref feature_root) = feature_root {
-            print!("C2RUST_FEATURE_ROOT={} ", shell_words::quote(&feature_root.display().to_string()));
+            print!("C2RUST_FEATURE_ROOT={} ", shell_words::quote(&feature_root.display().to_string()).dimmed());
         }
-        print!("C2RUST_PROJECT_ROOT={} ", shell_words::quote(&project_root.display().to_string()));
-        print!("C2RUST_RUST_LIB={} ", shell_words::quote(&rust_lib_path.display().to_string()));
+        print!("C2RUST_PROJECT_ROOT={} ", shell_words::quote(&project_root.display().to_string()).dimmed());
+        print!("C2RUST_RUST_LIB={} ", shell_words::quote(&rust_lib_path.display().to_string()).dimmed());
     }
     // Print the actual command that will be executed (after shell-words parsing)
-    println!("{}", shell_words::join(&parts));
-    println!("  Working directory: {}", exec_dir.display());
+    println!("{}", shell_words::join(&parts).bright_yellow());
+    println!("│   {}: {}", "Working directory".dimmed(), exec_dir.display());
+    
+    let start_time = Instant::now();
     
     let output = command
         .output()
         .with_context(|| format!("Failed to execute command: {}", command_str))?;
+
+    let duration = start_time.elapsed();
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -165,6 +184,8 @@ fn execute_command_in_dir(
             String::from("no output")
         };
         
+        println!("│ {} (took {:.2}s)", format!("✗ {} failed", command_type.to_uppercase()).bright_red().bold(), duration.as_secs_f64());
+        
         anyhow::bail!(
             "Command '{}' failed with {}: {}",
             command_str,
@@ -172,6 +193,15 @@ fn execute_command_in_dir(
             error_details
         );
     }
+
+    // Success message with timing
+    let success_msg = match command_type {
+        "build" => format!("│ {} (took {:.2}s)", "✓ Build successful".bright_green().bold(), duration.as_secs_f64()),
+        "test" => format!("│ {} (took {:.2}s)", "✓ Test successful".bright_green().bold(), duration.as_secs_f64()),
+        "clean" => format!("│ {} (took {:.2}s)", "✓ Clean successful".bright_green().bold(), duration.as_secs_f64()),
+        _ => format!("│ ✓ {} successful (took {:.2}s)", command_type, duration.as_secs_f64()),
+    };
+    println!("{}", success_msg);
 
     Ok(())
 }
@@ -182,7 +212,7 @@ pub fn c2rust_clean(feature: &str) -> Result<()> {
     
     let clean_cmd = get_config_value("clean.cmd", feature)?;
     
-    execute_command_in_dir(&clean_cmd, "clean.dir", feature, false)
+    execute_command_in_dir(&clean_cmd, "clean.dir", feature, false, "clean")
 }
 
 /// Run build command for a given feature
@@ -191,7 +221,7 @@ pub fn c2rust_build(feature: &str) -> Result<()> {
     util::validate_feature_name(feature)?;
     let build_cmd = get_config_value("build.cmd", feature)?;
     
-    execute_command_in_dir(&build_cmd, "build.dir", feature, true)
+    execute_command_in_dir(&build_cmd, "build.dir", feature, true, "build")
 }
 
 /// Run test command for a given feature
@@ -200,7 +230,7 @@ pub fn c2rust_test(feature: &str) -> Result<()> {
     
     let test_cmd = get_config_value("test.cmd", feature)?;
     
-    execute_command_in_dir(&test_cmd, "test.dir", feature, false)
+    execute_command_in_dir(&test_cmd, "test.dir", feature, false, "test")
 }
 
 /// Run hybrid build test suite
@@ -211,7 +241,7 @@ pub fn run_hybrid_build(feature: &str) -> Result<()> {
     let config_path = project_root.join(".c2rust/config.toml");
     
     if !config_path.exists() {
-        eprintln!("Error: Config file not found at {}", config_path.display());
+        eprintln!("{}", format!("Error: Config file not found at {}", config_path.display()).red());
         anyhow::bail!("Config file not found, cannot run hybrid build tests");
     }
 
@@ -221,17 +251,16 @@ pub fn run_hybrid_build(feature: &str) -> Result<()> {
         .output();
     
     if check_output.is_err() {
-        eprintln!("Error: c2rust-config not found");
+        eprintln!("{}", "Error: c2rust-config not found".red());
         anyhow::bail!("c2rust-config not found, cannot run hybrid build tests");
     }
 
     // Execute commands
-    println!("Try to clean c project");
+    println!("│ {}", "Running hybrid build tests...".bright_blue().bold());
     c2rust_clean(feature)?;
-    println!("Try to build c project");
     c2rust_build(feature)?;
-    println!("Try to test c project");
     c2rust_test(feature)?;
+    println!("│ {}", "✓ Hybrid build tests passed".bright_green().bold());
 
     Ok(())
 }

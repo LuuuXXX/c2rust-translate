@@ -10,7 +10,7 @@ pub fn initialize_feature(feature: &str) -> Result<()> {
     
     let output = Command::new("code_analyse")
         .current_dir(&project_root)
-        .args(&["--init", "--feature", feature])
+        .args(["--init", "--feature", feature])
         .output()
         .context("Failed to execute code_analyse")?;
 
@@ -28,7 +28,7 @@ pub fn update_code_analysis(feature: &str) -> Result<()> {
     
     let output = Command::new("code_analyse")
         .current_dir(&project_root)
-        .args(&["--update", "--feature", feature])
+        .args(["--update", "--feature", feature])
         .output()
         .context("Failed to execute code_analyse --update")?;
 

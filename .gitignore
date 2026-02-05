@@ -1,1 +1,3 @@
 /target
+# Exclude progress tracking files
+progress.json
