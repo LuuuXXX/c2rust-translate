@@ -39,7 +39,7 @@
 
 ### 3. 进度持久化
 
-工具会在 `.c2rust/<feature>/progress.json` 文件中保存翻译进度：
+工具会在 `.c2rust/<feature>/rust/progress.json` 文件中保存翻译进度：
 - 已处理的文件数量
 - 已处理的文件列表
 - 重新执行时自动恢复之前的进度位置
