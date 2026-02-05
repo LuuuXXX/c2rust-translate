@@ -15,6 +15,16 @@ pub struct ProgressState {
 }
 
 impl ProgressState {
+    /// Get the old progress file path for a feature (for migration)
+    fn get_old_progress_file_path(feature: &str) -> Result<PathBuf> {
+        let project_root = crate::util::find_project_root()?;
+        let progress_file = project_root
+            .join(".c2rust")
+            .join(feature)
+            .join("progress.json");
+        Ok(progress_file)
+    }
+
     /// Get the progress file path for a feature
     fn get_progress_file_path(feature: &str) -> Result<PathBuf> {
         let project_root = crate::util::find_project_root()?;
@@ -30,7 +40,29 @@ impl ProgressState {
     pub fn load(feature: &str) -> Result<Self> {
         let progress_file = Self::get_progress_file_path(feature)?;
 
+        // Check for migration from old location
         if !progress_file.exists() {
+            let old_progress_file = Self::get_old_progress_file_path(feature)?;
+            if old_progress_file.exists() {
+                // Migrate from old location
+                let content = fs::read_to_string(&old_progress_file)
+                    .with_context(|| format!("Failed to read old progress file: {}", old_progress_file.display()))?;
+
+                let state: ProgressState = serde_json::from_str(&content)
+                    .with_context(|| format!("Failed to parse old progress file: {}", old_progress_file.display()))?;
+
+                // Save to new location
+                state.save(feature)?;
+
+                // Remove old file
+                fs::remove_file(&old_progress_file)
+                    .with_context(|| format!("Failed to remove old progress file: {}", old_progress_file.display()))?;
+
+                eprintln!("Migrated progress file from {} to {}", 
+                    old_progress_file.display(), progress_file.display());
+
+                return Ok(state);
+            }
             return Ok(Self::default());
         }
 

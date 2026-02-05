@@ -40,6 +40,53 @@ fn test_progress_file_in_rust_directory() {
 
 #[test]
 #[serial]
+fn test_progress_file_migration() {
+    // Create a temporary directory structure
+    let temp_dir = TempDir::new().unwrap();
+    let project_root = temp_dir.path();
+    
+    // Create the .c2rust directory
+    let feature_dir = project_root.join(".c2rust").join("test_feature");
+    fs::create_dir_all(&feature_dir).unwrap();
+    
+    // Create the rust directory
+    let rust_dir = feature_dir.join("rust");
+    fs::create_dir_all(&rust_dir).unwrap();
+    
+    // Create an old progress file at the old location
+    let old_progress_path = feature_dir.join("progress.json");
+    let old_progress_content = r#"{
+        "processed_count": 5,
+        "processed_files": ["file1.rs", "file2.rs"],
+        "total_count": 10
+    }"#;
+    fs::write(&old_progress_path, old_progress_content).unwrap();
+    
+    // Change to the project directory
+    let original_dir = std::env::current_dir().unwrap();
+    std::env::set_current_dir(project_root).unwrap();
+    
+    // Load progress - should migrate from old location
+    let progress = c2rust_translate::progress::ProgressState::load("test_feature").unwrap();
+    
+    // Verify migration happened
+    assert_eq!(progress.processed_count, 5);
+    assert_eq!(progress.processed_files.len(), 2);
+    assert_eq!(progress.get_total_count(), 10);
+    
+    // Verify old file was removed
+    assert!(!old_progress_path.exists(), "Old progress file should be removed after migration");
+    
+    // Verify new file exists
+    let new_progress_path = rust_dir.join("progress.json");
+    assert!(new_progress_path.exists(), "New progress file should exist after migration");
+    
+    // Restore original directory
+    std::env::set_current_dir(original_dir).unwrap();
+}
+
+#[test]
+#[serial]
 fn test_logger_creates_output_directory() {
     // Create a temporary directory structure
     let temp_dir = TempDir::new().unwrap();

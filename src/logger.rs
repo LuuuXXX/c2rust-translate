@@ -15,23 +15,54 @@ pub fn init_logger() -> Result<()> {
     std::fs::create_dir_all(&output_dir)
         .with_context(|| format!("Failed to create output directory: {}", output_dir.display()))?;
     
-    // Generate timestamped filename
-    let timestamp = Local::now().format("%Y%m%d_%H%M%S");
+    // Generate timestamped filename with milliseconds to avoid collisions
+    let timestamp = Local::now().format("%Y%m%d_%H%M%S%.3f");
     let log_filename = format!("translate_{}.log", timestamp);
     let log_path = output_dir.join(log_filename);
     
     // Create the log file
     let file = OpenOptions::new()
-        .create(true)
+        .create_new(true)
         .write(true)
-        .truncate(true)
         .open(&log_path)
+        .or_else(|_| {
+            // If file exists (unlikely with milliseconds but possible), append a counter
+            for i in 1..100 {
+                let alternate_filename = format!("translate_{}_{}.log", timestamp, i);
+                let alternate_path = output_dir.join(&alternate_filename);
+                match OpenOptions::new()
+                    .create_new(true)
+                    .write(true)
+                    .open(&alternate_path)
+                {
+                    Ok(f) => {
+                        println!("Log file created: {}", alternate_path.display());
+                        return Ok(f);
+                    }
+                    Err(_) => continue,
+                }
+            }
+            anyhow::bail!("Failed to create log file: too many files with same timestamp")
+        })
         .with_context(|| format!("Failed to create log file: {}", log_path.display()))?;
     
-    println!("Log file created: {}", log_path.display());
+    if file.metadata().is_ok() {
+        println!("Log file created: {}", log_path.display());
+    }
     
-    // Initialize the global logger
-    GLOBAL_LOGGER.get_or_init(|| Mutex::new(Some(file)));
+    // Initialize or update the global logger
+    match GLOBAL_LOGGER.get() {
+        Some(logger_mutex) => {
+            // Logger already exists, replace the file
+            if let Ok(mut logger_opt) = logger_mutex.lock() {
+                *logger_opt = Some(file);
+            }
+        }
+        None => {
+            // First time initialization
+            GLOBAL_LOGGER.get_or_init(|| Mutex::new(Some(file)));
+        }
+    }
     
     Ok(())
 }
