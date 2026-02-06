@@ -178,7 +178,7 @@ fn execute_command_in_dir(
     let duration = start_time.elapsed();
 
     if !output.status.success() {
-        print_command_failure(command_type, command_str, &output, duration);
+        print_command_failure(command_type, &output, duration);
         anyhow::bail!("Command '{}' failed", command_str);
     }
 
@@ -187,7 +187,7 @@ fn execute_command_in_dir(
 }
 
 /// Print command failure message
-fn print_command_failure(command_type: &str, _command_str: &str, output: &std::process::Output, duration: std::time::Duration) {
+fn print_command_failure(command_type: &str, output: &std::process::Output, duration: std::time::Duration) {
     let stderr = String::from_utf8_lossy(&output.stderr);
     let stdout = String::from_utf8_lossy(&output.stdout);
     

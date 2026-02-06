@@ -116,7 +116,7 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
     }
     
     // Display C code preview
-    display_code(c_file, "─ C Source Preview ─", constants::C_CODE_PREVIEW_LINES);
+    display_code(c_file, "─ C Source Preview ─", constants::CODE_PREVIEW_LINES);
     
     let script_path = get_translate_script_full_path()?;
     let script_str = script_path.to_str()
@@ -161,7 +161,7 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
     }
 
     // Read and display the translated Rust code
-    display_code(rs_file, "─ Translated Rust Code ─", constants::RUST_CODE_PREVIEW_LINES);
+    display_code(rs_file, "─ Translated Rust Code ─", constants::CODE_PREVIEW_LINES);
 
     Ok(())
 }
@@ -244,7 +244,7 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
         anyhow::bail!("Fix failed with exit code: {}", status.code().unwrap_or(-1));
     }
 
-    display_code(rs_file, "─ Fixed Rust Code ─", constants::RUST_CODE_PREVIEW_LINES);
+    display_code(rs_file, "─ Fixed Rust Code ─", constants::CODE_PREVIEW_LINES);
 
     Ok(())
 }

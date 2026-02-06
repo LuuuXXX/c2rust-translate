@@ -6,11 +6,8 @@ pub const MAX_TRANSLATION_ATTEMPTS: usize = 3;
 /// Maximum number of attempts to fix build errors for a single file
 pub const MAX_FIX_ATTEMPTS: usize = 10;
 
-/// Number of lines to preview from C source code
-pub const C_CODE_PREVIEW_LINES: usize = 15;
+/// Number of lines to preview from code files (C source or Rust code)
+pub const CODE_PREVIEW_LINES: usize = 15;
 
 /// Number of lines to preview from error messages
 pub const ERROR_PREVIEW_LINES: usize = 10;
-
-/// Number of lines to preview from Rust code
-pub const RUST_CODE_PREVIEW_LINES: usize = 15;
