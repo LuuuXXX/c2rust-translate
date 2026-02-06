@@ -9,7 +9,6 @@ pub mod logger;
 
 use anyhow::{Context, Result};
 use colored::Colorize;
-use std::path::{Path, PathBuf};
 
 /// Main translation workflow for a feature
 pub fn translate_feature(feature: &str, allow_all: bool) -> Result<()> {
@@ -185,124 +184,183 @@ pub fn translate_feature(feature: &str, allow_all: bool) -> Result<()> {
 /// - `total_count`: Total number of files to process
 fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, current_position: usize, total_count: usize) -> Result<()> {
     use std::fs;
+    use std::io::{self, Write};
 
-    println!("\n{}", format!("┌─ Processing file: {}", rs_file.display()).bright_white().bold());
-
-    // Step 2.2.1: Extract type from filename
-    let file_stem = rs_file
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .context("Invalid filename")?;
-
-    let (file_type, name) = file_scanner::extract_file_type(file_stem)
-        .ok_or_else(|| anyhow::anyhow!("Unknown file prefix: {}", file_stem))?;
-
-    println!("│ {} {}", "File type:".cyan(), file_type.bright_yellow());
-    println!("│ {} {}", "Name:".cyan(), name.bright_yellow());
-
-    // Step 2.2.2: Check if corresponding .c file exists (with proper IO error handling)
-    let c_file = rs_file.with_extension("c");
-    match fs::metadata(&c_file) {
-        Ok(_) => {
-            println!("│ {} {}", "C source:".cyan(), c_file.display().to_string().bright_yellow());
-        }
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-            anyhow::bail!(
-                "Corresponding C file not found for Rust file: {}",
-                rs_file.display()
-            );
-        }
-        Err(err) => {
-            return Err(err).context(format!(
-                "Failed to access corresponding C file for Rust file: {}",
-                rs_file.display()
-            ));
-        }
-    }
-
-    // Helper function to format progress indicator
-    let format_progress = |operation: &str| {
-        format!("[{}/{}] Processing {} - {}", current_position, total_count, file_name, operation)
-    };
-
-    // Step 2.2.3: Call translation tool
-    println!("│");
-    println!("│ {}", format_progress("Translation").bright_magenta().bold());
-    println!("│ {}", format!("Translating {} to Rust...", file_type).bright_blue().bold());
-    translator::translate_c_to_rust(feature, file_type, &c_file, rs_file)?;
-
-    // Step 2.2.4: Verify translation result
-    let metadata = fs::metadata(rs_file)?;
-    if metadata.len() == 0 {
-        anyhow::bail!("Translation failed: output file is empty");
-    }
-    println!("│ {}", format!("✓ Translation complete ({} bytes)", metadata.len()).bright_green());
-
-    // Step 2.2.5 & 2.2.6: Build and fix errors in a loop (max 10 attempts)
-    const MAX_FIX_ATTEMPTS: usize = 10;
-    for attempt in 1..=MAX_FIX_ATTEMPTS {
-        println!("│");
-        println!("│ {}", format_progress("Build").bright_magenta().bold());
-        println!("│ {}", format!("Building Rust project (attempt {}/{})", attempt, MAX_FIX_ATTEMPTS).bright_blue().bold());
-        match builder::cargo_build(feature) {
-            Ok(_) => {
-                println!("│ {}", "✓ Build successful!".bright_green().bold());
-                break;
-            }
-            Err(build_error) => {
-                if attempt == MAX_FIX_ATTEMPTS {
-                    return Err(build_error).context(format!(
-                        "Build failed after {} fix attempts for file {}",
-                        MAX_FIX_ATTEMPTS,
-                        rs_file.display()
-                    ));
-                }
-                
-                println!("│ {}", "⚠ Build failed, attempting to fix errors...".yellow().bold());
-                
-                // Try to fix the error
-                println!("│");
-                println!("│ {}", format_progress("Fix").bright_magenta().bold());
-                translator::fix_translation_error(feature, file_type, rs_file, &build_error.to_string())?;
-
-                // Verify fix result
-                let metadata = fs::metadata(rs_file)?;
-                if metadata.len() == 0 {
-                    anyhow::bail!("Fix failed: output file is empty");
-                }
-                println!("│ {}", "✓ Fix applied".bright_green());
-            }
-        }
-    }
-
-    // Step 2.2.7: Save translation result with specific file in commit message
-    println!("│");
-    println!("│ {}", format_progress("Commit").bright_magenta().bold());
-    println!("│ {}", "Committing changes...".bright_blue());
-    git::git_commit(&format!(
-        "Translate {} from C to Rust (feature: {})",
-        file_name, feature
-    ), feature)?;
-    println!("│ {}", "✓ Changes committed".bright_green());
-
-    // Step 2.2.8: Update code analysis
-    println!("│");
-    println!("│ {}", format_progress("Update Analysis").bright_magenta().bold());
-    println!("│ {}", "Updating code analysis...".bright_blue());
-    analyzer::update_code_analysis(feature)?;
-    println!("│ {}", "✓ Code analysis updated".bright_green());
-
-    // Step 2.2.9: Save update result
-    println!("│");
-    println!("│ {}", format_progress("Commit Analysis").bright_magenta().bold());
-    git::git_commit(&format!("Update code analysis for {}", feature), feature)?;
-
-    println!("│");
-    println!("│ {}", format_progress("Hybrid Build Tests").bright_magenta().bold());
-    println!("│ {}", "Running hybrid build tests...".bright_blue());
-    builder::run_hybrid_build(feature)?;
+    const MAX_RETRY_ATTEMPTS: usize = 3; // Maximum number of full retries
     
-    println!("{}", "└─ File processing complete".bright_white().bold());
+    for retry_count in 0..MAX_RETRY_ATTEMPTS {
+        if retry_count > 0 {
+            println!("\n{}", format!("┌─ Retrying file ({}/{}): {}", retry_count, MAX_RETRY_ATTEMPTS - 1, rs_file.display()).bright_yellow().bold());
+        } else {
+            println!("\n{}", format!("┌─ Processing file: {}", rs_file.display()).bright_white().bold());
+        }
 
-    Ok(())
+        // Step 2.2.1: Extract type from filename
+        let file_stem = rs_file
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .context("Invalid filename")?;
+
+        let (file_type, name) = file_scanner::extract_file_type(file_stem)
+            .ok_or_else(|| anyhow::anyhow!("Unknown file prefix: {}", file_stem))?;
+
+        println!("│ {} {}", "File type:".cyan(), file_type.bright_yellow());
+        println!("│ {} {}", "Name:".cyan(), name.bright_yellow());
+
+        // Step 2.2.2: Check if corresponding .c file exists (with proper IO error handling)
+        let c_file = rs_file.with_extension("c");
+        match fs::metadata(&c_file) {
+            Ok(_) => {
+                println!("│ {} {}", "C source:".cyan(), c_file.display().to_string().bright_yellow());
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                anyhow::bail!(
+                    "Corresponding C file not found for Rust file: {}",
+                    rs_file.display()
+                );
+            }
+            Err(err) => {
+                return Err(err).context(format!(
+                    "Failed to access corresponding C file for Rust file: {}",
+                    rs_file.display()
+                ));
+            }
+        }
+
+        // Helper function to format progress indicator
+        let format_progress = |operation: &str| {
+            format!("[{}/{}] Processing {} - {}", current_position, total_count, file_name, operation)
+        };
+
+        // Step 2.2.3: Call translation tool
+        println!("│");
+        println!("│ {}", format_progress("Translation").bright_magenta().bold());
+        println!("│ {}", format!("Translating {} to Rust...", file_type).bright_blue().bold());
+        translator::translate_c_to_rust(feature, file_type, &c_file, rs_file)?;
+
+        // Step 2.2.4: Verify translation result
+        let metadata = fs::metadata(rs_file)?;
+        if metadata.len() == 0 {
+            anyhow::bail!("Translation failed: output file is empty");
+        }
+        println!("│ {}", format!("✓ Translation complete ({} bytes)", metadata.len()).bright_green());
+
+        // Step 2.2.5 & 2.2.6: Build and fix errors in a loop (max 10 attempts)
+        const MAX_FIX_ATTEMPTS: usize = 10;
+        let mut fix_limit_reached = false;
+        
+        for attempt in 1..=MAX_FIX_ATTEMPTS {
+            println!("│");
+            println!("│ {}", format_progress("Build").bright_magenta().bold());
+            println!("│ {}", format!("Building Rust project (attempt {}/{})", attempt, MAX_FIX_ATTEMPTS).bright_blue().bold());
+            match builder::cargo_build(feature) {
+                Ok(_) => {
+                    println!("│ {}", "✓ Build successful!".bright_green().bold());
+                    break;
+                }
+                Err(build_error) => {
+                    if attempt == MAX_FIX_ATTEMPTS {
+                        // Reached fix limit - ask user if they want to retry
+                        fix_limit_reached = true;
+                        println!("│");
+                        println!("│ {}", "⚠ Maximum fix attempts reached!".red().bold());
+                        println!("│ {}", format!("File {} still has build errors after {} fix attempts.", file_name, MAX_FIX_ATTEMPTS).yellow());
+                        println!("│");
+                        
+                        // Only offer retry if we haven't exceeded retry limit
+                        if retry_count < MAX_RETRY_ATTEMPTS - 1 {
+                            println!("│ {}", "Do you want to retry translating this file from scratch?".bright_yellow());
+                            println!("│ {} Type 'retry' to retry, or press Enter to skip:", "→".bright_yellow());
+                            print!("│ ");
+                            io::stdout().flush()?;
+                            
+                            let mut user_input = String::new();
+                            io::stdin().read_line(&mut user_input)?;
+                            
+                            if user_input.trim().eq_ignore_ascii_case("retry") {
+                                println!("│ {}", "Retrying translation...".bright_cyan());
+                                println!("│ {}", "Clearing file content...".bright_blue());
+                                
+                                // Clear the file content
+                                fs::write(rs_file, "")?;
+                                println!("│ {}", "✓ File cleared".bright_green());
+                                
+                                // Break from the fix loop to restart translation
+                                break;
+                            } else {
+                                println!("│ {}", "Skipping retry. Moving to commit...".yellow());
+                                return Err(build_error).context(format!(
+                                    "Build failed after {} fix attempts for file {}",
+                                    MAX_FIX_ATTEMPTS,
+                                    rs_file.display()
+                                ));
+                            }
+                        } else {
+                            println!("│ {}", format!("Maximum retry attempts ({}) reached. Cannot retry further.", MAX_RETRY_ATTEMPTS - 1).red());
+                            return Err(build_error).context(format!(
+                                "Build failed after {} fix attempts and {} retries for file {}",
+                                MAX_FIX_ATTEMPTS,
+                                MAX_RETRY_ATTEMPTS - 1,
+                                rs_file.display()
+                            ));
+                        }
+                    } else {
+                        println!("│ {}", "⚠ Build failed, attempting to fix errors...".yellow().bold());
+                        
+                        // Try to fix the error
+                        println!("│");
+                        println!("│ {}", format_progress("Fix").bright_magenta().bold());
+                        translator::fix_translation_error(feature, file_type, rs_file, &build_error.to_string())?;
+
+                        // Verify fix result
+                        let metadata = fs::metadata(rs_file)?;
+                        if metadata.len() == 0 {
+                            anyhow::bail!("Fix failed: output file is empty");
+                        }
+                        println!("│ {}", "✓ Fix applied".bright_green());
+                    }
+                }
+            }
+        }
+        
+        // If fix limit was reached and user chose to retry, continue to next iteration
+        if fix_limit_reached && retry_count < MAX_RETRY_ATTEMPTS - 1 {
+            continue;
+        }
+
+        // Step 2.2.7: Save translation result with specific file in commit message
+        println!("│");
+        println!("│ {}", format_progress("Commit").bright_magenta().bold());
+        println!("│ {}", "Committing changes...".bright_blue());
+        git::git_commit(&format!(
+            "Translate {} from C to Rust (feature: {})",
+            file_name, feature
+        ), feature)?;
+        println!("│ {}", "✓ Changes committed".bright_green());
+
+        // Step 2.2.8: Update code analysis
+        println!("│");
+        println!("│ {}", format_progress("Update Analysis").bright_magenta().bold());
+        println!("│ {}", "Updating code analysis...".bright_blue());
+        analyzer::update_code_analysis(feature)?;
+        println!("│ {}", "✓ Code analysis updated".bright_green());
+
+        // Step 2.2.9: Save update result
+        println!("│");
+        println!("│ {}", format_progress("Commit Analysis").bright_magenta().bold());
+        git::git_commit(&format!("Update code analysis for {}", feature), feature)?;
+
+        println!("│");
+        println!("│ {}", format_progress("Hybrid Build Tests").bright_magenta().bold());
+        println!("│ {}", "Running hybrid build tests...".bright_blue());
+        builder::run_hybrid_build(feature)?;
+        
+        println!("{}", "└─ File processing complete".bright_white().bold());
+
+        // Successfully completed, break out of retry loop
+        return Ok(());
+    }
+    
+    // If we get here, all retries were exhausted
+    anyhow::bail!("Failed to process file {} after {} retry attempts", rs_file.display(), MAX_RETRY_ATTEMPTS - 1)
 }
