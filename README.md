@@ -44,6 +44,9 @@ c2rust-translate translate
 
 # 自动处理所有文件，不进行交互提示
 c2rust-translate translate --feature <特性名称> --allow-all
+
+# 自定义最大修复尝试次数（默认为 10）
+c2rust-translate translate --feature <特性名称> --max-fix-attempts 5
 ```
 
 ### 文件选择模式
@@ -97,7 +100,7 @@ Your selection: 1,3-4
 3. **翻译** - 对每个文件：
    - 根据文件名前缀（`var_` 或 `fun_`）确定类型
    - 翻译对应的 `.c` 文件为 Rust
-   - 构建并自动修复编译错误（最多 10 次尝试）
+   - 构建并自动修复编译错误（默认最多 10 次尝试，可通过 `--max-fix-attempts` 选项配置）
    - Git 提交更改
    - 更新代码分析
    - 运行混合构建测试
@@ -165,7 +168,7 @@ c2rust-translate translate
 - Rust 目录初始化失败
 - 缺少对应的 `.c` 文件
 - 翻译或错误修复失败
-- 构建错误修复超过 10 次尝试仍失败
+- 构建错误修复超过配置的最大尝试次数仍失败（默认 10 次，可通过 `--max-fix-attempts` 配置）
 - 混合构建测试失败（需要 c2rust-config 正确配置）
 - Git 操作失败（add/commit，"nothing to commit" 除外）
 - 最终构建失败

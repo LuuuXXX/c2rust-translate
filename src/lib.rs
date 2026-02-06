@@ -12,7 +12,7 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 
 /// Main translation workflow for a feature
-pub fn translate_feature(feature: &str, allow_all: bool) -> Result<()> {
+pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize) -> Result<()> {
     let msg = format!("Starting translation for feature: {}", feature);
     println!("{}", msg.bright_cyan().bold());
     logger::log_message(&msg);
@@ -164,7 +164,7 @@ pub fn translate_feature(feature: &str, allow_all: bool) -> Result<()> {
             );
             logger::log_message(&progress_msg);
             
-            process_rs_file(feature, rs_file, file_name, current_position, total_count)?;
+            process_rs_file(feature, rs_file, file_name, current_position, total_count, max_fix_attempts)?;
             
             // Mark file as processed and save progress
             progress_state.mark_processed(rs_file, &rust_dir)?;
@@ -176,7 +176,7 @@ pub fn translate_feature(feature: &str, allow_all: bool) -> Result<()> {
 }
 
 /// Process a single .rs file through the translation workflow
-fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, current_position: usize, total_count: usize) -> Result<()> {
+fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, current_position: usize, total_count: usize, max_fix_attempts: usize) -> Result<()> {
     use constants::MAX_TRANSLATION_ATTEMPTS;
     
     for attempt_number in 1..=MAX_TRANSLATION_ATTEMPTS {
@@ -202,7 +202,8 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, cu
             file_name, 
             &format_progress,
             is_last_attempt,
-            attempt_number
+            attempt_number,
+            max_fix_attempts
         )?;
         
         if build_successful {
@@ -292,16 +293,16 @@ fn build_and_fix_loop<F>(
     format_progress: &F,
     is_last_attempt: bool,
     attempt_number: usize,
+    max_fix_attempts: usize,
 ) -> Result<bool>
 where
     F: Fn(&str) -> String
 {
-    use constants::MAX_FIX_ATTEMPTS;
     
-    for attempt in 1..=MAX_FIX_ATTEMPTS {
+    for attempt in 1..=max_fix_attempts {
         println!("│");
         println!("│ {}", format_progress("Build").bright_magenta().bold());
-        println!("│ {}", format!("Building Rust project (attempt {}/{})", attempt, MAX_FIX_ATTEMPTS).bright_blue().bold());
+        println!("│ {}", format!("Building Rust project (attempt {}/{})", attempt, max_fix_attempts).bright_blue().bold());
         
         match builder::cargo_build(feature) {
             Ok(_) => {
@@ -309,13 +310,14 @@ where
                 return Ok(true);
             }
             Err(build_error) => {
-                if attempt == MAX_FIX_ATTEMPTS {
+                if attempt == max_fix_attempts {
                     return handle_max_fix_attempts_reached(
                         build_error,
                         file_name,
                         rs_file,
                         is_last_attempt,
-                        attempt_number
+                        attempt_number,
+                        max_fix_attempts
                     );
                 } else {
                     apply_error_fix(feature, file_type, rs_file, &build_error, format_progress)?;
@@ -334,13 +336,14 @@ fn handle_max_fix_attempts_reached(
     rs_file: &std::path::Path,
     is_last_attempt: bool,
     attempt_number: usize,
+    max_fix_attempts: usize,
 ) -> Result<bool> {
     use std::io::{self, Write};
-    use constants::{MAX_FIX_ATTEMPTS, MAX_TRANSLATION_ATTEMPTS};
+    use constants::MAX_TRANSLATION_ATTEMPTS;
     
     println!("│");
     println!("│ {}", "⚠ Maximum fix attempts reached!".red().bold());
-    println!("│ {}", format!("File {} still has build errors after {} fix attempts.", file_name, MAX_FIX_ATTEMPTS).yellow());
+    println!("│ {}", format!("File {} still has build errors after {} fix attempts.", file_name, max_fix_attempts).yellow());
     println!("│");
     
     if !is_last_attempt {
@@ -366,7 +369,7 @@ fn handle_max_fix_attempts_reached(
                 println!("│ {}", "Skipping file due to build errors.".yellow());
                 return Err(build_error).context(format!(
                     "Build failed after {} fix attempts for file {}",
-                    MAX_FIX_ATTEMPTS,
+                    max_fix_attempts,
                     rs_file.display()
                 ));
             } else {
@@ -380,7 +383,7 @@ fn handle_max_fix_attempts_reached(
         println!("│ {}", format!("All {} attempts exhausted (1 initial + {} retries). Cannot retry further.", MAX_TRANSLATION_ATTEMPTS, total_retries).red());
         Err(build_error).context(format!(
             "Build failed after {} fix attempts and {} retries for file {}",
-            MAX_FIX_ATTEMPTS,
+            max_fix_attempts,
             total_retries,
             rs_file.display()
         ))
