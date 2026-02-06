@@ -80,9 +80,9 @@ mod tests {
         assert_eq!(empty_files.len(), 3);
         
         // Verify files are sorted alphabetically
-        assert!(empty_files[0].ends_with("fun_alpha.rs"));
-        assert!(empty_files[1].ends_with("var_middle.rs"));
-        assert!(empty_files[2].ends_with("var_zebra.rs"));
+        assert_eq!(empty_files[0].file_name().unwrap(), "fun_alpha.rs");
+        assert_eq!(empty_files[1].file_name().unwrap(), "var_middle.rs");
+        assert_eq!(empty_files[2].file_name().unwrap(), "var_zebra.rs");
     }
 
     #[test]

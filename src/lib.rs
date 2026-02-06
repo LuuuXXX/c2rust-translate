@@ -12,10 +12,15 @@ use colored::Colorize;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-/// Parse user input for file selection
-/// Returns indices (0-based) of selected files
+/// Parse user input for file selection.
+/// Users provide 1-based indices; returns 0-based indices of selected files.
 fn parse_file_selection(input: &str, total_files: usize) -> Result<Vec<usize>> {
     let input = input.trim();
+    
+    // Check for empty input after trimming
+    if input.is_empty() {
+        anyhow::bail!("No input provided. Please select at least one file.");
+    }
     
     // Parse input
     if input.eq_ignore_ascii_case("all") {
@@ -36,10 +41,19 @@ fn parse_file_selection(input: &str, total_files: usize) -> Result<Vec<usize>> {
                 anyhow::bail!("Invalid range format: {}. Expected format like '1-3'", part);
             }
             
-            let start: usize = range_parts[0].trim().parse()
-                .with_context(|| format!("Invalid number in range: {}", range_parts[0]))?;
-            let end: usize = range_parts[1].trim().parse()
-                .with_context(|| format!("Invalid number in range: {}", range_parts[1]))?;
+            let start_str = range_parts[0].trim();
+            let end_str = range_parts[1].trim();
+
+            if start_str.is_empty() || end_str.is_empty() {
+                anyhow::bail!(
+                    "Invalid range format: ranges must have both start and end values (e.g., '1-3')"
+                );
+            }
+
+            let start: usize = start_str.parse()
+                .with_context(|| format!("Invalid number in range: {}", start_str))?;
+            let end: usize = end_str.parse()
+                .with_context(|| format!("Invalid number in range: {}", end_str))?;
             
             if start < 1 || end < 1 || start > total_files || end > total_files {
                 anyhow::bail!("Range {}-{} is out of bounds (valid: 1-{})", start, end, total_files);
@@ -464,9 +478,42 @@ mod tests {
 
     #[test]
     fn test_parse_file_selection_empty() {
-        // Empty string should fail
+        // Empty string should fail with clear message
         let result = parse_file_selection("", 5);
         assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("No input provided"));
+    }
+
+    #[test]
+    fn test_parse_file_selection_whitespace_only() {
+        // Whitespace-only input should fail with clear message
+        let result = parse_file_selection("   ", 5);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("No input provided"));
+    }
+
+    #[test]
+    fn test_parse_file_selection_malformed_range_missing_start() {
+        // Range missing start value (e.g., "-3")
+        let result = parse_file_selection("-3", 5);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("ranges must have both start and end values"));
+    }
+
+    #[test]
+    fn test_parse_file_selection_malformed_range_missing_end() {
+        // Range missing end value (e.g., "1-")
+        let result = parse_file_selection("1-", 5);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("ranges must have both start and end values"));
+    }
+
+    #[test]
+    fn test_parse_file_selection_malformed_range_both_missing() {
+        // Range with both values missing (just "-")
+        let result = parse_file_selection("-", 5);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("ranges must have both start and end values"));
     }
 
     #[test]
