@@ -211,8 +211,8 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path) -> Result<()> {
     }
     println!("│ {}", format!("✓ Translation complete ({} bytes)", metadata.len()).bright_green());
 
-    // Step 2.2.5 & 2.2.6: Build and fix errors in a loop (max 5 attempts)
-    const MAX_FIX_ATTEMPTS: usize = 5;
+    // Step 2.2.5 & 2.2.6: Build and fix errors in a loop (max 10 attempts)
+    const MAX_FIX_ATTEMPTS: usize = 10;
     for attempt in 1..=MAX_FIX_ATTEMPTS {
         println!("│");
         println!("│ {}", format!("Building Rust project (attempt {}/{})", attempt, MAX_FIX_ATTEMPTS).bright_blue().bold());
