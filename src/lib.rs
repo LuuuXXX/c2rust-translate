@@ -281,6 +281,13 @@ pub fn translate_feature(feature: &str, allow_all: bool) -> Result<()> {
 }
 
 /// Process a single .rs file through the translation workflow
+///
+/// # Parameters
+/// - `feature`: The feature name being translated
+/// - `rs_file`: Path to the `.rs` file to process
+/// - `file_name`: Display name of the file for progress messages
+/// - `current_position`: Current file position in the overall progress
+/// - `total_count`: Total number of files to process
 fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, current_position: usize, total_count: usize) -> Result<()> {
     use std::fs;
 
@@ -397,7 +404,7 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, cu
 
     println!("│");
     println!("│ {}", format_progress("Hybrid Build Tests").bright_magenta().bold());
-    println!("{}", "Running hybrid build tests...".bright_blue());
+    println!("│ {}", "Running hybrid build tests...".bright_blue());
     builder::run_hybrid_build(feature)?;
     
     println!("{}", "└─ File processing complete".bright_white().bold());
