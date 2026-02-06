@@ -12,6 +12,70 @@ use colored::Colorize;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
+/// Parse user input for file selection
+/// Returns indices (0-based) of selected files
+fn parse_file_selection(input: &str, total_files: usize) -> Result<Vec<usize>> {
+    let input = input.trim();
+    
+    // Parse input
+    if input.eq_ignore_ascii_case("all") {
+        // Select all files
+        return Ok((0..total_files).collect());
+    }
+    
+    let mut selected_indices = Vec::new();
+    
+    // Split by comma and process each part
+    for part in input.split(',') {
+        let part = part.trim();
+        
+        if part.contains('-') {
+            // Handle range (e.g., "1-3")
+            let range_parts: Vec<&str> = part.split('-').collect();
+            if range_parts.len() != 2 {
+                anyhow::bail!("Invalid range format: {}. Expected format like '1-3'", part);
+            }
+            
+            let start: usize = range_parts[0].trim().parse()
+                .with_context(|| format!("Invalid number in range: {}", range_parts[0]))?;
+            let end: usize = range_parts[1].trim().parse()
+                .with_context(|| format!("Invalid number in range: {}", range_parts[1]))?;
+            
+            if start < 1 || end < 1 || start > total_files || end > total_files {
+                anyhow::bail!("Range {}-{} is out of bounds (valid: 1-{})", start, end, total_files);
+            }
+            
+            if start > end {
+                anyhow::bail!("Invalid range: {} is greater than {}", start, end);
+            }
+            
+            for i in start..=end {
+                selected_indices.push(i - 1);
+            }
+        } else {
+            // Handle single number
+            let num: usize = part.parse()
+                .with_context(|| format!("Invalid number: {}", part))?;
+            
+            if num < 1 || num > total_files {
+                anyhow::bail!("Number {} is out of bounds (valid: 1-{})", num, total_files);
+            }
+            
+            selected_indices.push(num - 1);
+        }
+    }
+    
+    // Remove duplicates and sort
+    selected_indices.sort_unstable();
+    selected_indices.dedup();
+    
+    if selected_indices.is_empty() {
+        anyhow::bail!("No files selected");
+    }
+    
+    Ok(selected_indices)
+}
+
 /// Prompt user to select files from a list
 fn prompt_file_selection(files: &[PathBuf], rust_dir: &Path) -> Result<Vec<usize>> {
     println!("\n{}", "Available files to process:".bright_cyan().bold());
@@ -34,65 +98,8 @@ fn prompt_file_selection(files: &[PathBuf], rust_dir: &Path) -> Result<Vec<usize
     // Read user input
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;
-    let input = input.trim();
     
-    // Parse input
-    if input.eq_ignore_ascii_case("all") {
-        // Select all files
-        return Ok((0..files.len()).collect());
-    }
-    
-    let mut selected_indices = Vec::new();
-    
-    // Split by comma and process each part
-    for part in input.split(',') {
-        let part = part.trim();
-        
-        if part.contains('-') {
-            // Handle range (e.g., "1-3")
-            let range_parts: Vec<&str> = part.split('-').collect();
-            if range_parts.len() != 2 {
-                anyhow::bail!("Invalid range format: {}. Expected format like '1-3'", part);
-            }
-            
-            let start: usize = range_parts[0].trim().parse()
-                .with_context(|| format!("Invalid number in range: {}", range_parts[0]))?;
-            let end: usize = range_parts[1].trim().parse()
-                .with_context(|| format!("Invalid number in range: {}", range_parts[1]))?;
-            
-            if start < 1 || end < 1 || start > files.len() || end > files.len() {
-                anyhow::bail!("Range {}-{} is out of bounds (valid: 1-{})", start, end, files.len());
-            }
-            
-            if start > end {
-                anyhow::bail!("Invalid range: {} is greater than {}", start, end);
-            }
-            
-            for i in start..=end {
-                selected_indices.push(i - 1);
-            }
-        } else {
-            // Handle single number
-            let num: usize = part.parse()
-                .with_context(|| format!("Invalid number: {}", part))?;
-            
-            if num < 1 || num > files.len() {
-                anyhow::bail!("Number {} is out of bounds (valid: 1-{})", num, files.len());
-            }
-            
-            selected_indices.push(num - 1);
-        }
-    }
-    
-    // Remove duplicates and sort
-    selected_indices.sort_unstable();
-    selected_indices.dedup();
-    
-    if selected_indices.is_empty() {
-        anyhow::bail!("No files selected");
-    }
-    
-    Ok(selected_indices)
+    parse_file_selection(&input, files.len())
 }
 
 /// Main translation workflow for a feature
@@ -372,4 +379,107 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path) -> Result<()> {
     println!("{}", "└─ File processing complete".bright_white().bold());
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_file_selection_all() {
+        let result = parse_file_selection("all", 5).unwrap();
+        assert_eq!(result, vec![0, 1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn test_parse_file_selection_all_case_insensitive() {
+        let result = parse_file_selection("ALL", 3).unwrap();
+        assert_eq!(result, vec![0, 1, 2]);
+        
+        let result = parse_file_selection("All", 3).unwrap();
+        assert_eq!(result, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn test_parse_file_selection_single_number() {
+        let result = parse_file_selection("3", 5).unwrap();
+        assert_eq!(result, vec![2]); // 0-based index
+    }
+
+    #[test]
+    fn test_parse_file_selection_multiple_numbers() {
+        let result = parse_file_selection("1,3,5", 5).unwrap();
+        assert_eq!(result, vec![0, 2, 4]); // 0-based indices
+    }
+
+    #[test]
+    fn test_parse_file_selection_range() {
+        let result = parse_file_selection("2-4", 5).unwrap();
+        assert_eq!(result, vec![1, 2, 3]); // 0-based indices
+    }
+
+    #[test]
+    fn test_parse_file_selection_mixed() {
+        let result = parse_file_selection("1,3-5,7", 10).unwrap();
+        assert_eq!(result, vec![0, 2, 3, 4, 6]); // 0-based indices
+    }
+
+    #[test]
+    fn test_parse_file_selection_duplicates() {
+        let result = parse_file_selection("1,2,1,3,2", 5).unwrap();
+        assert_eq!(result, vec![0, 1, 2]); // Duplicates removed and sorted
+    }
+
+    #[test]
+    fn test_parse_file_selection_whitespace() {
+        let result = parse_file_selection(" 1 , 3 , 5 ", 5).unwrap();
+        assert_eq!(result, vec![0, 2, 4]);
+    }
+
+    #[test]
+    fn test_parse_file_selection_range_with_whitespace() {
+        let result = parse_file_selection(" 2 - 4 ", 5).unwrap();
+        assert_eq!(result, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_parse_file_selection_out_of_bounds() {
+        let result = parse_file_selection("6", 5);
+        assert!(result.is_err());
+        
+        let result = parse_file_selection("1,6", 5);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_file_selection_invalid_range() {
+        let result = parse_file_selection("5-2", 5);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("is greater than"));
+    }
+
+    #[test]
+    fn test_parse_file_selection_invalid_format() {
+        let result = parse_file_selection("abc", 5);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_file_selection_empty() {
+        // Empty string should fail
+        let result = parse_file_selection("", 5);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_file_selection_zero() {
+        let result = parse_file_selection("0", 5);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_file_selection_range_out_of_bounds() {
+        let result = parse_file_selection("1-10", 5);
+        assert!(result.is_err());
+    }
 }
