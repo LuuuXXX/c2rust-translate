@@ -256,16 +256,18 @@ pub fn translate_feature(feature: &str, allow_all: bool) -> Result<()> {
             let current_position = progress_state.get_current_position();
             let total_count = progress_state.get_total_count();
             
-            let progress_msg = format!("═══ Progress: File ({}/{}) ═══", current_position, total_count);
+            // Get file name for display
+            let file_name = rs_file
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("<unknown>");
+            
+            let progress_msg = format!("[{}/{}] 执行命令处理 {}", current_position, total_count, file_name);
             println!(
                 "\n{}",
                 progress_msg.bright_magenta().bold()
             );
             logger::log_message(&progress_msg);
-            
-            let processing_msg = format!("→ Processing: {}", rs_file.display());
-            println!("{}", processing_msg.bright_cyan());
-            logger::log_message(&processing_msg);
             
             process_rs_file(feature, rs_file)?;
             
