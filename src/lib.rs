@@ -9,112 +9,6 @@ pub mod logger;
 
 use anyhow::{Context, Result};
 use colored::Colorize;
-use std::io::{self, Write};
-use std::path::{Path, PathBuf};
-
-/// Parse user input for file selection.
-/// Users provide 1-based indices; returns 0-based indices of selected files.
-fn parse_file_selection(input: &str, total_files: usize) -> Result<Vec<usize>> {
-    let input = input.trim();
-    
-    // Check for empty input after trimming
-    if input.is_empty() {
-        anyhow::bail!("No input provided. Please select at least one file.");
-    }
-    
-    // Parse input
-    if input.eq_ignore_ascii_case("all") {
-        // Select all files
-        return Ok((0..total_files).collect());
-    }
-    
-    let mut selected_indices = Vec::new();
-    
-    // Split by comma and process each part
-    for part in input.split(',') {
-        let part = part.trim();
-        
-        if part.contains('-') {
-            // Handle range (e.g., "1-3")
-            let range_parts: Vec<&str> = part.split('-').collect();
-            if range_parts.len() != 2 {
-                anyhow::bail!("Invalid range format: {}. Expected format like '1-3'", part);
-            }
-            
-            let start_str = range_parts[0].trim();
-            let end_str = range_parts[1].trim();
-
-            if start_str.is_empty() || end_str.is_empty() {
-                anyhow::bail!(
-                    "Invalid range format: ranges must have both start and end values (e.g., '1-3')"
-                );
-            }
-
-            let start: usize = start_str.parse()
-                .with_context(|| format!("Invalid number in range: {}", start_str))?;
-            let end: usize = end_str.parse()
-                .with_context(|| format!("Invalid number in range: {}", end_str))?;
-            
-            if start < 1 || end < 1 || start > total_files || end > total_files {
-                anyhow::bail!("Range {}-{} is out of bounds (valid: 1-{})", start, end, total_files);
-            }
-            
-            if start > end {
-                anyhow::bail!("Invalid range: {} is greater than {}", start, end);
-            }
-            
-            for i in start..=end {
-                selected_indices.push(i - 1);
-            }
-        } else {
-            // Handle single number
-            let num: usize = part.parse()
-                .with_context(|| format!("Invalid number: {}", part))?;
-            
-            if num < 1 || num > total_files {
-                anyhow::bail!("Number {} is out of bounds (valid: 1-{})", num, total_files);
-            }
-            
-            selected_indices.push(num - 1);
-        }
-    }
-    
-    // Remove duplicates and sort
-    selected_indices.sort_unstable();
-    selected_indices.dedup();
-    
-    if selected_indices.is_empty() {
-        anyhow::bail!("No files selected");
-    }
-    
-    Ok(selected_indices)
-}
-
-/// Prompt user to select files from a list
-fn prompt_file_selection(files: &[&PathBuf], rust_dir: &Path) -> Result<Vec<usize>> {
-    println!("\n{}", "Available files to process:".bright_cyan().bold());
-    
-    // Display files with index numbers and relative paths
-    for (idx, file) in files.iter().enumerate() {
-        let relative_path = file.strip_prefix(rust_dir)
-            .unwrap_or(file);
-        println!("  {}. {}", idx + 1, relative_path.display());
-    }
-    
-    println!();
-    println!("{}", "Select files to process:".bright_yellow());
-    println!("  - Enter numbers separated by commas (e.g., 1,3,5)");
-    println!("  - Enter ranges (e.g., 1-3,5)");
-    println!("  - Enter 'all' to process all files");
-    print!("\n{} ", "Your selection:".bright_green().bold());
-    io::stdout().flush()?;
-    
-    // Read user input
-    let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
-    
-    parse_file_selection(&input, files.len())
-}
 
 /// Main translation workflow for a feature
 pub fn translate_feature(feature: &str, allow_all: bool) -> Result<()> {
@@ -247,7 +141,7 @@ pub fn translate_feature(feature: &str, allow_all: bool) -> Result<()> {
             (0..unprocessed_files.len()).collect()
         } else {
             // Prompt user to select files
-            prompt_file_selection(&unprocessed_files, &rust_dir)?
+            file_scanner::prompt_file_selection(&unprocessed_files, &rust_dir)?
         };
 
         for &idx in selected_indices.iter() {
@@ -290,260 +184,195 @@ pub fn translate_feature(feature: &str, allow_all: bool) -> Result<()> {
 /// - `total_count`: Total number of files to process
 fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, current_position: usize, total_count: usize) -> Result<()> {
     use std::fs;
+    use std::io::{self, Write};
 
-    println!("\n{}", format!("┌─ Processing file: {}", rs_file.display()).bright_white().bold());
-
-    // Step 2.2.1: Extract type from filename
-    let file_stem = rs_file
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .context("Invalid filename")?;
-
-    let (file_type, name) = file_scanner::extract_file_type(file_stem)
-        .ok_or_else(|| anyhow::anyhow!("Unknown file prefix: {}", file_stem))?;
-
-    println!("│ {} {}", "File type:".cyan(), file_type.bright_yellow());
-    println!("│ {} {}", "Name:".cyan(), name.bright_yellow());
-
-    // Step 2.2.2: Check if corresponding .c file exists (with proper IO error handling)
-    let c_file = rs_file.with_extension("c");
-    match fs::metadata(&c_file) {
-        Ok(_) => {
-            println!("│ {} {}", "C source:".cyan(), c_file.display().to_string().bright_yellow());
-        }
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-            anyhow::bail!(
-                "Corresponding C file not found for Rust file: {}",
-                rs_file.display()
-            );
-        }
-        Err(err) => {
-            return Err(err).context(format!(
-                "Failed to access corresponding C file for Rust file: {}",
-                rs_file.display()
-            ));
-        }
-    }
-
-    // Helper function to format progress indicator
-    let format_progress = |operation: &str| {
-        format!("[{}/{}] Processing {} - {}", current_position, total_count, file_name, operation)
-    };
-
-    // Step 2.2.3: Call translation tool
-    println!("│");
-    println!("│ {}", format_progress("Translation").bright_magenta().bold());
-    println!("│ {}", format!("Translating {} to Rust...", file_type).bright_blue().bold());
-    translator::translate_c_to_rust(feature, file_type, &c_file, rs_file)?;
-
-    // Step 2.2.4: Verify translation result
-    let metadata = fs::metadata(rs_file)?;
-    if metadata.len() == 0 {
-        anyhow::bail!("Translation failed: output file is empty");
-    }
-    println!("│ {}", format!("✓ Translation complete ({} bytes)", metadata.len()).bright_green());
-
-    // Step 2.2.5 & 2.2.6: Build and fix errors in a loop (max 10 attempts)
-    const MAX_FIX_ATTEMPTS: usize = 10;
-    for attempt in 1..=MAX_FIX_ATTEMPTS {
-        println!("│");
-        println!("│ {}", format_progress("Build").bright_magenta().bold());
-        println!("│ {}", format!("Building Rust project (attempt {}/{})", attempt, MAX_FIX_ATTEMPTS).bright_blue().bold());
-        match builder::cargo_build(feature) {
-            Ok(_) => {
-                println!("│ {}", "✓ Build successful!".bright_green().bold());
-                break;
-            }
-            Err(build_error) => {
-                if attempt == MAX_FIX_ATTEMPTS {
-                    return Err(build_error).context(format!(
-                        "Build failed after {} fix attempts for file {}",
-                        MAX_FIX_ATTEMPTS,
-                        rs_file.display()
-                    ));
-                }
-                
-                println!("│ {}", "⚠ Build failed, attempting to fix errors...".yellow().bold());
-                
-                // Try to fix the error
-                println!("│");
-                println!("│ {}", format_progress("Fix").bright_magenta().bold());
-                translator::fix_translation_error(feature, file_type, rs_file, &build_error.to_string())?;
-
-                // Verify fix result
-                let metadata = fs::metadata(rs_file)?;
-                if metadata.len() == 0 {
-                    anyhow::bail!("Fix failed: output file is empty");
-                }
-                println!("│ {}", "✓ Fix applied".bright_green());
-            }
-        }
-    }
-
-    // Step 2.2.7: Save translation result with specific file in commit message
-    println!("│");
-    println!("│ {}", format_progress("Commit").bright_magenta().bold());
-    println!("│ {}", "Committing changes...".bright_blue());
-    git::git_commit(&format!(
-        "Translate {} from C to Rust (feature: {})",
-        file_name, feature
-    ), feature)?;
-    println!("│ {}", "✓ Changes committed".bright_green());
-
-    // Step 2.2.8: Update code analysis
-    println!("│");
-    println!("│ {}", format_progress("Update Analysis").bright_magenta().bold());
-    println!("│ {}", "Updating code analysis...".bright_blue());
-    analyzer::update_code_analysis(feature)?;
-    println!("│ {}", "✓ Code analysis updated".bright_green());
-
-    // Step 2.2.9: Save update result
-    println!("│");
-    println!("│ {}", format_progress("Commit Analysis").bright_magenta().bold());
-    git::git_commit(&format!("Update code analysis for {}", feature), feature)?;
-
-    println!("│");
-    println!("│ {}", format_progress("Hybrid Build Tests").bright_magenta().bold());
-    println!("│ {}", "Running hybrid build tests...".bright_blue());
-    builder::run_hybrid_build(feature)?;
+    // Maximum total attempts: 1 initial attempt + 2 retries = 3 total attempts
+    const MAX_TOTAL_ATTEMPTS: usize = 3;
     
-    println!("{}", "└─ File processing complete".bright_white().bold());
-
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_file_selection_all() {
-        let result = parse_file_selection("all", 5).unwrap();
-        assert_eq!(result, vec![0, 1, 2, 3, 4]);
-    }
-
-    #[test]
-    fn test_parse_file_selection_all_case_insensitive() {
-        let result = parse_file_selection("ALL", 3).unwrap();
-        assert_eq!(result, vec![0, 1, 2]);
+    // Attempt translation and fixing until successful or all attempts exhausted
+    for attempt_number in 1..=MAX_TOTAL_ATTEMPTS {
+        let is_last_attempt = attempt_number == MAX_TOTAL_ATTEMPTS;
         
-        let result = parse_file_selection("All", 3).unwrap();
-        assert_eq!(result, vec![0, 1, 2]);
-    }
+        if attempt_number > 1 {
+            let retry_number = attempt_number - 1;
+            let max_retries = MAX_TOTAL_ATTEMPTS - 1;
+            println!("\n{}", format!("┌─ Retry attempt {}/{}: {}", retry_number, max_retries, rs_file.display()).bright_yellow().bold());
+        } else {
+            println!("\n{}", format!("┌─ Processing file: {}", rs_file.display()).bright_white().bold());
+        }
 
-    #[test]
-    fn test_parse_file_selection_single_number() {
-        let result = parse_file_selection("3", 5).unwrap();
-        assert_eq!(result, vec![2]); // 0-based index
-    }
+        // Step 2.2.1: Extract type from filename
+        let file_stem = rs_file
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .context("Invalid filename")?;
 
-    #[test]
-    fn test_parse_file_selection_multiple_numbers() {
-        let result = parse_file_selection("1,3,5", 5).unwrap();
-        assert_eq!(result, vec![0, 2, 4]); // 0-based indices
-    }
+        let (file_type, name) = file_scanner::extract_file_type(file_stem)
+            .ok_or_else(|| anyhow::anyhow!("Unknown file prefix: {}", file_stem))?;
 
-    #[test]
-    fn test_parse_file_selection_range() {
-        let result = parse_file_selection("2-4", 5).unwrap();
-        assert_eq!(result, vec![1, 2, 3]); // 0-based indices
-    }
+        println!("│ {} {}", "File type:".cyan(), file_type.bright_yellow());
+        println!("│ {} {}", "Name:".cyan(), name.bright_yellow());
 
-    #[test]
-    fn test_parse_file_selection_mixed() {
-        let result = parse_file_selection("1,3-5,7", 10).unwrap();
-        assert_eq!(result, vec![0, 2, 3, 4, 6]); // 0-based indices
-    }
+        // Step 2.2.2: Check if corresponding .c file exists (with proper IO error handling)
+        let c_file = rs_file.with_extension("c");
+        match fs::metadata(&c_file) {
+            Ok(_) => {
+                println!("│ {} {}", "C source:".cyan(), c_file.display().to_string().bright_yellow());
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                anyhow::bail!(
+                    "Corresponding C file not found for Rust file: {}",
+                    rs_file.display()
+                );
+            }
+            Err(err) => {
+                return Err(err).context(format!(
+                    "Failed to access corresponding C file for Rust file: {}",
+                    rs_file.display()
+                ));
+            }
+        }
 
-    #[test]
-    fn test_parse_file_selection_duplicates() {
-        let result = parse_file_selection("1,2,1,3,2", 5).unwrap();
-        assert_eq!(result, vec![0, 1, 2]); // Duplicates removed and sorted
-    }
+        // Helper function to format progress indicator
+        let format_progress = |operation: &str| {
+            format!("[{}/{}] Processing {} - {}", current_position, total_count, file_name, operation)
+        };
 
-    #[test]
-    fn test_parse_file_selection_whitespace() {
-        let result = parse_file_selection(" 1 , 3 , 5 ", 5).unwrap();
-        assert_eq!(result, vec![0, 2, 4]);
-    }
+        // Step 2.2.3: Call translation tool
+        println!("│");
+        println!("│ {}", format_progress("Translation").bright_magenta().bold());
+        println!("│ {}", format!("Translating {} to Rust...", file_type).bright_blue().bold());
+        translator::translate_c_to_rust(feature, file_type, &c_file, rs_file)?;
 
-    #[test]
-    fn test_parse_file_selection_range_with_whitespace() {
-        let result = parse_file_selection(" 2 - 4 ", 5).unwrap();
-        assert_eq!(result, vec![1, 2, 3]);
-    }
+        // Step 2.2.4: Verify translation result
+        let metadata = fs::metadata(rs_file)?;
+        if metadata.len() == 0 {
+            anyhow::bail!("Translation failed: output file is empty");
+        }
+        println!("│ {}", format!("✓ Translation complete ({} bytes)", metadata.len()).bright_green());
 
-    #[test]
-    fn test_parse_file_selection_out_of_bounds() {
-        let result = parse_file_selection("6", 5);
-        assert!(result.is_err());
+        // Step 2.2.5 & 2.2.6: Build and fix errors in a loop (max 10 attempts)
+        const MAX_FIX_ATTEMPTS: usize = 10;
+        let mut build_successful = false;
         
-        let result = parse_file_selection("1,6", 5);
-        assert!(result.is_err());
-    }
+        for attempt in 1..=MAX_FIX_ATTEMPTS {
+            println!("│");
+            println!("│ {}", format_progress("Build").bright_magenta().bold());
+            println!("│ {}", format!("Building Rust project (attempt {}/{})", attempt, MAX_FIX_ATTEMPTS).bright_blue().bold());
+            match builder::cargo_build(feature) {
+                Ok(_) => {
+                    println!("│ {}", "✓ Build successful!".bright_green().bold());
+                    build_successful = true;
+                    break;
+                }
+                Err(build_error) => {
+                    if attempt == MAX_FIX_ATTEMPTS {
+                        // Reached fix limit - ask user if they want to retry
+                        println!("│");
+                        println!("│ {}", "⚠ Maximum fix attempts reached!".red().bold());
+                        println!("│ {}", format!("File {} still has build errors after {} fix attempts.", file_name, MAX_FIX_ATTEMPTS).yellow());
+                        println!("│");
+                        
+                        // Only offer retry if we haven't used all attempts yet
+                        if !is_last_attempt {
+                            let remaining_retries = MAX_TOTAL_ATTEMPTS - attempt_number;
+                            println!("│ {}", format!("Do you want to retry translating this file from scratch? ({} retries remaining)", remaining_retries).bright_yellow());
+                            println!("│ {} Type 'retry' to retry, or press Enter to skip:", "→".bright_yellow());
+                            print!("│ ");
+                            io::stdout().flush()?;
+                            
+                            let mut user_input = String::new();
+                            io::stdin().read_line(&mut user_input)?;
+                            
+                            let input_trimmed = user_input.trim();
+                            if input_trimmed.eq_ignore_ascii_case("retry") {
+                                println!("│ {}", "Retrying translation...".bright_cyan());
+                                println!("│ {}", "Note: The translator will overwrite the existing file content.".bright_blue());
+                                
+                                // Don't clear the file - let the translator overwrite it
+                                // This prevents data loss if translation fails
+                                println!("│ {}", "✓ Retry scheduled".bright_green());
+                                
+                                // Break from the fix loop to restart translation
+                                break;
+                            } else {
+                                if !input_trimmed.is_empty() {
+                                    println!("│ {}", format!("Invalid input '{}'. Only 'retry' will retry the translation.", input_trimmed).yellow());
+                                }
+                                println!("│ {}", "Skipping file due to build errors.".yellow());
+                                return Err(build_error).context(format!(
+                                    "Build failed after {} fix attempts for file {}",
+                                    MAX_FIX_ATTEMPTS,
+                                    rs_file.display()
+                                ));
+                            }
+                        } else {
+                            let total_retries = MAX_TOTAL_ATTEMPTS - 1;
+                            println!("│ {}", format!("All {} attempts exhausted (1 initial + {} retries). Cannot retry further.", MAX_TOTAL_ATTEMPTS, total_retries).red());
+                            return Err(build_error).context(format!(
+                                "Build failed after {} fix attempts and {} retries for file {}",
+                                MAX_FIX_ATTEMPTS,
+                                total_retries,
+                                rs_file.display()
+                            ));
+                        }
+                    } else {
+                        println!("│ {}", "⚠ Build failed, attempting to fix errors...".yellow().bold());
+                        
+                        // Try to fix the error
+                        println!("│");
+                        println!("│ {}", format_progress("Fix").bright_magenta().bold());
+                        translator::fix_translation_error(feature, file_type, rs_file, &build_error.to_string())?;
 
-    #[test]
-    fn test_parse_file_selection_invalid_range() {
-        let result = parse_file_selection("5-2", 5);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("is greater than"));
-    }
+                        // Verify fix result
+                        let metadata = fs::metadata(rs_file)?;
+                        if metadata.len() == 0 {
+                            anyhow::bail!("Fix failed: output file is empty");
+                        }
+                        println!("│ {}", "✓ Fix applied".bright_green());
+                    }
+                }
+            }
+        }
+        
+        // If build was successful, proceed to commit; otherwise, user chose to retry
+        if build_successful {
+            // Step 2.2.7: Save translation result with specific file in commit message
+            println!("│");
+            println!("│ {}", format_progress("Commit").bright_magenta().bold());
+            println!("│ {}", "Committing changes...".bright_blue());
+            git::git_commit(&format!(
+                "Translate {} from C to Rust (feature: {})",
+                file_name, feature
+            ), feature)?;
+            println!("│ {}", "✓ Changes committed".bright_green());
 
-    #[test]
-    fn test_parse_file_selection_invalid_format() {
-        let result = parse_file_selection("abc", 5);
-        assert!(result.is_err());
-    }
+            // Step 2.2.8: Update code analysis
+            println!("│");
+            println!("│ {}", format_progress("Update Analysis").bright_magenta().bold());
+            println!("│ {}", "Updating code analysis...".bright_blue());
+            analyzer::update_code_analysis(feature)?;
+            println!("│ {}", "✓ Code analysis updated".bright_green());
 
-    #[test]
-    fn test_parse_file_selection_empty() {
-        // Empty string should fail with clear message
-        let result = parse_file_selection("", 5);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("No input provided"));
-    }
+            // Step 2.2.9: Save update result
+            println!("│");
+            println!("│ {}", format_progress("Commit Analysis").bright_magenta().bold());
+            git::git_commit(&format!("Update code analysis for {}", feature), feature)?;
 
-    #[test]
-    fn test_parse_file_selection_whitespace_only() {
-        // Whitespace-only input should fail with clear message
-        let result = parse_file_selection("   ", 5);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("No input provided"));
-    }
+            println!("│");
+            println!("│ {}", format_progress("Hybrid Build Tests").bright_magenta().bold());
+            println!("│ {}", "Running hybrid build tests...".bright_blue());
+            builder::run_hybrid_build(feature)?;
+            
+            println!("{}", "└─ File processing complete".bright_white().bold());
 
-    #[test]
-    fn test_parse_file_selection_malformed_range_missing_start() {
-        // Range missing start value (e.g., "-3")
-        let result = parse_file_selection("-3", 5);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("ranges must have both start and end values"));
+            // Successfully completed
+            return Ok(());
+        }
+        // If we get here, build failed but user chose to retry - continue to next attempt
     }
-
-    #[test]
-    fn test_parse_file_selection_malformed_range_missing_end() {
-        // Range missing end value (e.g., "1-")
-        let result = parse_file_selection("1-", 5);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("ranges must have both start and end values"));
-    }
-
-    #[test]
-    fn test_parse_file_selection_malformed_range_both_missing() {
-        // Range with both values missing (just "-")
-        let result = parse_file_selection("-", 5);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("ranges must have both start and end values"));
-    }
-
-    #[test]
-    fn test_parse_file_selection_zero() {
-        let result = parse_file_selection("0", 5);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_file_selection_range_out_of_bounds() {
-        let result = parse_file_selection("1-10", 5);
-        assert!(result.is_err());
-    }
+    
+    // This should be unreachable: all retry attempts exhausted without returning
+    // The only way to exit the loop is through return statements above
+    anyhow::bail!("Unexpected: all retry attempts completed without resolution")
 }
