@@ -4,56 +4,22 @@
 
 ## 功能特性
 
+### 核心功能
 - 自动化的 C 到 Rust 翻译工作流
 - 支持基于特性(feature)的翻译，使用 `--feature` 标志
-- **交互式文件选择** - 用户可以选择要处理的具体文件
-- **--allow-all 选项** - 支持自动处理所有文件，适合批处理场景
-- **文件列表排序** - 未处理文件按字母顺序排序显示
+- 交互式文件选择或自动处理模式（`--allow-all`）
 - 自动初始化 Rust 项目结构
-- 集成翻译工具（`translate_and_fix.py`）
 - 自动检测和修复构建错误
 - 基于 Git 的版本控制集成
-- 代码分析集成（`code-analyse`）
-- 混合构建测试支持
-- **彩色输出增强用户体验** - 不同类型的命令使用不同颜色高亮
-- **进度持久化** - 重新执行时保持之前的进度位置
-- **详细的翻译输出** - 显示正在翻译的 C 代码内容
-- **命令执行结果展示** - 显示执行状态、耗时等信息
 
-## 新增 UX 改进特性
+### 用户体验优化
+- **彩色输出** - 构建/测试/清理命令使用不同颜色高亮，成功/错误/警告消息带有图标标识
+- **代码预览** - 显示正在翻译的 C 代码（前 15 行）和构建错误（前 10 行）
+- **进度持久化** - 保存翻译进度，中断后可恢复（`.c2rust/<feature>/rust/progress.json`）
+- **执行时间统计** - 显示所有命令的耗时，便于识别性能瓶颈
+- **文件排序显示** - 未处理文件按字母顺序列出
 
-### 1. 彩色输出和命令高亮
-
-工具现在使用彩色输出来增强用户体验：
-- **构建命令** - 使用蓝色高亮
-- **测试命令** - 使用绿色高亮  
-- **清除命令** - 使用红色高亮
-- **成功消息** - 使用绿色加粗显示（带 ✓ 标记）
-- **错误/警告消息** - 使用黄色或红色显示（带 ⚠ 或 ✗ 标记）
-- **进度信息** - 使用青色和品红色高亮
-
-### 2. 翻译内容预览
-
-在翻译过程中，工具会显示：
-- 正在翻译的 C 源代码内容（前 15 行预览）
-- 构建错误的详细信息（前 10 行预览）
-- 文件类型、名称和路径信息
-- 翻译结果的文件大小
-
-### 3. 进度持久化
-
-工具会在 `.c2rust/<feature>/rust/progress.json` 文件中保存翻译进度：
-- 已处理的文件数量
-- 已处理的文件列表
-- 重新执行时自动恢复之前的进度位置
-- 确保进度显示的连续性和准确性
-
-### 4. 执行时间统计
-
-所有命令执行都会显示耗时信息：
-- cargo build 耗时
-- 混合构建命令（clean/build/test）耗时
-- 便于识别性能瓶颈
+详细的用户体验改进说明请参见 [用户体验改进.md](用户体验改进.md)。
 
 ## 安装
 
@@ -126,105 +92,58 @@ Your selection: 1,3-4
 
 该命令将执行以下操作：
 
-1. **初始化** - 检查 `<特性名称>/rust` 目录是否存在，如果需要则进行初始化
-2. **扫描** - 查找 rust 目录中所有空的 `.rs` 文件
-3. **翻译** - 对每个空的 `.rs` 文件：
-   - 根据文件名前缀确定类型（变量或函数）（`var_` 或 `fun_`）
-   - 将对应的 `.c` 文件翻译为 Rust
-   - 构建项目并修复任何编译错误
-   - 使用 git 提交更改
+1. **初始化** - 检查并初始化 `<特性名称>/rust` 目录
+2. **扫描** - 查找所有空的 `.rs` 文件
+3. **翻译** - 对每个文件：
+   - 根据文件名前缀（`var_` 或 `fun_`）确定类型
+   - 翻译对应的 `.c` 文件为 Rust
+   - 构建并自动修复编译错误（最多 10 次尝试）
+   - Git 提交更改
    - 更新代码分析
    - 运行混合构建测试
 
-### 工作流程详情
-
 #### 文件命名规范
-
 - `var_*.rs` - 变量声明
 - `fun_*.rs` - 函数定义
 
-每个 `.rs` 文件应该有一个同名的对应 `.c` 文件。
+每个 `.rs` 文件应有对应的同名 `.c` 文件。
 
 #### 必需工具
 
-本工具依赖一些外部命令行工具，其中一部分是必需的，另一部分是可选的。
+**核心依赖：**
+- `code-analyse` - 代码分析和初始化
+- `translate_and_fix.py` - C 到 Rust 翻译和错误修复
+- `c2rust-config` - 配置管理（需配置 build/test/clean 的 dir 和 cmd）
 
-**必需依赖（必须在你的 PATH 中可用）：**
-
-- `code-analyse` - 用于代码分析和初始化
-- `translate_and_fix.py` - 用于翻译和错误修复的 Python 脚本
-
-**必需依赖（存在于 PATH 中）：**
-
-- `c2rust-config` - 用于配置管理（混合构建必需）
-
-**注意：** 混合构建不再使用 `c2rust-{build,test,clean}` 包装命令。相反，它直接从 `c2rust-config` 获取构建目录和命令，然后在项目目录中执行原生的构建命令（如 make、cmake 等）。对于构建操作，会保留 LD_PRELOAD 机制以拦截系统调用。
-
-如果 `c2rust-config` 不可用或配置缺失，混合构建测试将失败并停止翻译流程。确保 `c2rust-config` 已正确安装并配置了以下所有必需的配置键：
-- `build.dir` 和 `build.cmd` - 构建操作的目录和命令
-- `test.dir` 和 `test.cmd` - 测试操作的目录和命令
-- `clean.dir` 和 `clean.cmd` - 清理操作的目录和命令
-
-#### 项目结构要求
-
-工具会自动向上搜索 `.c2rust` 目录来定位项目根目录。项目应具有以下结构：
+#### 项目结构
 
 ```
 项目根目录/
 ├── .c2rust/
-│   └── config.toml    # 配置文件
+│   └── config.toml           # 配置文件
 └── <feature>/
-    └── rust/          # 包含待翻译的 .rs 和 .c 文件
-                       # 每个特性都有自己的 Cargo.toml（cargo build 在此执行）
+    └── rust/                 # 待翻译的 .rs 和 .c 文件
+        ├── Cargo.toml        # Rust 项目配置
+        ├── fun_*.rs / .c     # 函数翻译文件
+        └── var_*.rs / .c     # 变量翻译文件
 ```
 
-#### 翻译工具用法
+#### 工具用法示例
 
-该工具使用以下参数调用 `translate_and_fix.py`：
-
+**翻译工具调用格式：**
 ```bash
-# 用于翻译（配置文件路径自动从 .c2rust 目录定位）
-python translate_and_fix.py --config <项目根>/.c2rust/config.toml --type <var|fn> --code <c文件> --output <rs文件>
+# 翻译
+python translate_and_fix.py --config <config.toml> --type <var|fn> --code <input.c> --output <output.rs>
 
-# 用于修复错误
-python translate_and_fix.py --config <项目根>/.c2rust/config.toml --type fix --code <code.rs> --output <output.rs> --error <error.txt>
+# 修复错误
+python translate_and_fix.py --config <config.toml> --type fix --code <code.rs> --output <output.rs> --error <error.txt>
 ```
 
-#### 代码分析工具用法
-
+**代码分析工具：**
 ```bash
-# 初始化
-code-analyse --init --feature <特性名称>
-
-# 更新
-code-analyse --update --feature <特性名称>
+code-analyse --init --feature <特性名称>     # 初始化
+code-analyse --update --feature <特性名称>   # 更新
 ```
-
-#### 混合构建配置工具用法
-
-`c2rust-config` 用于获取构建目录和命令配置。所有配置键都是必需的，并且是特性特定的（通过 `--feature` 参数指定）：
-
-```bash
-# 获取构建目录（必需）
-c2rust-config config --make --feature <特性名称> --list build.dir
-
-# 获取构建命令（必需）
-c2rust-config config --make --feature <特性名称> --list build.cmd
-
-# 获取测试目录（必需）
-c2rust-config config --make --feature <特性名称> --list test.dir
-
-# 获取测试命令（必需）
-c2rust-config config --make --feature <特性名称> --list test.cmd
-
-# 获取清理目录（必需）
-c2rust-config config --make --feature <特性名称> --list clean.dir
-
-# 获取清理命令（必需）
-c2rust-config config --make --feature <特性名称> --list clean.cmd
-```
-
-这些配置用于在正确的目录下执行原生构建命令（make、cmake 等），而不是通过 `c2rust-{build,test,clean}` 包装命令。每个操作（build、test、clean）在各自配置的目录中执行各自的命令。配置是特性特定的，允许不同特性使用不同的构建配置。对于构建操作，会自动应用 LD_PRELOAD 机制以拦截系统调用。
 
 ## 示例
 
@@ -242,28 +161,21 @@ c2rust-translate translate
 
 ## 错误处理
 
-- 如果 rust 目录初始化失败，工具将退出并显示错误
-- 如果缺少对应的 `.c` 文件，工具将退出并显示错误
-- 如果翻译或错误修复失败，工具将退出并显示错误
-- 如果构建错误修复超过 5 次尝试后仍失败，工具将退出并显示错误
-- 如果混合构建测试失败，工具将退出并显示错误
-- 如果 git add 操作失败，工具将退出并显示错误
-- 如果 git commit 操作失败（除了"nothing to commit"情况），工具将退出并显示错误
-- 如果最终构建失败，即使所有文件已翻译完成，工具也会退出并显示错误
-- 如果未安装 c2rust-config，混合构建测试将被跳过（不会报错）
+工具会在以下情况下停止执行并显示错误：
+- Rust 目录初始化失败
+- 缺少对应的 `.c` 文件
+- 翻译或错误修复失败
+- 构建错误修复超过 10 次尝试仍失败
+- 混合构建测试失败（需要 c2rust-config 正确配置）
+- Git 操作失败（add/commit，"nothing to commit" 除外）
+- 最终构建失败
 
 ## Git 集成
 
-工具会在以下时间点自动提交更改：
-
-1. 初始化 rust 目录后
-2. 成功翻译每个文件后
-3. 更新代码分析后
-
-提交消息格式如下：
-- `"Initialize <feature> rust directory"` （初始化 <特性> rust 目录）
-- `"Translate <filename> from C to Rust (feature: <feature>)"` （将 <文件名> 从 C 翻译为 Rust，特性：<特性>）
-- `"Update code analysis for <feature>"` （更新 <特性> 的代码分析）
+工具会自动提交更改：
+- 初始化后：`"Initialize <feature> rust directory"`
+- 翻译成功后：`"Translate <filename> from C to Rust (feature: <feature>)"`
+- 更新分析后：`"Update code analysis for <feature>"`
 
 ## 代码结构
 
