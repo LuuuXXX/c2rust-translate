@@ -20,7 +20,7 @@ enum Commands {
         #[arg(long)]
         allow_all: bool,
         
-        /// Maximum number of fix attempts for build errors (defaults to 10)
+        /// Maximum number of fix attempts for build errors (must be > 0, defaults to 10)
         #[arg(long, default_value_t = 10)]
         max_fix_attempts: usize,
     },
