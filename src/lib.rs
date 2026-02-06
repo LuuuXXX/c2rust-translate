@@ -186,11 +186,14 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, cu
     use std::fs;
     use std::io::{self, Write};
 
-    const MAX_RETRY_ATTEMPTS: usize = 3; // Maximum number of full retries
+    // Maximum total attempts: 1 initial attempt + 2 retries = 3 total attempts
+    const MAX_TOTAL_ATTEMPTS: usize = 3;
     
-    for retry_count in 0..MAX_RETRY_ATTEMPTS {
-        if retry_count > 0 {
-            println!("\n{}", format!("┌─ Retrying file ({}/{}): {}", retry_count, MAX_RETRY_ATTEMPTS - 1, rs_file.display()).bright_yellow().bold());
+    for attempt_number in 1..=MAX_TOTAL_ATTEMPTS {
+        if attempt_number > 1 {
+            let retry_number = attempt_number - 1;
+            let max_retries = MAX_TOTAL_ATTEMPTS - 1;
+            println!("\n{}", format!("┌─ Retry attempt {}/{}: {}", retry_number, max_retries, rs_file.display()).bright_yellow().bold());
         } else {
             println!("\n{}", format!("┌─ Processing file: {}", rs_file.display()).bright_white().bold());
         }
@@ -267,9 +270,11 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, cu
                         println!("│ {}", format!("File {} still has build errors after {} fix attempts.", file_name, MAX_FIX_ATTEMPTS).yellow());
                         println!("│");
                         
-                        // Only offer retry if we haven't exceeded retry limit
-                        if retry_count < MAX_RETRY_ATTEMPTS - 1 {
-                            println!("│ {}", "Do you want to retry translating this file from scratch?".bright_yellow());
+                        // Only offer retry if we haven't used all attempts yet
+                        let is_last_attempt = attempt_number == MAX_TOTAL_ATTEMPTS;
+                        if !is_last_attempt {
+                            let remaining_retries = MAX_TOTAL_ATTEMPTS - attempt_number;
+                            println!("│ {}", format!("Do you want to retry translating this file from scratch? ({} retries remaining)", remaining_retries).bright_yellow());
                             println!("│ {} Type 'retry' to retry, or press Enter to skip:", "→".bright_yellow());
                             print!("│ ");
                             io::stdout().flush()?;
@@ -296,11 +301,12 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, cu
                                 ));
                             }
                         } else {
-                            println!("│ {}", format!("Maximum retry attempts ({}) reached. Cannot retry further.", MAX_RETRY_ATTEMPTS - 1).red());
+                            let total_retries = MAX_TOTAL_ATTEMPTS - 1;
+                            println!("│ {}", format!("All {} attempts exhausted (1 initial + {} retries). Cannot retry further.", MAX_TOTAL_ATTEMPTS, total_retries).red());
                             return Err(build_error).context(format!(
                                 "Build failed after {} fix attempts and {} retries for file {}",
                                 MAX_FIX_ATTEMPTS,
-                                MAX_RETRY_ATTEMPTS - 1,
+                                total_retries,
                                 rs_file.display()
                             ));
                         }
@@ -324,7 +330,8 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, cu
         }
         
         // If fix limit was reached and user chose to retry, continue to next iteration
-        if fix_limit_reached && retry_count < MAX_RETRY_ATTEMPTS - 1 {
+        let is_last_attempt = attempt_number == MAX_TOTAL_ATTEMPTS;
+        if fix_limit_reached && !is_last_attempt {
             continue;
         }
 
@@ -361,6 +368,12 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, cu
         return Ok(());
     }
     
-    // If we get here, all retries were exhausted
-    anyhow::bail!("Failed to process file {} after {} retry attempts", rs_file.display(), MAX_RETRY_ATTEMPTS - 1)
+    // If we get here, all attempts were exhausted without success
+    let total_retries = MAX_TOTAL_ATTEMPTS - 1;
+    anyhow::bail!(
+        "Failed to process file {} after {} total attempts (1 initial + {} retries)", 
+        rs_file.display(), 
+        MAX_TOTAL_ATTEMPTS,
+        total_retries
+    )
 }
