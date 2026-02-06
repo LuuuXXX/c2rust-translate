@@ -269,7 +269,7 @@ pub fn translate_feature(feature: &str, allow_all: bool) -> Result<()> {
             );
             logger::log_message(&progress_msg);
             
-            process_rs_file(feature, rs_file)?;
+            process_rs_file(feature, rs_file, current_position, total_count)?;
             
             // Mark file as processed and save progress
             progress_state.mark_processed(rs_file, &rust_dir)?;
@@ -281,7 +281,7 @@ pub fn translate_feature(feature: &str, allow_all: bool) -> Result<()> {
 }
 
 /// Process a single .rs file through the translation workflow
-fn process_rs_file(feature: &str, rs_file: &std::path::Path) -> Result<()> {
+fn process_rs_file(feature: &str, rs_file: &std::path::Path, current_position: usize, total_count: usize) -> Result<()> {
     use std::fs;
 
     println!("\n{}", format!("┌─ Processing file: {}", rs_file.display()).bright_white().bold());
@@ -318,8 +318,15 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path) -> Result<()> {
         }
     }
 
+    // Get file name for display
+    let file_name = rs_file
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("<unknown>");
+
     // Step 2.2.3: Call translation tool
     println!("│");
+    println!("│ {}", format!("[{}/{}] 执行命令处理 {} - 翻译", current_position, total_count, file_name).bright_magenta().bold());
     println!("│ {}", format!("Translating {} to Rust...", file_type).bright_blue().bold());
     translator::translate_c_to_rust(feature, file_type, &c_file, rs_file)?;
 
@@ -334,6 +341,7 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path) -> Result<()> {
     const MAX_FIX_ATTEMPTS: usize = 10;
     for attempt in 1..=MAX_FIX_ATTEMPTS {
         println!("│");
+        println!("│ {}", format!("[{}/{}] 执行命令处理 {} - 构建", current_position, total_count, file_name).bright_magenta().bold());
         println!("│ {}", format!("Building Rust project (attempt {}/{})", attempt, MAX_FIX_ATTEMPTS).bright_blue().bold());
         match builder::cargo_build(feature) {
             Ok(_) => {
@@ -352,6 +360,8 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path) -> Result<()> {
                 println!("│ {}", "⚠ Build failed, attempting to fix errors...".yellow().bold());
                 
                 // Try to fix the error
+                println!("│");
+                println!("│ {}", format!("[{}/{}] 执行命令处理 {} - 修复", current_position, total_count, file_name).bright_magenta().bold());
                 translator::fix_translation_error(feature, file_type, rs_file, &build_error.to_string())?;
 
                 // Verify fix result
@@ -371,6 +381,7 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path) -> Result<()> {
         .unwrap_or("<unknown>");
     
     println!("│");
+    println!("│ {}", format!("[{}/{}] 执行命令处理 {} - 提交", current_position, total_count, file_name).bright_magenta().bold());
     println!("│ {}", "Committing changes...".bright_blue());
     git::git_commit(&format!(
         "Translate {} from C to Rust (feature: {})",
@@ -380,13 +391,18 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path) -> Result<()> {
 
     // Step 2.2.8: Update code analysis
     println!("│");
+    println!("│ {}", format!("[{}/{}] 执行命令处理 {} - 更新分析", current_position, total_count, file_name).bright_magenta().bold());
     println!("│ {}", "Updating code analysis...".bright_blue());
     analyzer::update_code_analysis(feature)?;
     println!("│ {}", "✓ Code analysis updated".bright_green());
 
     // Step 2.2.9: Save update result
+    println!("│");
+    println!("│ {}", format!("[{}/{}] 执行命令处理 {} - 提交分析", current_position, total_count, file_name).bright_magenta().bold());
     git::git_commit(&format!("Update code analysis for {}", feature), feature)?;
 
+    println!("│");
+    println!("│ {}", format!("[{}/{}] 执行命令处理 {} - 混合构建测试", current_position, total_count, file_name).bright_magenta().bold());
     println!("{}", "Running hybrid build tests...".bright_blue());
     builder::run_hybrid_build(feature)?;
     
