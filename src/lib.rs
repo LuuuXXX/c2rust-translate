@@ -347,28 +347,33 @@ fn handle_max_fix_attempts_reached(
         let remaining_retries = MAX_TRANSLATION_ATTEMPTS - attempt_number;
         println!("│ {}", format!("Do you want to retry translating this file from scratch? ({} retries remaining)", remaining_retries).bright_yellow());
         println!("│ {} Type 'retry' to retry, or press Enter to skip:", "→".bright_yellow());
-        print!("│ ");
-        io::stdout().flush()?;
         
-        let mut user_input = String::new();
-        io::stdin().read_line(&mut user_input)?;
-        
-        let input_trimmed = user_input.trim();
-        if input_trimmed.eq_ignore_ascii_case("retry") {
-            println!("│ {}", "Retrying translation...".bright_cyan());
-            println!("│ {}", "Note: The translator will overwrite the existing file content.".bright_blue());
-            println!("│ {}", "✓ Retry scheduled".bright_green());
-            Ok(false) // Signal retry
-        } else {
-            if !input_trimmed.is_empty() {
-                println!("│ {}", format!("Invalid input '{}'. Only 'retry' will retry the translation.", input_trimmed).yellow());
+        loop {
+            print!("│ ");
+            io::stdout().flush()?;
+            
+            let mut user_input = String::new();
+            io::stdin().read_line(&mut user_input)?;
+            
+            let input_trimmed = user_input.trim();
+            if input_trimmed.eq_ignore_ascii_case("retry") {
+                println!("│ {}", "Retrying translation...".bright_cyan());
+                println!("│ {}", "Note: The translator will overwrite the existing file content.".bright_blue());
+                println!("│ {}", "✓ Retry scheduled".bright_green());
+                return Ok(false); // Signal retry
+            } else if input_trimmed.is_empty() {
+                // User pressed Enter to skip
+                println!("│ {}", "Skipping file due to build errors.".yellow());
+                return Err(build_error).context(format!(
+                    "Build failed after {} fix attempts for file {}",
+                    MAX_FIX_ATTEMPTS,
+                    rs_file.display()
+                ));
+            } else {
+                // Invalid input, prompt user to try again
+                println!("│ {}", format!("Invalid input '{}'. Please type 'retry' to retry, or press Enter to skip.", input_trimmed).yellow());
+                continue;
             }
-            println!("│ {}", "Skipping file due to build errors.".yellow());
-            Err(build_error).context(format!(
-                "Build failed after {} fix attempts for file {}",
-                MAX_FIX_ATTEMPTS,
-                rs_file.display()
-            ))
         }
     } else {
         let total_retries = MAX_TRANSLATION_ATTEMPTS - 1;
