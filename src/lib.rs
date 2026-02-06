@@ -284,17 +284,21 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, cu
                             let mut user_input = String::new();
                             io::stdin().read_line(&mut user_input)?;
                             
-                            if user_input.trim().eq_ignore_ascii_case("retry") {
+                            let input_trimmed = user_input.trim();
+                            if input_trimmed.eq_ignore_ascii_case("retry") {
                                 println!("│ {}", "Retrying translation...".bright_cyan());
-                                println!("│ {}", "Clearing file content...".bright_blue());
+                                println!("│ {}", "Note: The translator will overwrite the existing file content.".bright_blue());
                                 
-                                // Clear the file content
-                                fs::write(rs_file, "")?;
-                                println!("│ {}", "✓ File cleared".bright_green());
+                                // Don't clear the file - let the translator overwrite it
+                                // This prevents data loss if translation fails
+                                println!("│ {}", "✓ Retry scheduled".bright_green());
                                 
                                 // Break from the fix loop to restart translation
                                 break;
                             } else {
+                                if !input_trimmed.is_empty() {
+                                    println!("│ {}", format!("Invalid input '{}'. Only 'retry' will retry the translation.", input_trimmed).yellow());
+                                }
                                 println!("│ {}", "Skipping file due to build errors.".yellow());
                                 return Err(build_error).context(format!(
                                     "Build failed after {} fix attempts for file {}",
@@ -368,11 +372,7 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, cu
         // If we get here, build failed but user chose to retry - continue to next attempt
     }
     
-    // This line is unreachable because:
-    // - If build succeeds, we return Ok(()) above
-    // - If build fails on last attempt, we return an error in the fix loop
-    // - If build fails on non-last attempt and user doesn't retry, we return an error in the fix loop
-    // - If build fails and user retries, we continue the loop above
-    // Therefore, this is just a safety net that should never execute
-    unreachable!("Logic error: should have either succeeded, failed, or retried")
+    // This should be unreachable: all retry attempts exhausted without returning
+    // The only way to exit the loop is through return statements above
+    anyhow::bail!("Unexpected: all retry attempts completed without resolution")
 }
