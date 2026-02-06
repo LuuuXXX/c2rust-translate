@@ -18,6 +18,9 @@ pub fn find_empty_rs_files(rust_dir: &Path) -> Result<Vec<PathBuf>> {
         }
     }
 
+    // Sort files alphabetically by path for consistent and predictable ordering
+    empty_files.sort();
+
     Ok(empty_files)
 }
 
@@ -58,6 +61,28 @@ mod tests {
         assert!(empty_files[0].ends_with("var_test.rs"));
 
         // temp_dir is automatically deleted when it goes out of scope
+    }
+
+    #[test]
+    fn test_find_empty_rs_files_sorted() {
+        // Create a temporary directory
+        let temp_dir = tempdir().unwrap();
+
+        // Create multiple empty .rs files in non-alphabetical order
+        fs::File::create(temp_dir.path().join("var_zebra.rs")).unwrap();
+        fs::File::create(temp_dir.path().join("fun_alpha.rs")).unwrap();
+        fs::File::create(temp_dir.path().join("var_middle.rs")).unwrap();
+
+        // Find empty files
+        let empty_files = find_empty_rs_files(temp_dir.path()).unwrap();
+        
+        // Verify we found all 3 files
+        assert_eq!(empty_files.len(), 3);
+        
+        // Verify files are sorted alphabetically
+        assert!(empty_files[0].ends_with("fun_alpha.rs"));
+        assert!(empty_files[1].ends_with("var_middle.rs"));
+        assert!(empty_files[2].ends_with("var_zebra.rs"));
     }
 
     #[test]

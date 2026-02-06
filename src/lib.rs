@@ -9,9 +9,94 @@ pub mod logger;
 
 use anyhow::{Context, Result};
 use colored::Colorize;
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
+
+/// Prompt user to select files from a list
+fn prompt_file_selection(files: &[PathBuf], rust_dir: &Path) -> Result<Vec<usize>> {
+    println!("\n{}", "Available files to process:".bright_cyan().bold());
+    
+    // Display files with index numbers and relative paths
+    for (idx, file) in files.iter().enumerate() {
+        let relative_path = file.strip_prefix(rust_dir)
+            .unwrap_or(file);
+        println!("  {}. {}", idx + 1, relative_path.display());
+    }
+    
+    println!();
+    println!("{}", "Select files to process:".bright_yellow());
+    println!("  - Enter numbers separated by commas (e.g., 1,3,5)");
+    println!("  - Enter ranges (e.g., 1-3,5)");
+    println!("  - Enter 'all' to process all files");
+    print!("\n{} ", "Your selection:".bright_green().bold());
+    io::stdout().flush()?;
+    
+    // Read user input
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    let input = input.trim();
+    
+    // Parse input
+    if input.eq_ignore_ascii_case("all") {
+        // Select all files
+        return Ok((0..files.len()).collect());
+    }
+    
+    let mut selected_indices = Vec::new();
+    
+    // Split by comma and process each part
+    for part in input.split(',') {
+        let part = part.trim();
+        
+        if part.contains('-') {
+            // Handle range (e.g., "1-3")
+            let range_parts: Vec<&str> = part.split('-').collect();
+            if range_parts.len() != 2 {
+                anyhow::bail!("Invalid range format: {}. Expected format like '1-3'", part);
+            }
+            
+            let start: usize = range_parts[0].trim().parse()
+                .with_context(|| format!("Invalid number in range: {}", range_parts[0]))?;
+            let end: usize = range_parts[1].trim().parse()
+                .with_context(|| format!("Invalid number in range: {}", range_parts[1]))?;
+            
+            if start < 1 || end < 1 || start > files.len() || end > files.len() {
+                anyhow::bail!("Range {}-{} is out of bounds (valid: 1-{})", start, end, files.len());
+            }
+            
+            if start > end {
+                anyhow::bail!("Invalid range: {} is greater than {}", start, end);
+            }
+            
+            for i in start..=end {
+                selected_indices.push(i - 1);
+            }
+        } else {
+            // Handle single number
+            let num: usize = part.parse()
+                .with_context(|| format!("Invalid number: {}", part))?;
+            
+            if num < 1 || num > files.len() {
+                anyhow::bail!("Number {} is out of bounds (valid: 1-{})", num, files.len());
+            }
+            
+            selected_indices.push(num - 1);
+        }
+    }
+    
+    // Remove duplicates and sort
+    selected_indices.sort_unstable();
+    selected_indices.dedup();
+    
+    if selected_indices.is_empty() {
+        anyhow::bail!("No files selected");
+    }
+    
+    Ok(selected_indices)
+}
 
 /// Main translation workflow for a feature
-pub fn translate_feature(feature: &str) -> Result<()> {
+pub fn translate_feature(feature: &str, allow_all: bool) -> Result<()> {
     let msg = format!("Starting translation for feature: {}", feature);
     println!("{}", msg.bright_cyan().bold());
     logger::log_message(&msg);
@@ -113,6 +198,7 @@ pub fn translate_feature(feature: &str) -> Result<()> {
         let unprocessed_files: Vec<_> = empty_rs_files
             .iter()
             .filter(|f| !progress_state.is_processed(f, &rust_dir))
+            .cloned()
             .collect();
         
         if unprocessed_files.is_empty() {
@@ -134,7 +220,19 @@ pub fn translate_feature(feature: &str) -> Result<()> {
             unprocessed_files.len(), 
             empty_rs_files.len() - unprocessed_files.len()).cyan());
 
-        for rs_file in unprocessed_files.iter() {
+        // Select files to process based on allow_all flag
+        let files_to_process = if allow_all {
+            // Process all unprocessed files without prompting
+            unprocessed_files
+        } else {
+            // Prompt user to select files
+            let selected_indices = prompt_file_selection(&unprocessed_files, &rust_dir)?;
+            selected_indices.iter()
+                .map(|&idx| unprocessed_files[idx].clone())
+                .collect()
+        };
+
+        for rs_file in files_to_process.iter() {
             // Get current progress position (persisted across runs)
             let current_position = progress_state.get_current_position();
             let total_count = progress_state.get_total_count();

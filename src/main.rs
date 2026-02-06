@@ -15,6 +15,10 @@ enum Commands {
         /// Feature name (defaults to "default" if not specified)
         #[arg(long, default_value = "default")]
         feature: String,
+        
+        /// Allow processing all unprocessed files without prompting for selection
+        #[arg(long)]
+        allow_all: bool,
     },
 }
 
@@ -30,7 +34,7 @@ fn main() {
     }
 
     let result = match cli.command {
-        Commands::Translate { feature } => c2rust_translate::translate_feature(&feature),
+        Commands::Translate { feature, allow_all } => c2rust_translate::translate_feature(&feature, allow_all),
     };
 
     if let Err(e) = result {
