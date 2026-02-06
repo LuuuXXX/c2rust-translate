@@ -262,14 +262,14 @@ pub fn translate_feature(feature: &str, allow_all: bool) -> Result<()> {
                 .and_then(|s| s.to_str())
                 .unwrap_or("<unknown>");
             
-            let progress_msg = format!("[{}/{}] 执行命令处理 {}", current_position, total_count, file_name);
+            let progress_msg = format!("[{}/{}] Processing {}", current_position, total_count, file_name);
             println!(
                 "\n{}",
                 progress_msg.bright_magenta().bold()
             );
             logger::log_message(&progress_msg);
             
-            process_rs_file(feature, rs_file, current_position, total_count)?;
+            process_rs_file(feature, rs_file, file_name, current_position, total_count)?;
             
             // Mark file as processed and save progress
             progress_state.mark_processed(rs_file, &rust_dir)?;
@@ -281,7 +281,7 @@ pub fn translate_feature(feature: &str, allow_all: bool) -> Result<()> {
 }
 
 /// Process a single .rs file through the translation workflow
-fn process_rs_file(feature: &str, rs_file: &std::path::Path, current_position: usize, total_count: usize) -> Result<()> {
+fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, current_position: usize, total_count: usize) -> Result<()> {
     use std::fs;
 
     println!("\n{}", format!("┌─ Processing file: {}", rs_file.display()).bright_white().bold());
@@ -318,20 +318,14 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, current_position: u
         }
     }
 
-    // Get file name for display
-    let file_name = rs_file
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("<unknown>");
-
     // Helper function to format progress indicator
     let format_progress = |operation: &str| {
-        format!("[{}/{}] 执行命令处理 {} - {}", current_position, total_count, file_name, operation)
+        format!("[{}/{}] Processing {} - {}", current_position, total_count, file_name, operation)
     };
 
     // Step 2.2.3: Call translation tool
     println!("│");
-    println!("│ {}", format_progress("翻译").bright_magenta().bold());
+    println!("│ {}", format_progress("Translation").bright_magenta().bold());
     println!("│ {}", format!("Translating {} to Rust...", file_type).bright_blue().bold());
     translator::translate_c_to_rust(feature, file_type, &c_file, rs_file)?;
 
@@ -346,7 +340,7 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, current_position: u
     const MAX_FIX_ATTEMPTS: usize = 10;
     for attempt in 1..=MAX_FIX_ATTEMPTS {
         println!("│");
-        println!("│ {}", format_progress("构建").bright_magenta().bold());
+        println!("│ {}", format_progress("Build").bright_magenta().bold());
         println!("│ {}", format!("Building Rust project (attempt {}/{})", attempt, MAX_FIX_ATTEMPTS).bright_blue().bold());
         match builder::cargo_build(feature) {
             Ok(_) => {
@@ -366,7 +360,7 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, current_position: u
                 
                 // Try to fix the error
                 println!("│");
-                println!("│ {}", format_progress("修复").bright_magenta().bold());
+                println!("│ {}", format_progress("Fix").bright_magenta().bold());
                 translator::fix_translation_error(feature, file_type, rs_file, &build_error.to_string())?;
 
                 // Verify fix result
@@ -381,7 +375,7 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, current_position: u
 
     // Step 2.2.7: Save translation result with specific file in commit message
     println!("│");
-    println!("│ {}", format_progress("提交").bright_magenta().bold());
+    println!("│ {}", format_progress("Commit").bright_magenta().bold());
     println!("│ {}", "Committing changes...".bright_blue());
     git::git_commit(&format!(
         "Translate {} from C to Rust (feature: {})",
@@ -391,18 +385,18 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, current_position: u
 
     // Step 2.2.8: Update code analysis
     println!("│");
-    println!("│ {}", format_progress("更新分析").bright_magenta().bold());
+    println!("│ {}", format_progress("Update Analysis").bright_magenta().bold());
     println!("│ {}", "Updating code analysis...".bright_blue());
     analyzer::update_code_analysis(feature)?;
     println!("│ {}", "✓ Code analysis updated".bright_green());
 
     // Step 2.2.9: Save update result
     println!("│");
-    println!("│ {}", format_progress("提交分析").bright_magenta().bold());
+    println!("│ {}", format_progress("Commit Analysis").bright_magenta().bold());
     git::git_commit(&format!("Update code analysis for {}", feature), feature)?;
 
     println!("│");
-    println!("│ {}", format_progress("混合构建测试").bright_magenta().bold());
+    println!("│ {}", format_progress("Hybrid Build Tests").bright_magenta().bold());
     println!("{}", "Running hybrid build tests...".bright_blue());
     builder::run_hybrid_build(feature)?;
     
