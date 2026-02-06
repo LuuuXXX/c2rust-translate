@@ -77,7 +77,7 @@ fn parse_file_selection(input: &str, total_files: usize) -> Result<Vec<usize>> {
 }
 
 /// Prompt user to select files from a list
-fn prompt_file_selection(files: &[PathBuf], rust_dir: &Path) -> Result<Vec<usize>> {
+fn prompt_file_selection(files: &[&PathBuf], rust_dir: &Path) -> Result<Vec<usize>> {
     println!("\n{}", "Available files to process:".bright_cyan().bold());
     
     // Display files with index numbers and relative paths
@@ -205,7 +205,6 @@ pub fn translate_feature(feature: &str, allow_all: bool) -> Result<()> {
         let unprocessed_files: Vec<_> = empty_rs_files
             .iter()
             .filter(|f| !progress_state.is_processed(f, &rust_dir))
-            .cloned()
             .collect();
         
         if unprocessed_files.is_empty() {
@@ -228,18 +227,17 @@ pub fn translate_feature(feature: &str, allow_all: bool) -> Result<()> {
             empty_rs_files.len() - unprocessed_files.len()).cyan());
 
         // Select files to process based on allow_all flag
-        let files_to_process = if allow_all {
+        // Use indices to avoid unnecessary cloning
+        let selected_indices: Vec<usize> = if allow_all {
             // Process all unprocessed files without prompting
-            unprocessed_files
+            (0..unprocessed_files.len()).collect()
         } else {
             // Prompt user to select files
-            let selected_indices = prompt_file_selection(&unprocessed_files, &rust_dir)?;
-            selected_indices.iter()
-                .map(|&idx| unprocessed_files[idx].clone())
-                .collect()
+            prompt_file_selection(&unprocessed_files, &rust_dir)?
         };
 
-        for rs_file in files_to_process.iter() {
+        for &idx in selected_indices.iter() {
+            let rs_file = unprocessed_files[idx];
             // Get current progress position (persisted across runs)
             let current_position = progress_state.get_current_position();
             let total_count = progress_state.get_total_count();
