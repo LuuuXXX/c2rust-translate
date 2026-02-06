@@ -189,7 +189,10 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, cu
     // Maximum total attempts: 1 initial attempt + 2 retries = 3 total attempts
     const MAX_TOTAL_ATTEMPTS: usize = 3;
     
+    // Attempt translation and fixing until successful or all attempts exhausted
     for attempt_number in 1..=MAX_TOTAL_ATTEMPTS {
+        let is_last_attempt = attempt_number == MAX_TOTAL_ATTEMPTS;
+        
         if attempt_number > 1 {
             let retry_number = attempt_number - 1;
             let max_retries = MAX_TOTAL_ATTEMPTS - 1;
@@ -250,7 +253,7 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, cu
 
         // Step 2.2.5 & 2.2.6: Build and fix errors in a loop (max 10 attempts)
         const MAX_FIX_ATTEMPTS: usize = 10;
-        let mut fix_limit_reached = false;
+        let mut build_successful = false;
         
         for attempt in 1..=MAX_FIX_ATTEMPTS {
             println!("│");
@@ -259,19 +262,18 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, cu
             match builder::cargo_build(feature) {
                 Ok(_) => {
                     println!("│ {}", "✓ Build successful!".bright_green().bold());
+                    build_successful = true;
                     break;
                 }
                 Err(build_error) => {
                     if attempt == MAX_FIX_ATTEMPTS {
                         // Reached fix limit - ask user if they want to retry
-                        fix_limit_reached = true;
                         println!("│");
                         println!("│ {}", "⚠ Maximum fix attempts reached!".red().bold());
                         println!("│ {}", format!("File {} still has build errors after {} fix attempts.", file_name, MAX_FIX_ATTEMPTS).yellow());
                         println!("│");
                         
                         // Only offer retry if we haven't used all attempts yet
-                        let is_last_attempt = attempt_number == MAX_TOTAL_ATTEMPTS;
                         if !is_last_attempt {
                             let remaining_retries = MAX_TOTAL_ATTEMPTS - attempt_number;
                             println!("│ {}", format!("Do you want to retry translating this file from scratch? ({} retries remaining)", remaining_retries).bright_yellow());
@@ -293,7 +295,7 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, cu
                                 // Break from the fix loop to restart translation
                                 break;
                             } else {
-                                println!("│ {}", "Skipping retry. Moving to commit...".yellow());
+                                println!("│ {}", "Skipping file due to build errors.".yellow());
                                 return Err(build_error).context(format!(
                                     "Build failed after {} fix attempts for file {}",
                                     MAX_FIX_ATTEMPTS,
@@ -329,43 +331,43 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, cu
             }
         }
         
-        // If fix limit was reached and user chose to retry, continue to next iteration
-        let is_last_attempt = attempt_number == MAX_TOTAL_ATTEMPTS;
-        if fix_limit_reached && !is_last_attempt {
+        // If build was successful, proceed to commit; otherwise retry if possible
+        if build_successful {
+            // Step 2.2.7: Save translation result with specific file in commit message
+            println!("│");
+            println!("│ {}", format_progress("Commit").bright_magenta().bold());
+            println!("│ {}", "Committing changes...".bright_blue());
+            git::git_commit(&format!(
+                "Translate {} from C to Rust (feature: {})",
+                file_name, feature
+            ), feature)?;
+            println!("│ {}", "✓ Changes committed".bright_green());
+
+            // Step 2.2.8: Update code analysis
+            println!("│");
+            println!("│ {}", format_progress("Update Analysis").bright_magenta().bold());
+            println!("│ {}", "Updating code analysis...".bright_blue());
+            analyzer::update_code_analysis(feature)?;
+            println!("│ {}", "✓ Code analysis updated".bright_green());
+
+            // Step 2.2.9: Save update result
+            println!("│");
+            println!("│ {}", format_progress("Commit Analysis").bright_magenta().bold());
+            git::git_commit(&format!("Update code analysis for {}", feature), feature)?;
+
+            println!("│");
+            println!("│ {}", format_progress("Hybrid Build Tests").bright_magenta().bold());
+            println!("│ {}", "Running hybrid build tests...".bright_blue());
+            builder::run_hybrid_build(feature)?;
+            
+            println!("{}", "└─ File processing complete".bright_white().bold());
+
+            // Successfully completed
+            return Ok(());
+        } else if !is_last_attempt {
+            // Build failed but user chose to retry - continue to next attempt
             continue;
         }
-
-        // Step 2.2.7: Save translation result with specific file in commit message
-        println!("│");
-        println!("│ {}", format_progress("Commit").bright_magenta().bold());
-        println!("│ {}", "Committing changes...".bright_blue());
-        git::git_commit(&format!(
-            "Translate {} from C to Rust (feature: {})",
-            file_name, feature
-        ), feature)?;
-        println!("│ {}", "✓ Changes committed".bright_green());
-
-        // Step 2.2.8: Update code analysis
-        println!("│");
-        println!("│ {}", format_progress("Update Analysis").bright_magenta().bold());
-        println!("│ {}", "Updating code analysis...".bright_blue());
-        analyzer::update_code_analysis(feature)?;
-        println!("│ {}", "✓ Code analysis updated".bright_green());
-
-        // Step 2.2.9: Save update result
-        println!("│");
-        println!("│ {}", format_progress("Commit Analysis").bright_magenta().bold());
-        git::git_commit(&format!("Update code analysis for {}", feature), feature)?;
-
-        println!("│");
-        println!("│ {}", format_progress("Hybrid Build Tests").bright_magenta().bold());
-        println!("│ {}", "Running hybrid build tests...".bright_blue());
-        builder::run_hybrid_build(feature)?;
-        
-        println!("{}", "└─ File processing complete".bright_white().bold());
-
-        // Successfully completed, break out of retry loop
-        return Ok(());
     }
     
     // If we get here, all attempts were exhausted without success
