@@ -14,7 +14,7 @@
 
 ### 用户体验优化
 - **彩色输出** - 构建/测试/清理命令使用不同颜色高亮，成功/错误/警告消息带有图标标识
-- **代码预览** - 显示正在翻译的 C 代码（前 15 行）和构建错误（前 10 行）
+- **代码预览** - 显示正在翻译的 C 代码（默认前 15 行）和构建错误（默认前 10 行），可使用 `--show-full-output` 选项显示完整内容
 - **进度持久化** - 保存翻译进度，中断后可恢复（`.c2rust/<feature>/rust/progress.json`）
 - **执行时间统计** - 显示所有命令的耗时，便于识别性能瓶颈
 - **文件排序显示** - 未处理文件按字母顺序列出
@@ -47,6 +47,12 @@ c2rust-translate translate --feature <特性名称> --allow-all
 
 # 自定义最大修复尝试次数（默认为 10）
 c2rust-translate translate --feature <特性名称> --max-fix-attempts 5
+
+# 显示完整的代码和错误输出（不截断）
+c2rust-translate translate --feature <特性名称> --show-full-output
+
+# 组合多个选项使用
+c2rust-translate translate --feature <特性名称> --allow-all --show-full-output
 ```
 
 ### 文件选择模式
