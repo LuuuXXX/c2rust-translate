@@ -331,7 +331,7 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, cu
             }
         }
         
-        // If build was successful, proceed to commit; otherwise retry if possible
+        // If build was successful, proceed to commit; otherwise, user chose to retry
         if build_successful {
             // Step 2.2.7: Save translation result with specific file in commit message
             println!("│");
@@ -364,18 +364,15 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, cu
 
             // Successfully completed
             return Ok(());
-        } else if !is_last_attempt {
-            // Build failed but user chose to retry - continue to next attempt
-            continue;
         }
+        // If we get here, build failed but user chose to retry - continue to next attempt
     }
     
-    // If we get here, all attempts were exhausted without success
-    let total_retries = MAX_TOTAL_ATTEMPTS - 1;
-    anyhow::bail!(
-        "Failed to process file {} after {} total attempts (1 initial + {} retries)", 
-        rs_file.display(), 
-        MAX_TOTAL_ATTEMPTS,
-        total_retries
-    )
+    // This line is unreachable because:
+    // - If build succeeds, we return Ok(()) above
+    // - If build fails on last attempt, we return an error in the fix loop
+    // - If build fails on non-last attempt and user doesn't retry, we return an error in the fix loop
+    // - If build fails and user retries, we continue the loop above
+    // Therefore, this is just a safety net that should never execute
+    unreachable!("Logic error: should have either succeeded, failed, or retried")
 }
