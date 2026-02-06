@@ -19,6 +19,10 @@ enum Commands {
         /// Allow processing all unprocessed files without prompting for selection
         #[arg(long)]
         allow_all: bool,
+        
+        /// Maximum number of fix attempts for build errors (defaults to 10)
+        #[arg(long, default_value_t = 10)]
+        max_fix_attempts: usize,
     },
 }
 
@@ -34,7 +38,14 @@ fn main() {
     }
 
     let result = match cli.command {
-        Commands::Translate { feature, allow_all } => c2rust_translate::translate_feature(&feature, allow_all),
+        Commands::Translate { feature, allow_all, max_fix_attempts } => {
+            // Validate max_fix_attempts
+            if max_fix_attempts == 0 {
+                eprintln!("Error: max-fix-attempts must be a positive integer (greater than 0)");
+                std::process::exit(1);
+            }
+            c2rust_translate::translate_feature(&feature, allow_all, max_fix_attempts)
+        }
     };
 
     if let Err(e) = result {
