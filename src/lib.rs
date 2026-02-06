@@ -182,7 +182,7 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, cu
     for attempt_number in 1..=MAX_TRANSLATION_ATTEMPTS {
         let is_last_attempt = attempt_number == MAX_TRANSLATION_ATTEMPTS;
         
-        print_attempt_header(attempt_number, rs_file)?;
+        print_attempt_header(attempt_number, rs_file);
         
         let (file_type, _name) = extract_and_validate_file_info(rs_file)?;
         check_c_file_exists(rs_file)?;
@@ -215,7 +215,7 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, cu
 }
 
 /// Print header for current attempt
-fn print_attempt_header(attempt_number: usize, rs_file: &std::path::Path) -> Result<()> {
+fn print_attempt_header(attempt_number: usize, rs_file: &std::path::Path) {
     if attempt_number > 1 {
         let retry_number = attempt_number - 1;
         let max_retries = constants::MAX_TRANSLATION_ATTEMPTS - 1;
@@ -223,7 +223,6 @@ fn print_attempt_header(attempt_number: usize, rs_file: &std::path::Path) -> Res
     } else {
         println!("\n{}", format!("┌─ Processing file: {}", rs_file.display()).bright_white().bold());
     }
-    Ok(())
 }
 
 /// Extract file type and name, print info

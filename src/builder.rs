@@ -179,7 +179,24 @@ fn execute_command_in_dir(
 
     if !output.status.success() {
         print_command_failure(command_type, &output, duration);
-        anyhow::bail!("Command '{}' failed", command_str);
+        
+        // Include error details in the bail message for better debugging
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr_summary = stderr
+            .lines()
+            .take(3)
+            .collect::<Vec<_>>()
+            .join("\n");
+        
+        if stderr_summary.is_empty() {
+            anyhow::bail!("Command '{}' failed with non-zero exit status", command_str);
+        } else {
+            anyhow::bail!(
+                "Command '{}' failed with non-zero exit status. Stderr (first lines):\n{}",
+                command_str,
+                stderr_summary
+            );
+        }
     }
 
     print_command_success(command_type, duration);
