@@ -6,6 +6,9 @@
 
 - 自动化的 C 到 Rust 翻译工作流
 - 支持基于特性(feature)的翻译，使用 `--feature` 标志
+- **交互式文件选择** - 用户可以选择要处理的具体文件
+- **--allow-all 选项** - 支持自动处理所有文件，适合批处理场景
+- **文件列表排序** - 未处理文件按字母顺序排序显示
 - 自动初始化 Rust 项目结构
 - 集成翻译工具（`translate_and_fix.py`）
 - 自动检测和修复构建错误
@@ -67,12 +70,59 @@ cargo build --release
 ### 翻译一个特性
 
 ```bash
-# 翻译指定的特性
+# 翻译指定的特性（交互模式：会提示选择要处理的文件）
 c2rust-translate translate --feature <特性名称>
 
 # 翻译默认特性（不指定 --feature 时默认使用 "default"）
 c2rust-translate translate
+
+# 自动处理所有文件，不进行交互提示
+c2rust-translate translate --feature <特性名称> --allow-all
 ```
+
+### 文件选择模式
+
+工具提供两种文件处理模式：
+
+#### 1. 交互模式（默认）
+
+当不使用 `--allow-all` 选项时，工具会：
+- 列出所有未处理的 `.rs` 文件（按字母顺序排序）
+- 显示文件序号和相对路径
+- 提示用户选择要处理的文件
+
+支持的选择格式：
+- **单个文件**: `1` 或 `3`
+- **多个文件**: `1,3,5`（逗号分隔）
+- **范围**: `1-3`（处理文件 1、2、3）
+- **混合**: `1,3-5,7`（处理文件 1、3、4、5、7）
+- **所有文件**: `all` 或 `ALL`（大小写不敏感）
+
+**示例输出：**
+```
+Available files to process:
+  1. fun_alpha.rs
+  2. fun_beta.rs
+  3. var_gamma.rs
+  4. var_zeta.rs
+
+Select files to process:
+  - Enter numbers separated by commas (e.g., 1,3,5)
+  - Enter ranges (e.g., 1-3,5)
+  - Enter 'all' to process all files
+
+Your selection: 1,3-4
+```
+
+#### 2. 自动处理模式 (`--allow-all`)
+
+使用 `--allow-all` 选项时：
+- 不显示文件列表
+- 不等待用户输入
+- 自动处理所有未处理的文件
+- 适合自动化脚本和批处理场景
+
+### 翻译工作流程
 
 该命令将执行以下操作：
 
