@@ -223,7 +223,7 @@ pub fn translate_feature(feature: &str, allow_all: bool) -> Result<()> {
         
         if unprocessed_files.is_empty() {
             println!("{}", "All files have been processed already.".cyan());
-            continue;
+            break;
         }
         
         // Set total count for progress display (total unprocessed + already processed).
