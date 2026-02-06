@@ -65,48 +65,94 @@ fn get_config_value(key: &str, feature: &str) -> Result<String> {
     Ok(value)
 }
 
+/// Set hybrid build environment variables if LD_PRELOAD is enabled
+fn setup_hybrid_env(command: &mut Command, project_root: &std::path::Path, feature: &str, set_ld_preload: bool) -> Option<std::path::PathBuf> {
+    if !set_ld_preload {
+        return None;
+    }
+    
+    let hybrid_lib = env::var("C2RUST_HYBRID_BUILD_LIB").ok()?;
+    let c2rust_dir = project_root.join(".c2rust");
+    let feature_root_path = c2rust_dir.join(feature);
+    let rust_lib_path = feature_root_path.join("rust").join("target").join("debug").join("librust.a");
+
+    command.env("LD_PRELOAD", &hybrid_lib);
+    command.env("C2RUST_PROJECT_ROOT", project_root);
+    command.env("C2RUST_FEATURE_ROOT", &feature_root_path);
+    command.env("C2RUST_RUST_LIB", &rust_lib_path);
+    
+    Some(feature_root_path)
+}
+
+/// Print command execution details
+fn print_command_details(
+    command_type: &str,
+    parts: &[String],
+    exec_dir: &std::path::Path,
+    project_root: &std::path::Path,
+    feature_root: Option<&std::path::PathBuf>,
+    set_ld_preload: bool,
+) {
+    let colored_label = match command_type {
+        "build" => "│ → Executing build command:".bright_blue().to_string(),
+        "test" => "│ → Executing test command:".bright_green().to_string(),
+        "clean" => "│ → Executing clean command:".bright_red().to_string(),
+        _ => format!("│ → Executing {} command:", command_type),
+    };
+    
+    println!("{}", colored_label);
+    print!("│   ");
+    
+    if set_ld_preload {
+        if let Ok(hybrid_lib) = env::var("C2RUST_HYBRID_BUILD_LIB") {
+            let rust_lib_path = feature_root
+                .map(|f| f.join("rust").join("target").join("debug").join("librust.a"))
+                .unwrap_or_default();
+            
+            print!("LD_PRELOAD={} ", shell_words::quote(&hybrid_lib).dimmed());
+            if let Some(feature_root) = feature_root {
+                print!("C2RUST_FEATURE_ROOT={} ", shell_words::quote(&feature_root.display().to_string()).dimmed());
+            }
+            print!("C2RUST_PROJECT_ROOT={} ", shell_words::quote(&project_root.display().to_string()).dimmed());
+            print!("C2RUST_RUST_LIB={} ", shell_words::quote(&rust_lib_path.display().to_string()).dimmed());
+        }
+    }
+    
+    println!("{}", shell_words::join(parts).bright_yellow());
+    println!("│   {}: {}", "Working directory".dimmed(), exec_dir.display());
+}
+
 /// Execute a command in a configured directory
 fn execute_command_in_dir(
     command_str: &str,
     dir_key: &str,
     feature: &str,
     set_ld_preload: bool,
-    command_type: &str, // "build", "test", or "clean"
+    command_type: &str,
 ) -> Result<()> {
-    // Validate feature name to prevent path traversal (defense in depth)
     util::validate_feature_name(feature)?;
     
-    // Get directory from config using the specified key
     let dir_str = get_config_value(dir_key, feature)?;
     
-    // Validate that dir_str is a relative path without path traversal
+    // Validate path safety
     if std::path::Path::new(&dir_str).is_absolute() {
-        anyhow::bail!(
-            "Directory path from config must be relative, got: {}",
-            dir_str
-        );
+        anyhow::bail!("Directory path from config must be relative, got: {}", dir_str);
     }
     if dir_str.contains("..") {
-        anyhow::bail!(
-            "Directory path from config cannot contain '..', got: {}",
-            dir_str
-        );
+        anyhow::bail!("Directory path from config cannot contain '..', got: {}", dir_str);
     }
     
-    // Parse the command using shell-words to handle quoted arguments and spaces correctly
     let parts = shell_words::split(command_str)
         .with_context(|| format!("Failed to parse command: {}", command_str))?;
     
     if parts.is_empty() {
-        return Ok(()); // Nothing to execute
+        return Ok(());
     }
     
-    // Validate that the command is non-empty
     if parts[0].is_empty() {
         anyhow::bail!("Command cannot be empty");
     }
     
-    // Ensure we execute the command in the correct directory
     let project_root = util::find_project_root()?;
     let exec_dir = project_root.join(&dir_str);
     
@@ -123,80 +169,43 @@ fn execute_command_in_dir(
         command.args(&parts[1..]);
     }
     
-    // Set LD_PRELOAD for build command if requested
-    let hybrid_lib = if set_ld_preload {
-        env::var("C2RUST_HYBRID_BUILD_LIB").ok()
-    } else {
-        None
-    };
-
-    let c2rust_dir = project_root.join(".c2rust");
-    let feature_root_path = c2rust_dir.join(feature);
-    let rust_lib_path = feature_root_path.join("rust").join("target").join("debug").join("librust.a");
-
-    let feature_root = if let Some(ref lib_path) = hybrid_lib {
-        command.env("LD_PRELOAD", lib_path);
-        command.env("C2RUST_PROJECT_ROOT", &project_root);
-        command.env("C2RUST_FEATURE_ROOT", &feature_root_path);
-        command.env("C2RUST_RUST_LIB", &rust_lib_path);
-        Some(feature_root_path)
-    } else {
-        None
-    };
-    
-    // Color code based on command type
-    let colored_label = match command_type {
-        "build" => "│ → Executing build command:".bright_blue().to_string(),
-        "test" => "│ → Executing test command:".bright_green().to_string(),
-        "clean" => "│ → Executing clean command:".bright_red().to_string(),
-        _ => format!("│ → Executing {} command:", command_type),
-    };
-    
-    println!("{}", colored_label);
-    print!("│   ");
-    if let Some(ref lib_path) = hybrid_lib {
-        print!("LD_PRELOAD={} ", shell_words::quote(lib_path).dimmed());
-        if let Some(ref feature_root) = feature_root {
-            print!("C2RUST_FEATURE_ROOT={} ", shell_words::quote(&feature_root.display().to_string()).dimmed());
-        }
-        print!("C2RUST_PROJECT_ROOT={} ", shell_words::quote(&project_root.display().to_string()).dimmed());
-        print!("C2RUST_RUST_LIB={} ", shell_words::quote(&rust_lib_path.display().to_string()).dimmed());
-    }
-    // Print the actual command that will be executed (after shell-words parsing)
-    println!("{}", shell_words::join(&parts).bright_yellow());
-    println!("│   {}: {}", "Working directory".dimmed(), exec_dir.display());
+    let feature_root = setup_hybrid_env(&mut command, &project_root, feature, set_ld_preload);
+    print_command_details(command_type, &parts, &exec_dir, &project_root, feature_root.as_ref(), set_ld_preload);
     
     let start_time = Instant::now();
-    
-    let output = command
-        .output()
+    let output = command.output()
         .with_context(|| format!("Failed to execute command: {}", command_str))?;
-
     let duration = start_time.elapsed();
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        
-        let error_details = if !stderr.is_empty() {
-            format!("stderr: {}", stderr)
-        } else if !stdout.is_empty() {
-            format!("stdout: {}", stdout)
-        } else {
-            String::from("no output")
-        };
-        
-        println!("│ {} (took {:.2}s)", format!("✗ {} failed", command_type.to_uppercase()).bright_red().bold(), duration.as_secs_f64());
-        
-        anyhow::bail!(
-            "Command '{}' failed with {}: {}",
-            command_str,
-            output.status,
-            error_details
-        );
+        print_command_failure(command_type, command_str, &output, duration);
+        anyhow::bail!("Command '{}' failed", command_str);
     }
 
-    // Success message with timing
+    print_command_success(command_type, duration);
+    Ok(())
+}
+
+/// Print command failure message
+fn print_command_failure(command_type: &str, _command_str: &str, output: &std::process::Output, duration: std::time::Duration) {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    
+    println!("│ {} (took {:.2}s)", 
+        format!("✗ {} failed", command_type.to_uppercase()).bright_red().bold(), 
+        duration.as_secs_f64()
+    );
+    
+    if !stderr.is_empty() {
+        eprintln!("stderr: {}", stderr);
+    }
+    if !stdout.is_empty() {
+        println!("stdout: {}", stdout);
+    }
+}
+
+/// Print command success message
+fn print_command_success(command_type: &str, duration: std::time::Duration) {
     let success_msg = match command_type {
         "build" => format!("│ {} (took {:.2}s)", "✓ Build successful".bright_green().bold(), duration.as_secs_f64()),
         "test" => format!("│ {} (took {:.2}s)", "✓ Test successful".bright_green().bold(), duration.as_secs_f64()),
@@ -204,8 +213,6 @@ fn execute_command_in_dir(
         _ => format!("│ ✓ {} successful (took {:.2}s)", command_type, duration.as_secs_f64()),
     };
     println!("{}", success_msg);
-
-    Ok(())
 }
 
 /// Run clean command for a given feature

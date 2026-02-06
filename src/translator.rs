@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::io::Write;
 use crate::util;
+use crate::constants;
 use colored::Colorize;
 
 /// Get the translate script directory from environment variable
@@ -75,20 +76,15 @@ fn build_fix_args<'a>(
     ]
 }
 
-/// Display Rust code from a file with formatted output
-/// 
-/// # Parameters
-/// - `file_path`: Path to the Rust file to display
-/// - `header`: Header text to display (e.g., "─ Translated Rust Code ─")
-/// - `max_lines`: Maximum number of lines to display
-fn display_rust_code(file_path: &Path, header: &str, max_lines: usize) {
+/// Display code from a file with formatted output
+fn display_code(file_path: &Path, header: &str, max_lines: usize) {
     match std::fs::read_to_string(file_path) {
         Ok(content) => {
             let lines: Vec<&str> = content.lines().collect();
             let total_lines = lines.len();
             let display_lines = std::cmp::min(total_lines, max_lines);
             
-            println!("│ {}", header.bright_green());
+            println!("│ {}", header.bright_cyan());
             for (i, line) in lines.iter().take(display_lines).enumerate() {
                 println!("│ {} {}", format!("{:3}", i + 1).dimmed(), line);
             }
@@ -112,30 +108,16 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
     let config_path = get_config_path()?;
     let work_dir = project_root.join(".c2rust").join(feature).join("rust");
     
-    // Verify working directory exists
     if !work_dir.exists() {
         anyhow::bail!(
-            "Working directory does not exist: {}. Expected directory structure: <project_root>/.c2rust/<feature>/rust",
+            "Working directory does not exist: {}. Expected: <project_root>/.c2rust/<feature>/rust",
             work_dir.display()
         );
     }
     
-    // Read and display C code content (first 15 lines for preview)
-    if let Ok(c_content) = std::fs::read_to_string(c_file) {
-        let lines: Vec<&str> = c_content.lines().collect();
-        let preview_lines = lines.iter().take(15).count();
-        
-        println!("│ {}", "─ C Source Preview ─".bright_cyan());
-        for (i, line) in lines.iter().take(15).enumerate() {
-            println!("│ {} {}", format!("{:3}", i + 1).dimmed(), line);
-        }
-        if lines.len() > 15 {
-            println!("│ {} (showing {} of {} lines)", "...".dimmed(), preview_lines, lines.len());
-        }
-        println!("│");
-    }
+    // Display C code preview
+    display_code(c_file, "─ C Source Preview ─", constants::C_CODE_PREVIEW_LINES);
     
-    // Get translate script path from environment variable
     let script_path = get_translate_script_full_path()?;
     let script_str = script_path.to_str()
         .with_context(|| format!("Non-UTF8 path: {}", script_path.display()))?;
@@ -179,18 +161,38 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
     }
 
     // Read and display the translated Rust code
-    display_rust_code(rs_file, "─ Translated Rust Code ─", 100);
+    display_code(rs_file, "─ Translated Rust Code ─", constants::RUST_CODE_PREVIEW_LINES);
 
     Ok(())
 }
 
+/// Display error message preview
+fn display_error_preview(error_msg: &str) {
+    let error_lines: Vec<&str> = error_msg.lines().collect();
+    println!("│ {}", "─ Build Error Preview ─".yellow());
+    for (i, line) in error_lines.iter().take(constants::ERROR_PREVIEW_LINES).enumerate() {
+        if i == 0 {
+            println!("│ {}", line.bright_red());
+        } else {
+            println!("│ {}", line.dimmed());
+        }
+    }
+    if error_lines.len() > constants::ERROR_PREVIEW_LINES {
+        println!("│ {} (showing {} of {} lines)", "...".dimmed(), constants::ERROR_PREVIEW_LINES, error_lines.len());
+    }
+    println!("│");
+}
+
+/// Create temporary file with error message
+fn create_error_temp_file(error_msg: &str) -> Result<tempfile::NamedTempFile> {
+    let mut temp_file = tempfile::NamedTempFile::new()
+        .context("Failed to create temporary error file")?;
+    write!(temp_file, "{}", error_msg)
+        .context("Failed to write error message to temp file")?;
+    Ok(temp_file)
+}
+
 /// Fix translation errors using the translation tool
-/// 
-/// # Parameters
-/// - `feature`: The feature name being translated
-/// - `_file_type`: Kept for backward compatibility but not used (fix always uses type="fix")
-/// - `rs_file`: The Rust file to be fixed (serves as both input --code and output --output)
-/// - `error_msg`: The compiler error message to be written to a temporary file
 pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, error_msg: &str) -> Result<()> {
     util::validate_feature_name(feature)?;
     
@@ -198,40 +200,20 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
     let config_path = get_config_path()?;
     let work_dir = project_root.join(".c2rust").join(feature).join("rust");
     
-    // Verify working directory exists
     if !work_dir.exists() {
         anyhow::bail!(
-            "Working directory does not exist: {}. Expected directory structure: <project_root>/.c2rust/<feature>/rust",
+            "Working directory does not exist: {}. Expected: <project_root>/.c2rust/<feature>/rust",
             work_dir.display()
         );
     }
     
-    // Display error preview (first 10 lines)
-    let error_lines: Vec<&str> = error_msg.lines().collect();
-    println!("│ {}", "─ Build Error Preview ─".yellow());
-    for (i, line) in error_lines.iter().take(10).enumerate() {
-        if i == 0 {
-            println!("│ {}", line.bright_red());
-        } else {
-            println!("│ {}", line.dimmed());
-        }
-    }
-    if error_lines.len() > 10 {
-        println!("│ {} (showing 10 of {} lines)", "...".dimmed(), error_lines.len());
-    }
-    println!("│");
+    display_error_preview(error_msg);
     
-    // Create a unique temporary file with error message
-    let mut temp_file = tempfile::NamedTempFile::new()
-        .context("Failed to create temporary error file")?;
-    write!(temp_file, "{}", error_msg)
-        .context("Failed to write error message to temp file")?;
-    
-    // Get translate script path from environment variable
+    let temp_file = create_error_temp_file(error_msg)?;
     let script_path = get_translate_script_full_path()?;
+    
     let script_str = script_path.to_str()
         .with_context(|| format!("Non-UTF8 path: {}", script_path.display()))?;
-    
     let config_str = config_path.to_str()
         .with_context(|| format!("Non-UTF8 path: {}", config_path.display()))?;
     let error_file_str = temp_file.path().to_str()
@@ -239,9 +221,6 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
     let rs_file_str = rs_file.to_str()
         .with_context(|| format!("Non-UTF8 path: {}", rs_file.display()))?;
 
-    // Note: --code and --output both point to rs_file, which means the Python script
-    // will read the original file and overwrite it with the fixed version.
-    // This is the intended behavior as specified in the requirements.
     println!("│ {}", "Executing error fix command:".yellow());
     println!("│ {} python {} --config {} --type fix --code {} --output {} --error {}", 
         "→".yellow(),
@@ -252,16 +231,7 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
         error_file_str.dimmed());
     println!("│");
 
-    // Build fix command arguments.
-    // Note: rs_file_str is used for both code_file and output_file parameters,
-    // meaning the Python script reads from rs_file and overwrites it with the fix.
-    let args = build_fix_args(
-        script_str,
-        config_str,
-        rs_file_str,  // code_file: input file to fix
-        rs_file_str,  // output_file: where to write fixed result (overwrites input)
-        error_file_str,
-    );
+    let args = build_fix_args(script_str, config_str, rs_file_str, rs_file_str, error_file_str);
 
     let status = Command::new("python")
         .args(&args)
@@ -271,13 +241,11 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
         .context("Failed to execute translate_and_fix.py for fixing")?;
 
     if !status.success() {
-        anyhow::bail!("Fix failed with exit code: {} (check output above for details)", status.code().unwrap_or(-1));
+        anyhow::bail!("Fix failed with exit code: {}", status.code().unwrap_or(-1));
     }
 
-    // Read and display the fixed Rust code
-    display_rust_code(rs_file, "─ Fixed Rust Code ─", 100);
+    display_code(rs_file, "─ Fixed Rust Code ─", constants::RUST_CODE_PREVIEW_LINES);
 
-    // temp_file is automatically deleted when it goes out of scope
     Ok(())
 }
 
