@@ -32,6 +32,10 @@ enum Commands {
         /// Maximum number of fix attempts for build errors (must be > 0, defaults to 10)
         #[arg(long, default_value = "10", value_parser = parse_positive_usize)]
         max_fix_attempts: usize,
+        
+        /// Show full output for code and errors without truncation
+        #[arg(long)]
+        show_full_output: bool,
     },
 }
 
@@ -47,8 +51,8 @@ fn main() {
     }
 
     let result = match cli.command {
-        Commands::Translate { feature, allow_all, max_fix_attempts } => {
-            c2rust_translate::translate_feature(&feature, allow_all, max_fix_attempts)
+        Commands::Translate { feature, allow_all, max_fix_attempts, show_full_output } => {
+            c2rust_translate::translate_feature(&feature, allow_all, max_fix_attempts, show_full_output)
         }
     };
 

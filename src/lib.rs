@@ -12,7 +12,7 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 
 /// Main translation workflow for a feature
-pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize) -> Result<()> {
+pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize, show_full_output: bool) -> Result<()> {
     let msg = format!("Starting translation for feature: {}", feature);
     println!("{}", msg.bright_cyan().bold());
     logger::log_message(&msg);
@@ -82,7 +82,7 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
     loop {
         // Step 2.1: Try to build first
         println!("\n{}", "Building project...".bright_blue().bold());
-        match builder::cargo_build(feature) {
+        match builder::cargo_build(feature, show_full_output) {
             Ok(_) => {
                 println!("{}", "✓ Build successful!".bright_green().bold());
             }
@@ -164,7 +164,7 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
             );
             logger::log_message(&progress_msg);
             
-            process_rs_file(feature, rs_file, file_name, current_position, total_count, max_fix_attempts)?;
+            process_rs_file(feature, rs_file, file_name, current_position, total_count, max_fix_attempts, show_full_output)?;
             
             // Mark file as processed and save progress
             progress_state.mark_processed(rs_file, &rust_dir)?;
@@ -176,7 +176,7 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
 }
 
 /// Process a single .rs file through the translation workflow
-fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, current_position: usize, total_count: usize, max_fix_attempts: usize) -> Result<()> {
+fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, current_position: usize, total_count: usize, max_fix_attempts: usize, show_full_output: bool) -> Result<()> {
     use constants::MAX_TRANSLATION_ATTEMPTS;
     
     for attempt_number in 1..=MAX_TRANSLATION_ATTEMPTS {
@@ -192,7 +192,7 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, cu
         };
         
         // Translate C to Rust
-        translate_file(feature, file_type, rs_file, &format_progress)?;
+        translate_file(feature, file_type, rs_file, &format_progress, show_full_output)?;
         
         // Build and fix errors
         let build_successful = build_and_fix_loop(
@@ -203,7 +203,8 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, cu
             &format_progress,
             is_last_attempt,
             attempt_number,
-            max_fix_attempts
+            max_fix_attempts,
+            show_full_output
         )?;
         
         if build_successful {
@@ -262,7 +263,7 @@ fn check_c_file_exists(rs_file: &std::path::Path) -> Result<()> {
 }
 
 /// Translate C file to Rust
-fn translate_file<F>(feature: &str, file_type: &str, rs_file: &std::path::Path, format_progress: &F) -> Result<()> 
+fn translate_file<F>(feature: &str, file_type: &str, rs_file: &std::path::Path, format_progress: &F, show_full_output: bool) -> Result<()> 
 where
     F: Fn(&str) -> String
 {
@@ -273,7 +274,7 @@ where
     println!("│");
     println!("│ {}", format_progress("Translation").bright_magenta().bold());
     println!("│ {}", format!("Translating {} to Rust...", file_type).bright_blue().bold());
-    translator::translate_c_to_rust(feature, file_type, &c_file, rs_file)?;
+    translator::translate_c_to_rust(feature, file_type, &c_file, rs_file, show_full_output)?;
 
     let metadata = fs::metadata(rs_file)?;
     if metadata.len() == 0 {
@@ -294,6 +295,7 @@ fn build_and_fix_loop<F>(
     is_last_attempt: bool,
     attempt_number: usize,
     max_fix_attempts: usize,
+    show_full_output: bool,
 ) -> Result<bool>
 where
     F: Fn(&str) -> String
@@ -304,7 +306,7 @@ where
         println!("│ {}", format_progress("Build").bright_magenta().bold());
         println!("│ {}", format!("Building Rust project (attempt {}/{})", attempt, max_fix_attempts).bright_blue().bold());
         
-        match builder::cargo_build(feature) {
+        match builder::cargo_build(feature, show_full_output) {
             Ok(_) => {
                 println!("│ {}", "✓ Build successful!".bright_green().bold());
                 return Ok(true);
@@ -320,7 +322,7 @@ where
                         max_fix_attempts
                     );
                 } else {
-                    apply_error_fix(feature, file_type, rs_file, &build_error, format_progress)?;
+                    apply_error_fix(feature, file_type, rs_file, &build_error, format_progress, show_full_output)?;
                 }
             }
         }
@@ -397,6 +399,7 @@ fn apply_error_fix<F>(
     rs_file: &std::path::Path,
     build_error: &anyhow::Error,
     format_progress: &F,
+    show_full_output: bool,
 ) -> Result<()>
 where
     F: Fn(&str) -> String
@@ -406,7 +409,7 @@ where
     println!("│ {}", "⚠ Build failed, attempting to fix errors...".yellow().bold());
     println!("│");
     println!("│ {}", format_progress("Fix").bright_magenta().bold());
-    translator::fix_translation_error(feature, file_type, rs_file, &build_error.to_string())?;
+    translator::fix_translation_error(feature, file_type, rs_file, &build_error.to_string(), show_full_output)?;
 
     let metadata = fs::metadata(rs_file)?;
     if metadata.len() == 0 {

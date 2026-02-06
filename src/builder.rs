@@ -12,7 +12,7 @@ use colored::Colorize;
 /// `.c2rust/` directory. This avoids conflicts between features (for example,
 /// differing dependency versions or feature flags) and allows each feature to be built,
 /// tested, and iterated on independently.
-pub fn cargo_build(feature: &str) -> Result<()> {
+pub fn cargo_build(feature: &str, _show_full_output: bool) -> Result<()> {
     util::validate_feature_name(feature)?;
 
     let project_root = util::find_project_root()?;

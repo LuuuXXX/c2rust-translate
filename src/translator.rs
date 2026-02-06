@@ -77,12 +77,12 @@ fn build_fix_args<'a>(
 }
 
 /// Display code from a file with formatted output
-fn display_code(file_path: &Path, header: &str, max_lines: usize) {
+fn display_code(file_path: &Path, header: &str, max_lines: usize, show_full: bool) {
     match std::fs::read_to_string(file_path) {
         Ok(content) => {
             let lines: Vec<&str> = content.lines().collect();
             let total_lines = lines.len();
-            let display_lines = std::cmp::min(total_lines, max_lines);
+            let display_lines = if show_full { total_lines } else { std::cmp::min(total_lines, max_lines) };
             
             println!("│ {}", header.bright_cyan());
             for (i, line) in lines.iter().take(display_lines).enumerate() {
@@ -101,7 +101,7 @@ fn display_code(file_path: &Path, header: &str, max_lines: usize) {
 }
 
 /// Translate a C file to Rust using the translation tool
-pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_file: &Path) -> Result<()> {
+pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_file: &Path, show_full_output: bool) -> Result<()> {
     util::validate_feature_name(feature)?;
     
     let project_root = util::find_project_root()?;
@@ -116,7 +116,7 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
     }
     
     // Display C code preview
-    display_code(c_file, "─ C Source Preview ─", constants::CODE_PREVIEW_LINES);
+    display_code(c_file, "─ C Source Preview ─", constants::CODE_PREVIEW_LINES, show_full_output);
     
     let script_path = get_translate_script_full_path()?;
     let script_str = script_path.to_str()
@@ -161,24 +161,27 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
     }
 
     // Read and display the translated Rust code
-    display_code(rs_file, "─ Translated Rust Code ─", constants::CODE_PREVIEW_LINES);
+    display_code(rs_file, "─ Translated Rust Code ─", constants::CODE_PREVIEW_LINES, show_full_output);
 
     Ok(())
 }
 
 /// Display error message preview
-fn display_error_preview(error_msg: &str) {
+fn display_error_preview(error_msg: &str, show_full: bool) {
     let error_lines: Vec<&str> = error_msg.lines().collect();
+    let total_lines = error_lines.len();
+    let display_lines = if show_full { total_lines } else { std::cmp::min(total_lines, constants::ERROR_PREVIEW_LINES) };
+    
     println!("│ {}", "─ Build Error Preview ─".yellow());
-    for (i, line) in error_lines.iter().take(constants::ERROR_PREVIEW_LINES).enumerate() {
+    for (i, line) in error_lines.iter().take(display_lines).enumerate() {
         if i == 0 {
             println!("│ {}", line.bright_red());
         } else {
             println!("│ {}", line.dimmed());
         }
     }
-    if error_lines.len() > constants::ERROR_PREVIEW_LINES {
-        println!("│ {} (showing {} of {} lines)", "...".dimmed(), constants::ERROR_PREVIEW_LINES, error_lines.len());
+    if total_lines > display_lines {
+        println!("│ {} (showing {} of {} lines)", "...".dimmed(), display_lines, total_lines);
     }
     println!("│");
 }
@@ -193,7 +196,7 @@ fn create_error_temp_file(error_msg: &str) -> Result<tempfile::NamedTempFile> {
 }
 
 /// Fix translation errors using the translation tool
-pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, error_msg: &str) -> Result<()> {
+pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, error_msg: &str, show_full_output: bool) -> Result<()> {
     util::validate_feature_name(feature)?;
     
     let project_root = util::find_project_root()?;
@@ -207,7 +210,7 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
         );
     }
     
-    display_error_preview(error_msg);
+    display_error_preview(error_msg, show_full_output);
     
     let temp_file = create_error_temp_file(error_msg)?;
     let script_path = get_translate_script_full_path()?;
@@ -244,7 +247,7 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
         anyhow::bail!("Fix failed with exit code: {}", status.code().unwrap_or(-1));
     }
 
-    display_code(rs_file, "─ Fixed Rust Code ─", constants::CODE_PREVIEW_LINES);
+    display_code(rs_file, "─ Fixed Rust Code ─", constants::CODE_PREVIEW_LINES, show_full_output);
 
     Ok(())
 }
