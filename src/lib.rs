@@ -297,7 +297,6 @@ fn build_and_fix_loop<F>(
 where
     F: Fn(&str) -> String
 {
-    use std::fs;
     use constants::MAX_FIX_ATTEMPTS;
     
     for attempt in 1..=MAX_FIX_ATTEMPTS {
@@ -360,27 +359,27 @@ fn handle_max_fix_attempts_reached(
             println!("│ {}", "Retrying translation...".bright_cyan());
             println!("│ {}", "Note: The translator will overwrite the existing file content.".bright_blue());
             println!("│ {}", "✓ Retry scheduled".bright_green());
-            return Ok(false); // Signal retry
+            Ok(false) // Signal retry
         } else {
             if !input_trimmed.is_empty() {
                 println!("│ {}", format!("Invalid input '{}'. Only 'retry' will retry the translation.", input_trimmed).yellow());
             }
             println!("│ {}", "Skipping file due to build errors.".yellow());
-            return Err(build_error).context(format!(
+            Err(build_error).context(format!(
                 "Build failed after {} fix attempts for file {}",
                 MAX_FIX_ATTEMPTS,
                 rs_file.display()
-            ));
+            ))
         }
     } else {
         let total_retries = MAX_TRANSLATION_ATTEMPTS - 1;
         println!("│ {}", format!("All {} attempts exhausted (1 initial + {} retries). Cannot retry further.", MAX_TRANSLATION_ATTEMPTS, total_retries).red());
-        return Err(build_error).context(format!(
+        Err(build_error).context(format!(
             "Build failed after {} fix attempts and {} retries for file {}",
             MAX_FIX_ATTEMPTS,
             total_retries,
             rs_file.display()
-        ));
+        ))
     }
 }
 

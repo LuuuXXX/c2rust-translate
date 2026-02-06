@@ -1,4 +1,4 @@
-/// Constants used throughout the application
+//! Constants used throughout the application
 
 /// Maximum number of attempts to translate a file (1 initial + 2 retries)
 pub const MAX_TRANSLATION_ATTEMPTS: usize = 3;

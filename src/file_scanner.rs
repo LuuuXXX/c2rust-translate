@@ -223,133 +223,58 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_file_selection_all() {
-        let result = parse_file_selection("all", 5).unwrap();
-        assert_eq!(result, vec![0, 1, 2, 3, 4]);
-    }
+    fn test_parse_file_selection() {
+        struct TestCase {
+            input: &'static str,
+            total_files: usize,
+            expected: Result<Vec<usize>, &'static str>,
+        }
 
-    #[test]
-    fn test_parse_file_selection_all_case_insensitive() {
-        let result = parse_file_selection("ALL", 3).unwrap();
-        assert_eq!(result, vec![0, 1, 2]);
-        
-        let result = parse_file_selection("All", 3).unwrap();
-        assert_eq!(result, vec![0, 1, 2]);
-    }
+        let test_cases = vec![
+            // Success cases
+            TestCase { input: "all", total_files: 5, expected: Ok(vec![0, 1, 2, 3, 4]) },
+            TestCase { input: "ALL", total_files: 3, expected: Ok(vec![0, 1, 2]) },
+            TestCase { input: "All", total_files: 3, expected: Ok(vec![0, 1, 2]) },
+            TestCase { input: "3", total_files: 5, expected: Ok(vec![2]) },
+            TestCase { input: "1,3,5", total_files: 5, expected: Ok(vec![0, 2, 4]) },
+            TestCase { input: "2-4", total_files: 5, expected: Ok(vec![1, 2, 3]) },
+            TestCase { input: "1,3-5,7", total_files: 10, expected: Ok(vec![0, 2, 3, 4, 6]) },
+            TestCase { input: "1,2,1,3,2", total_files: 5, expected: Ok(vec![0, 1, 2]) },
+            TestCase { input: " 1 , 3 , 5 ", total_files: 5, expected: Ok(vec![0, 2, 4]) },
+            TestCase { input: " 2 - 4 ", total_files: 5, expected: Ok(vec![1, 2, 3]) },
+            
+            // Error cases
+            TestCase { input: "6", total_files: 5, expected: Err("out of bounds") },
+            TestCase { input: "1,6", total_files: 5, expected: Err("out of bounds") },
+            TestCase { input: "5-2", total_files: 5, expected: Err("is greater than") },
+            TestCase { input: "abc", total_files: 5, expected: Err("") },
+            TestCase { input: "", total_files: 5, expected: Err("No input provided") },
+            TestCase { input: "   ", total_files: 5, expected: Err("No input provided") },
+            TestCase { input: "-3", total_files: 5, expected: Err("ranges must have both start and end values") },
+            TestCase { input: "1-", total_files: 5, expected: Err("ranges must have both start and end values") },
+            TestCase { input: "-", total_files: 5, expected: Err("ranges must have both start and end values") },
+            TestCase { input: "0", total_files: 5, expected: Err("") },
+            TestCase { input: "1-10", total_files: 5, expected: Err("") },
+        ];
 
-    #[test]
-    fn test_parse_file_selection_single_number() {
-        let result = parse_file_selection("3", 5).unwrap();
-        assert_eq!(result, vec![2]); // 0-based index
-    }
-
-    #[test]
-    fn test_parse_file_selection_multiple_numbers() {
-        let result = parse_file_selection("1,3,5", 5).unwrap();
-        assert_eq!(result, vec![0, 2, 4]); // 0-based indices
-    }
-
-    #[test]
-    fn test_parse_file_selection_range() {
-        let result = parse_file_selection("2-4", 5).unwrap();
-        assert_eq!(result, vec![1, 2, 3]); // 0-based indices
-    }
-
-    #[test]
-    fn test_parse_file_selection_mixed() {
-        let result = parse_file_selection("1,3-5,7", 10).unwrap();
-        assert_eq!(result, vec![0, 2, 3, 4, 6]); // 0-based indices
-    }
-
-    #[test]
-    fn test_parse_file_selection_duplicates() {
-        let result = parse_file_selection("1,2,1,3,2", 5).unwrap();
-        assert_eq!(result, vec![0, 1, 2]); // Duplicates removed and sorted
-    }
-
-    #[test]
-    fn test_parse_file_selection_whitespace() {
-        let result = parse_file_selection(" 1 , 3 , 5 ", 5).unwrap();
-        assert_eq!(result, vec![0, 2, 4]);
-    }
-
-    #[test]
-    fn test_parse_file_selection_range_with_whitespace() {
-        let result = parse_file_selection(" 2 - 4 ", 5).unwrap();
-        assert_eq!(result, vec![1, 2, 3]);
-    }
-
-    #[test]
-    fn test_parse_file_selection_out_of_bounds() {
-        let result = parse_file_selection("6", 5);
-        assert!(result.is_err());
-        
-        let result = parse_file_selection("1,6", 5);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_file_selection_invalid_range() {
-        let result = parse_file_selection("5-2", 5);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("is greater than"));
-    }
-
-    #[test]
-    fn test_parse_file_selection_invalid_format() {
-        let result = parse_file_selection("abc", 5);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_file_selection_empty() {
-        // Empty string should fail with clear message
-        let result = parse_file_selection("", 5);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("No input provided"));
-    }
-
-    #[test]
-    fn test_parse_file_selection_whitespace_only() {
-        // Whitespace-only input should fail with clear message
-        let result = parse_file_selection("   ", 5);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("No input provided"));
-    }
-
-    #[test]
-    fn test_parse_file_selection_malformed_range_missing_start() {
-        // Range missing start value (e.g., "-3")
-        let result = parse_file_selection("-3", 5);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("ranges must have both start and end values"));
-    }
-
-    #[test]
-    fn test_parse_file_selection_malformed_range_missing_end() {
-        // Range missing end value (e.g., "1-")
-        let result = parse_file_selection("1-", 5);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("ranges must have both start and end values"));
-    }
-
-    #[test]
-    fn test_parse_file_selection_malformed_range_both_missing() {
-        // Range with both values missing (just "-")
-        let result = parse_file_selection("-", 5);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("ranges must have both start and end values"));
-    }
-
-    #[test]
-    fn test_parse_file_selection_zero() {
-        let result = parse_file_selection("0", 5);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_parse_file_selection_range_out_of_bounds() {
-        let result = parse_file_selection("1-10", 5);
-        assert!(result.is_err());
+        for (i, tc) in test_cases.iter().enumerate() {
+            let result = parse_file_selection(tc.input, tc.total_files);
+            match &tc.expected {
+                Ok(expected_vec) => {
+                    assert!(result.is_ok(), "Test case #{}: expected Ok, got Err for input '{}'", i, tc.input);
+                    assert_eq!(&result.unwrap(), expected_vec, 
+                        "Test case #{}: mismatch for input '{}'", i, tc.input);
+                }
+                Err(expected_err) => {
+                    assert!(result.is_err(), "Test case #{}: expected Err, got Ok for input '{}'", i, tc.input);
+                    if !expected_err.is_empty() {
+                        let err_msg = result.unwrap_err().to_string();
+                        assert!(err_msg.contains(expected_err), 
+                            "Test case #{}: error message '{}' doesn't contain '{}' for input '{}'", 
+                            i, err_msg, expected_err, tc.input);
+                    }
+                }
+            }
+        }
     }
 }

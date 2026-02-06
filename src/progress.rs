@@ -36,31 +36,37 @@ impl ProgressState {
         Ok(progress_file)
     }
 
+    /// Attempt to migrate progress from old location
+    fn migrate_from_old_location(feature: &str) -> Result<Option<Self>> {
+        let old_progress_file = Self::get_old_progress_file_path(feature)?;
+        if !old_progress_file.exists() {
+            return Ok(None);
+        }
+        
+        let content = fs::read_to_string(&old_progress_file)
+            .with_context(|| format!("Failed to read old progress file: {}", old_progress_file.display()))?;
+
+        let state: ProgressState = serde_json::from_str(&content)
+            .with_context(|| format!("Failed to parse old progress file: {}", old_progress_file.display()))?;
+
+        state.save(feature)?;
+        
+        fs::remove_file(&old_progress_file)
+            .with_context(|| format!("Failed to remove old progress file: {}", old_progress_file.display()))?;
+
+        let new_progress_file = Self::get_progress_file_path(feature)?;
+        eprintln!("Migrated progress file from {} to {}", 
+            old_progress_file.display(), new_progress_file.display());
+
+        Ok(Some(state))
+    }
+
     /// Load progress state from file, or return default if file doesn't exist
     pub fn load(feature: &str) -> Result<Self> {
         let progress_file = Self::get_progress_file_path(feature)?;
 
-        // Check for migration from old location
         if !progress_file.exists() {
-            let old_progress_file = Self::get_old_progress_file_path(feature)?;
-            if old_progress_file.exists() {
-                // Migrate from old location
-                let content = fs::read_to_string(&old_progress_file)
-                    .with_context(|| format!("Failed to read old progress file: {}", old_progress_file.display()))?;
-
-                let state: ProgressState = serde_json::from_str(&content)
-                    .with_context(|| format!("Failed to parse old progress file: {}", old_progress_file.display()))?;
-
-                // Save to new location
-                state.save(feature)?;
-
-                // Remove old file
-                fs::remove_file(&old_progress_file)
-                    .with_context(|| format!("Failed to remove old progress file: {}", old_progress_file.display()))?;
-
-                eprintln!("Migrated progress file from {} to {}", 
-                    old_progress_file.display(), progress_file.display());
-
+            if let Some(state) = Self::migrate_from_old_location(feature)? {
                 return Ok(state);
             }
             return Ok(Self::default());
