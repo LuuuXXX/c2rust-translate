@@ -453,9 +453,6 @@ fn handle_test_failure_interactive(
             // Try to open vim
             match interaction::open_in_vim(rs_file) {
                 Ok(_) => {
-                    // Track the most recent test error to avoid recursion
-                    let mut last_error = test_error;
-                    
                     loop {
                         println!("│");
                         println!("│ {}", "Vim editing completed. Rebuilding and retesting...".bright_blue());
@@ -471,9 +468,6 @@ fn handle_test_failure_interactive(
                             Err(e) => {
                                 println!("│ {}", "✗ Tests still failing after manual fix".red());
                                 
-                                // Update last_error with the latest failure
-                                last_error = e;
-                                
                                 // Ask if user wants to try again
                                 println!("│");
                                 println!("│ {}", "Tests still have errors. What would you like to do?".yellow());
@@ -485,7 +479,7 @@ fn handle_test_failure_interactive(
                                         continue;
                                     }
                                     interaction::UserChoice::Exit => {
-                                        return Err(last_error).context("Tests failed after manual fix and user chose to exit");
+                                        return Err(e).context("Tests failed after manual fix and user chose to exit");
                                     }
                                 }
                             }
