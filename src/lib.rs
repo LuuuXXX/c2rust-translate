@@ -8,8 +8,8 @@ pub mod progress;
 pub mod logger;
 pub mod constants;
 pub mod target_selector;
-pub mod interaction;
-pub mod suggestion;
+pub(crate) mod interaction;
+pub(crate) mod suggestion;
 
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -372,7 +372,7 @@ where
 }
 
 /// Handle the case when max fix attempts are reached
-/// Returns Ok(true) if should retry translation, Ok(false) if should skip
+/// Returns Ok(true) if processing should continue without retrying translation, Ok(false) if translation should be retried
 fn handle_max_fix_attempts_reached(
     build_error: anyhow::Error,
     file_name: &str,
@@ -503,8 +503,9 @@ fn handle_max_fix_attempts_reached(
                 Err(e) => {
                     println!("│ {}", format!("Failed to open vim: {}", e).red());
                     println!("│ {}", "Falling back to exit.".yellow());
-                    Err(build_error).context(format!(
-                        "Build failed and could not open vim for file {}",
+                    Err(e).context(format!(
+                        "Build failed (original error: {}) and could not open vim for file {}",
+                        build_error,
                         rs_file.display()
                     ))
                 }

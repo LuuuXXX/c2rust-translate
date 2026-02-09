@@ -28,7 +28,7 @@ pub fn prompt_user_choice(failure_type: &str, require_suggestion: bool) -> Resul
     }
     
     println!("│   {} Manual fix (edit the file directly)", "2.".bright_white());
-    println!("│   {} Exit (skip this file and continue with next, or exit completely)", "3.".bright_white());
+    println!("│   {} Exit (abort the translation process)", "3.".bright_white());
     println!("│");
     
     loop {
@@ -52,35 +52,38 @@ pub fn prompt_user_choice(failure_type: &str, require_suggestion: bool) -> Resul
 /// Prompt user to enter a fix suggestion
 /// If require_input is true, user must provide non-empty input
 pub fn prompt_suggestion(require_input: bool) -> Result<Option<String>> {
-    println!("│");
-    println!("│ {}", "Please enter your fix suggestion:".bright_cyan().bold());
-    println!("│ {}", "(The suggestion will be saved and used in the next fix attempt)".dimmed());
-    
-    if !require_input {
-        println!("│ {}", "(Press Enter to skip entering a suggestion)".dimmed());
-    }
-    
-    println!("│");
-    print!("│ {} ", "Suggestion:".bright_yellow());
-    io::stdout().flush()?;
-    
-    let mut suggestion = String::new();
-    io::stdin().read_line(&mut suggestion)?;
-    
-    let trimmed = suggestion.trim().to_string();
-    
-    if trimmed.is_empty() {
-        if require_input {
-            println!("│ {}", "Error: A suggestion is required to continue.".red());
-            return prompt_suggestion(require_input);
-        } else {
-            println!("│ {}", "No suggestion provided.".yellow());
-            return Ok(None);
+    loop {
+        println!("│");
+        println!("│ {}", "Please enter your fix suggestion:".bright_cyan().bold());
+        println!("│ {}", "(The suggestion will be saved and used in the next fix attempt)".dimmed());
+        
+        if !require_input {
+            println!("│ {}", "(Press Enter to skip entering a suggestion)".dimmed());
         }
+        
+        println!("│");
+        print!("│ {} ", "Suggestion:".bright_yellow());
+        io::stdout().flush()?;
+        
+        let mut suggestion = String::new();
+        io::stdin().read_line(&mut suggestion)?;
+        
+        let trimmed = suggestion.trim().to_string();
+        
+        if trimmed.is_empty() {
+            if require_input {
+                println!("│ {}", "Error: A suggestion is required to continue.".red());
+                // Loop again to re-prompt instead of recursing
+                continue;
+            } else {
+                println!("│ {}", "No suggestion provided.".yellow());
+                return Ok(None);
+            }
+        }
+        
+        println!("│ {}", format!("✓ Suggestion recorded: {}", trimmed).bright_green());
+        return Ok(Some(trimmed));
     }
-    
-    println!("│ {}", format!("✓ Suggestion recorded: {}", trimmed).bright_green());
-    Ok(Some(trimmed))
 }
 
 /// Open a file in vim for manual editing

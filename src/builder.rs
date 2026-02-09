@@ -411,7 +411,7 @@ fn handle_test_failure_interactive(
             println!("│");
             println!("│ {}", "Rebuilding and retesting...".bright_blue().bold());
             
-            cargo_build(feature, true)?;
+            c2rust_build(feature)?;
             
             match c2rust_test(feature) {
                 Ok(_) => {
@@ -448,8 +448,8 @@ fn handle_test_failure_interactive(
                     println!("│");
                     println!("│ {}", "Vim editing completed. Rebuilding and retesting...".bright_blue());
                     
-                    // Try building and testing after manual edit
-                    cargo_build(feature, true)?;
+                    // Try building and testing after manual edit using the hybrid build pipeline
+                    c2rust_build(feature)?;
                     
                     match c2rust_test(feature) {
                         Ok(_) => {
@@ -479,7 +479,7 @@ fn handle_test_failure_interactive(
                 Err(e) => {
                     println!("│ {}", format!("Failed to open vim: {}", e).red());
                     println!("│ {}", "Falling back to exit.".yellow());
-                    Err(test_error).context("Tests failed and could not open vim")
+                    Err(e).context(format!("Tests failed (original error: {}) and could not open vim", test_error))
                 }
             }
         }

@@ -201,7 +201,9 @@ c2rust-translate translate
 #### 2. 手工修复（Manual Fix）
 - 自动在 vim 中打开失败的 Rust 文件
 - 完整显示 C 源代码和 Rust 代码（不截断）
-- 手工修改后会自动重新编译和测试
+- 手工修改后会自动重新执行构建
+  - 对于构建失败：手工修改保存后会自动重新执行构建
+  - 对于测试失败：手工修改保存后会自动重新执行构建和测试
 - 如果修改后仍有错误，可以继续选择处理方式
 
 **使用场景**：
@@ -210,13 +212,12 @@ c2rust-translate translate
 - AI 修复多次失败，需要人工介入
 
 #### 3. 退出（Exit）
-- 跳过当前文件，继续处理下一个文件
-- 或完全退出翻译过程
+- 停止翻译过程并退出工具
+- 未完成的文件不会被处理
 
 **使用场景**：
-- 当前问题太复杂，稍后处理
-- 需要先处理其他文件
-- 想要暂停工作流程
+- 遇到无法解决的问题，需要停止处理
+- 当前任务无法继续，需要修改项目配置或依赖后重新运行
 
 ### 适用场景
 
@@ -257,7 +258,7 @@ File Locations:
 Available options:
   1. Continue trying (optionally enter a fix suggestion)
   2. Manual fix (edit the file directly)
-  3. Exit (skip this file and continue with next, or exit completely)
+  3. Exit (abort the translation process)
 
 Enter your choice (1/2/3): 1
 

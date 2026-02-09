@@ -71,12 +71,23 @@ mod tests {
 
     #[test]
     fn test_suggestion_file_path() {
-        // This test requires a .c2rust directory to exist
-        // We'll just test that the function doesn't panic
+        // Create a temp directory to act as the project root
+        let temp_dir = TempDir::new().unwrap();
+        let old_dir = env::current_dir().unwrap();
+
+        // Create .c2rust directory inside the temp project root
+        fs::create_dir(temp_dir.path().join(".c2rust")).unwrap();
+        env::set_current_dir(temp_dir.path()).unwrap();
+
         let result = get_suggestion_file_path();
-        // In a test environment without .c2rust, this might fail
-        // So we just check it returns a Result
-        let _is_result = result.is_ok() || result.is_err();
+
+        // Restore original working directory
+        env::set_current_dir(old_dir).unwrap();
+
+        // The path should be valid and point to c2rust.md in the project root
+        assert!(result.is_ok());
+        let path = result.unwrap();
+        assert_eq!(path.file_name().unwrap(), "c2rust.md");
     }
 
     #[test]
@@ -97,5 +108,45 @@ mod tests {
         // Should return Ok(None) for non-existent file
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), None);
+    }
+
+    #[test]
+    fn test_append_suggestion() {
+        // Create a temp directory to act as the project root
+        let temp_dir = TempDir::new().unwrap();
+        let old_dir = env::current_dir().unwrap();
+
+        // Create .c2rust directory inside the temp project root
+        fs::create_dir(temp_dir.path().join(".c2rust")).unwrap();
+        env::set_current_dir(temp_dir.path()).unwrap();
+
+        // Append a suggestion
+        let suggestion_text = "Use std::ffi::CStr instead of raw pointers";
+        let result = append_suggestion(suggestion_text);
+        assert!(result.is_ok());
+
+        // Read back the file and verify content
+        let suggestion_file = get_suggestion_file_path().unwrap();
+        assert!(suggestion_file.exists());
+        
+        let content = fs::read_to_string(&suggestion_file).unwrap();
+        assert!(content.contains(suggestion_text));
+        assert!(content.contains("## Suggestion added at"));
+
+        // Append another suggestion
+        let second_suggestion = "Ensure proper lifetime annotations";
+        let result2 = append_suggestion(second_suggestion);
+        assert!(result2.is_ok());
+
+        // Verify both suggestions are present
+        let content2 = fs::read_to_string(&suggestion_file).unwrap();
+        assert!(content2.contains(suggestion_text));
+        assert!(content2.contains(second_suggestion));
+        
+        // Should have two timestamp headers
+        assert_eq!(content2.matches("## Suggestion added at").count(), 2);
+
+        // Restore original working directory before temp_dir is dropped
+        env::set_current_dir(&old_dir).unwrap();
     }
 }

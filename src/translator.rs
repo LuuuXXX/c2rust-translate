@@ -87,7 +87,7 @@ fn build_fix_args<'a>(
 }
 
 /// Display code from a file with formatted output
-pub fn display_code(file_path: &Path, header: &str, max_lines: usize, show_full: bool) {
+pub(crate) fn display_code(file_path: &Path, header: &str, max_lines: usize, show_full: bool) {
     match std::fs::read_to_string(file_path) {
         Ok(content) => {
             let lines: Vec<&str> = content.lines().collect();
