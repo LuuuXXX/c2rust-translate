@@ -22,6 +22,18 @@ enum ErrorRecoveryChoice {
     Exit,
 }
 
+/// Custom error type to signal user requested exit
+#[derive(Debug)]
+struct UserRequestedExit;
+
+impl std::fmt::Display for UserRequestedExit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "User requested exit")
+    }
+}
+
+impl std::error::Error for UserRequestedExit {}
+
 /// Truncate error message to a reasonable length for API calls.
 ///
 /// Limits error messages to avoid overwhelming the translator API with
@@ -82,7 +94,14 @@ fn manual_fix_file(rs_file: &std::path::Path) -> Result<()> {
     }
     
     // 2. If vim is not available, output file absolute path
-    let absolute_path = rs_file.canonicalize()?;
+    let absolute_path = match rs_file.canonicalize() {
+        Ok(path) => path,
+        Err(_) => {
+            // If canonicalize fails (file doesn't exist or other error),
+            // fall back to using the current directory + relative path
+            std::env::current_dir()?.join(rs_file)
+        }
+    };
     println!("│ Vim not available. Please manually edit the file at:");
     println!("│ {}", absolute_path.display());
     println!("│ Press Enter when done...");
@@ -100,7 +119,7 @@ fn manual_fix_file(rs_file: &std::path::Path) -> Result<()> {
 /// Trimmed string containing user's fix suggestions
 ///
 /// # Errors
-/// Returns error if stdin cannot be read
+/// Returns error if stdin cannot be read or if user provides no suggestions
 fn get_user_fix_suggestions() -> Result<String> {
     use std::io::Read;
     
@@ -113,7 +132,12 @@ fn get_user_fix_suggestions() -> Result<String> {
     let mut suggestions = String::new();
     io::stdin().read_to_string(&mut suggestions)?;
     
-    Ok(suggestions.trim().to_string())
+    let trimmed = suggestions.trim();
+    if trimmed.is_empty() {
+        anyhow::bail!("No fix suggestions provided; user ended input without entering any text");
+    }
+    
+    Ok(trimmed.to_string())
 }
 
 /// Prompt user with error recovery menu and handle their choice.
@@ -196,8 +220,9 @@ fn prompt_error_recovery(
                                 println!("│ {}", "✓ Build successful after manual fix!".bright_green().bold());
                                 return Ok((ErrorRecoveryChoice::ManualFix, None));
                             }
-                            Err(_) => {
+                            Err(e) => {
                                 println!("│ {}", "Build still fails. Please choose again.".yellow());
+                                println!("│ Error: {}", truncate_error_for_api(&e.to_string(), 10));
                                 continue;
                             }
                         }
@@ -209,8 +234,9 @@ fn prompt_error_recovery(
                                 println!("│ {}", "✓ Tests successful after manual fix!".bright_green().bold());
                                 return Ok((ErrorRecoveryChoice::ManualFix, None));
                             }
-                            Err(_) => {
+                            Err(e) => {
                                 println!("│ {}", "Tests still fail. Please choose again.".yellow());
+                                println!("│ Error: {}", truncate_error_for_api(&e.to_string(), 10));
                                 continue;
                             }
                         }
@@ -323,8 +349,12 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
                     println!("{}", "✓ Build successful!".bright_green().bold());
                     break;
                 }
-                Err(_build_err) => {
-                    let error_details = "Initial build failed before processing files";
+                Err(build_err) => {
+                    // Include truncated error details in the menu
+                    let error_details = format!(
+                        "Initial build failed before processing files\n\n{}",
+                        truncate_error_for_api(&build_err.to_string(), 20)
+                    );
                     
                     // Use Cargo.toml as a representative file for project-level build errors
                     // since we don't have a specific .rs file being processed yet
@@ -334,7 +364,7 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
                         "Build",
                         "project",
                         &cargo_toml_path,
-                        error_details,
+                        &error_details,
                         feature,
                         show_full_output,
                     )?;
@@ -351,8 +381,7 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
                             break;
                         }
                         ErrorRecoveryChoice::Exit => {
-                            println!("│ {}", "Exiting as requested.".yellow());
-                            std::process::exit(0);
+                            return Err(UserRequestedExit).context("User requested exit during initial build failure");
                         }
                     }
                 }
@@ -373,28 +402,31 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
                 Ok(_) => {
                     break;
                 }
-                Err(_test_err) => {
-                    let error_details = "Initial test failed before processing files";
+                Err(test_err) => {
+                    // Include truncated error details in the menu
+                    let error_details = format!(
+                        "Initial test failed before processing files\n\n{}",
+                        truncate_error_for_api(&test_err.to_string(), 20)
+                    );
                     
                     // Use Cargo.toml as a representative file for project-level test errors
                     // since we don't have a specific .rs file being processed yet
                     let cargo_toml_path = rust_dir.join("Cargo.toml");
                     
-                    let (choice, suggestions) = prompt_error_recovery(
-                        "Test",
+                    // For initial tests, we don't have a specific file to fix,
+                    // so we use "Build" type to avoid requesting suggestions
+                    let (choice, _) = prompt_error_recovery(
+                        "Build",  // Use "Build" type since we can't apply fixes to a specific file
                         "project",
                         &cargo_toml_path,
-                        error_details,
+                        &error_details,
                         feature,
                         show_full_output,
                     )?;
                     
                     match choice {
                         ErrorRecoveryChoice::Continue => {
-                            if let Some(user_suggestions) = suggestions {
-                                println!("│ {}", format!("User suggestions noted: {}", user_suggestions).dimmed());
-                                println!("│ {}", "Retrying tests...".bright_cyan());
-                            }
+                            println!("│ {}", "Retrying tests...".bright_cyan());
                             continue;
                         }
                         ErrorRecoveryChoice::ManualFix => {
@@ -403,8 +435,7 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
                             break;
                         }
                         ErrorRecoveryChoice::Exit => {
-                            println!("│ {}", "Exiting as requested.".yellow());
-                            std::process::exit(0);
+                            return Err(UserRequestedExit).context("User requested exit during initial test failure");
                         }
                     }
                 }
@@ -680,8 +711,10 @@ fn handle_max_fix_attempts_reached(
             Ok(true) // Continue with build successful
         }
         ErrorRecoveryChoice::Exit => {
-            println!("│ {}", "Exiting as requested.".yellow());
-            std::process::exit(0);
+            return Err(UserRequestedExit).context(format!(
+                "User requested exit during build error recovery for file {}",
+                rs_file.display()
+            ));
         }
     }
 }
@@ -810,8 +843,10 @@ where
                         return Ok(());
                     }
                     ErrorRecoveryChoice::Exit => {
-                        println!("│ {}", "Exiting as requested.".yellow());
-                        std::process::exit(0);
+                        return Err(UserRequestedExit).context(format!(
+                            "User requested exit during test error recovery for file {}",
+                            file_name
+                        ));
                     }
                 }
             }

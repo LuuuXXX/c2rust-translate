@@ -57,6 +57,12 @@ fn main() {
     };
 
     if let Err(e) = result {
+        // Check if this is a user-requested exit (exit code 0)
+        if e.to_string().contains("User requested exit") {
+            eprintln!("Exiting as requested.");
+            std::process::exit(0);
+        }
+        
         let error_msg = format!("Error: {:#}", e);
         eprintln!("{}", error_msg);
         c2rust_translate::logger::log_message(&error_msg);
