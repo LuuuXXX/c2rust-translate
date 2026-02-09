@@ -75,6 +75,17 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
         git::git_commit(&format!("Initialize {} rust directory", feature), feature)?;
     }
 
+    // Initialize progress state before the main loop
+    // Count total .rs files and calculate how many have already been processed
+    let total_rs_files = file_scanner::count_all_rs_files(&rust_dir)?;
+    let initial_empty_count = file_scanner::find_empty_rs_files(&rust_dir)?.len();
+    let already_processed = total_rs_files.saturating_sub(initial_empty_count);
+    
+    let mut progress_state = progress::ProgressState::with_initial_progress(
+        total_rs_files,
+        already_processed
+    );
+
     // Step 2: Main loop - process all empty .rs files
     loop {
         // Step 2.1: Try to build first
@@ -106,10 +117,6 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
             logger::log_message(msg);
             break;
         }
-
-        // Initialize progress state for this session
-        // The total count is the number of empty files we need to process
-        let mut progress_state = progress::ProgressState::new(empty_rs_files.len());
         
         println!("{}", format!("Found {} empty .rs file(s) to process", 
             empty_rs_files.len()).cyan());
@@ -126,7 +133,7 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
 
         for &idx in selected_indices.iter() {
             let rs_file = &empty_rs_files[idx];
-            // Get current progress position (within this session)
+            // Get current progress position (persists across loop iterations)
             let current_position = progress_state.get_current_position();
             let total_count = progress_state.get_total_count();
             

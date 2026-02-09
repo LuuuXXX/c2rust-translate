@@ -5,6 +5,21 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
+/// Count all .rs files in the given directory (both empty and non-empty)
+pub fn count_all_rs_files(rust_dir: &Path) -> Result<usize> {
+    let mut count = 0;
+
+    for entry in WalkDir::new(rust_dir) {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().is_some_and(|ext| ext == "rs") {
+            count += 1;
+        }
+    }
+
+    Ok(count)
+}
+
 /// Find all empty .rs files in the given directory
 pub fn find_empty_rs_files(rust_dir: &Path) -> Result<Vec<PathBuf>> {
     let mut empty_files = Vec::new();
@@ -146,6 +161,36 @@ mod tests {
     use super::*;
     use std::io::Write;
     use tempfile::tempdir;
+
+    #[test]
+    fn test_count_all_rs_files() {
+        use std::io::Write;
+        
+        // Create a temporary directory
+        let temp_dir = tempdir().unwrap();
+
+        // Create empty .rs files
+        fs::File::create(temp_dir.path().join("var_test1.rs")).unwrap();
+        fs::File::create(temp_dir.path().join("fun_test2.rs")).unwrap();
+
+        // Create non-empty .rs files
+        let mut file1 = fs::File::create(temp_dir.path().join("var_test3.rs")).unwrap();
+        file1.write_all(b"pub static TEST: i32 = 42;").unwrap();
+        
+        let mut file2 = fs::File::create(temp_dir.path().join("fun_test4.rs")).unwrap();
+        file2.write_all(b"fn test() {}").unwrap();
+
+        // Create a non-.rs file (should not be counted)
+        fs::File::create(temp_dir.path().join("test.txt")).unwrap();
+
+        // Count all .rs files
+        let total_count = count_all_rs_files(temp_dir.path()).unwrap();
+        assert_eq!(total_count, 4); // Should count both empty and non-empty .rs files
+        
+        // Verify empty files count
+        let empty_count = find_empty_rs_files(temp_dir.path()).unwrap().len();
+        assert_eq!(empty_count, 2);
+    }
 
     #[test]
     fn test_find_empty_rs_files() {
