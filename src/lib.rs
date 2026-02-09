@@ -459,42 +459,37 @@ fn handle_max_fix_attempts_reached(
             // Try to open vim
             match interaction::open_in_vim(rs_file) {
                 Ok(_) => {
-                    println!("│");
-                    println!("│ {}", "Vim editing completed. Attempting to build...".bright_blue());
-                    
-                    // Try building after manual edit
-                    match builder::cargo_build(feature, true) {
-                        Ok(_) => {
-                            println!("│ {}", "✓ Build successful after manual fix!".bright_green().bold());
-                            Ok(true)
-                        }
-                        Err(e) => {
-                            println!("│ {}", "✗ Build still failing after manual fix".red());
-                            
-                            // Ask if user wants to try again
-                            println!("│");
-                            println!("│ {}", "Build still has errors. What would you like to do?".yellow());
-                            let retry_choice = interaction::prompt_user_choice("Build still failing", false)?;
-                            
-                            match retry_choice {
-                                interaction::UserChoice::Continue | interaction::UserChoice::ManualFix => {
-                                    // Recursively handle again
-                                    handle_max_fix_attempts_reached(
-                                        e,
-                                        file_name,
-                                        rs_file,
-                                        is_last_attempt,
-                                        attempt_number,
-                                        max_fix_attempts,
-                                        feature,
-                                        file_type,
-                                    )
-                                }
-                                interaction::UserChoice::Exit => {
-                                    Err(e).context(format!(
-                                        "Build failed after manual fix for file {}",
-                                        rs_file.display()
-                                    ))
+                    // After Vim editing, repeatedly try building and allow the user
+                    // to decide whether to retry or exit, using a loop to avoid recursion
+                    loop {
+                        println!("│");
+                        println!("│ {}", "Vim editing completed. Attempting to build...".bright_blue());
+                        
+                        // Try building after manual edit
+                        match builder::cargo_build(feature, true) {
+                            Ok(_) => {
+                                println!("│ {}", "✓ Build successful after manual fix!".bright_green().bold());
+                                return Ok(true);
+                            }
+                            Err(e) => {
+                                println!("│ {}", "✗ Build still failing after manual fix".red());
+                                
+                                // Ask if user wants to try again
+                                println!("│");
+                                println!("│ {}", "Build still has errors. What would you like to do?".yellow());
+                                let retry_choice = interaction::prompt_user_choice("Build still failing", false)?;
+                                
+                                match retry_choice {
+                                    interaction::UserChoice::Continue | interaction::UserChoice::ManualFix => {
+                                        // Continue the loop to retry
+                                        continue;
+                                    }
+                                    interaction::UserChoice::Exit => {
+                                        return Err(e).context(format!(
+                                            "Build failed after manual fix for file {}",
+                                            rs_file.display()
+                                        ));
+                                    }
                                 }
                             }
                         }
@@ -514,7 +509,7 @@ fn handle_max_fix_attempts_reached(
         interaction::UserChoice::Exit => {
             println!("│");
             println!("│ {}", "You chose: Exit".yellow());
-            println!("│ {}", "Skipping this file.".yellow());
+            println!("│ {}", "Exiting due to build failures.".yellow());
             Err(build_error).context(format!(
                 "Build failed after {} fix attempts for file {}. User chose to exit.",
                 max_fix_attempts,

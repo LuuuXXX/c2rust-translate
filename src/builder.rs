@@ -393,46 +393,54 @@ fn handle_test_failure_interactive(
             println!("│");
             println!("│ {}", "You chose: Continue trying with a new suggestion".bright_cyan());
             
-            // For test failures, suggestion is REQUIRED
-            let suggestion_text = interaction::prompt_suggestion(true)?
-                .expect("Suggestion should be present when required");
+            // Track the most recent test error across retries to avoid recursion
+            let mut current_error = test_error;
             
-            // Save suggestion to c2rust.md
-            suggestion::append_suggestion(&suggestion_text)?;
-            
-            // Apply fix with the suggestion
-            println!("│");
-            println!("│ {}", "Applying fix based on your suggestion...".bright_blue());
-            
-            let format_progress = |op: &str| format!("Fix for test failure - {}", op);
-            crate::apply_error_fix(feature, file_type, rs_file, &test_error, &format_progress, true)?;
-            
-            // Try to build and test again
-            println!("│");
-            println!("│ {}", "Rebuilding and retesting...".bright_blue().bold());
-            
-            c2rust_build(feature)?;
-            
-            match c2rust_test(feature) {
-                Ok(_) => {
-                    println!("│ {}", "✓ Tests passed after applying fix!".bright_green().bold());
-                    Ok(())
-                }
-                Err(e) => {
-                    println!("│ {}", "✗ Tests still failing".red());
-                    
-                    // Ask if user wants to try again
-                    println!("│");
-                    println!("│ {}", "Tests still have errors. What would you like to do?".yellow());
-                    let retry_choice = interaction::prompt_user_choice("Tests still failing", true)?;
-                    
-                    match retry_choice {
-                        interaction::UserChoice::Continue | interaction::UserChoice::ManualFix => {
-                            // Recursively handle again
-                            handle_test_failure_interactive(feature, file_type, rs_file, e)
-                        }
-                        interaction::UserChoice::Exit => {
-                            Err(e).context("Tests failed and user chose to exit")
+            loop {
+                // For test failures, suggestion is REQUIRED
+                let suggestion_text = interaction::prompt_suggestion(true)?
+                    .expect("Suggestion should be present when required");
+                
+                // Save suggestion to c2rust.md
+                suggestion::append_suggestion(&suggestion_text)?;
+                
+                // Apply fix with the suggestion
+                println!("│");
+                println!("│ {}", "Applying fix based on your suggestion...".bright_blue());
+                
+                let format_progress = |op: &str| format!("Fix for test failure - {}", op);
+                crate::apply_error_fix(feature, file_type, rs_file, &current_error, &format_progress, true)?;
+                
+                // Try to build and test again
+                println!("│");
+                println!("│ {}", "Rebuilding and retesting...".bright_blue().bold());
+                
+                c2rust_build(feature)?;
+                
+                match c2rust_test(feature) {
+                    Ok(_) => {
+                        println!("│ {}", "✓ Tests passed after applying fix!".bright_green().bold());
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        println!("│ {}", "✗ Tests still failing".red());
+                        
+                        // Update current_error with the latest failure
+                        current_error = e;
+                        
+                        // Ask if user wants to try again
+                        println!("│");
+                        println!("│ {}", "Tests still have errors. What would you like to do?".yellow());
+                        let retry_choice = interaction::prompt_user_choice("Tests still failing", true)?;
+                        
+                        match retry_choice {
+                            interaction::UserChoice::Continue | interaction::UserChoice::ManualFix => {
+                                // Continue the loop to retry
+                                continue;
+                            }
+                            interaction::UserChoice::Exit => {
+                                return Err(current_error).context("Tests failed and user chose to exit");
+                            }
                         }
                     }
                 }
@@ -445,32 +453,40 @@ fn handle_test_failure_interactive(
             // Try to open vim
             match interaction::open_in_vim(rs_file) {
                 Ok(_) => {
-                    println!("│");
-                    println!("│ {}", "Vim editing completed. Rebuilding and retesting...".bright_blue());
+                    // Track the most recent test error to avoid recursion
+                    let mut last_error = test_error;
                     
-                    // Try building and testing after manual edit using the hybrid build pipeline
-                    c2rust_build(feature)?;
-                    
-                    match c2rust_test(feature) {
-                        Ok(_) => {
-                            println!("│ {}", "✓ Tests passed after manual fix!".bright_green().bold());
-                            Ok(())
-                        }
-                        Err(e) => {
-                            println!("│ {}", "✗ Tests still failing after manual fix".red());
-                            
-                            // Ask if user wants to try again
-                            println!("│");
-                            println!("│ {}", "Tests still have errors. What would you like to do?".yellow());
-                            let retry_choice = interaction::prompt_user_choice("Tests still failing", true)?;
-                            
-                            match retry_choice {
-                                interaction::UserChoice::Continue | interaction::UserChoice::ManualFix => {
-                                    // Recursively handle again
-                                    handle_test_failure_interactive(feature, file_type, rs_file, e)
-                                }
-                                interaction::UserChoice::Exit => {
-                                    Err(e).context("Tests failed after manual fix and user chose to exit")
+                    loop {
+                        println!("│");
+                        println!("│ {}", "Vim editing completed. Rebuilding and retesting...".bright_blue());
+                        
+                        // Try building and testing after manual edit using the hybrid build pipeline
+                        c2rust_build(feature)?;
+                        
+                        match c2rust_test(feature) {
+                            Ok(_) => {
+                                println!("│ {}", "✓ Tests passed after manual fix!".bright_green().bold());
+                                return Ok(());
+                            }
+                            Err(e) => {
+                                println!("│ {}", "✗ Tests still failing after manual fix".red());
+                                
+                                // Update last_error with the latest failure
+                                last_error = e;
+                                
+                                // Ask if user wants to try again
+                                println!("│");
+                                println!("│ {}", "Tests still have errors. What would you like to do?".yellow());
+                                let retry_choice = interaction::prompt_user_choice("Tests still failing", true)?;
+                                
+                                match retry_choice {
+                                    interaction::UserChoice::Continue | interaction::UserChoice::ManualFix => {
+                                        // Continue the loop to retry without recursion
+                                        continue;
+                                    }
+                                    interaction::UserChoice::Exit => {
+                                        return Err(last_error).context("Tests failed after manual fix and user chose to exit");
+                                    }
                                 }
                             }
                         }
@@ -486,7 +502,7 @@ fn handle_test_failure_interactive(
         interaction::UserChoice::Exit => {
             println!("│");
             println!("│ {}", "You chose: Exit".yellow());
-            println!("│ {}", "Skipping due to test failures.".yellow());
+            println!("│ {}", "Exiting due to test failures.".yellow());
             Err(test_error).context("Tests failed and user chose to exit")
         }
     }

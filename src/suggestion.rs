@@ -68,8 +68,10 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
     use std::env;
+    use serial_test::serial;
 
     #[test]
+    #[serial]
     fn test_suggestion_file_path() {
         // Create a temp directory to act as the project root
         let temp_dir = TempDir::new().unwrap();
@@ -91,6 +93,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_read_nonexistent_suggestions() {
         // Create a temp directory
         let temp_dir = TempDir::new().unwrap();
@@ -111,6 +114,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_append_suggestion() {
         // Create a temp directory to act as the project root
         let temp_dir = TempDir::new().unwrap();
