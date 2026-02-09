@@ -85,6 +85,11 @@ fn setup_hybrid_env(command: &mut Command, project_root: &std::path::Path, featu
     command.env("C2RUST_FEATURE_ROOT", &feature_root_path);
     command.env("C2RUST_RUST_LIB", &rust_lib_path);
     
+    // Read and set C2RUST_LD_TARGET from build.target config if available
+    if let Ok(target) = get_config_value("build.target", feature) {
+        command.env("C2RUST_LD_TARGET", target);
+    }
+    
     Some(feature_root_path)
 }
 
@@ -95,6 +100,7 @@ fn print_command_details(
     exec_dir: &std::path::Path,
     project_root: &std::path::Path,
     feature_root: Option<&std::path::PathBuf>,
+    feature: &str,
     set_ld_preload: bool,
 ) {
     let colored_label = match command_type {
@@ -119,6 +125,11 @@ fn print_command_details(
             }
             print!("C2RUST_PROJECT_ROOT={} ", shell_words::quote(&project_root.display().to_string()).dimmed());
             print!("C2RUST_RUST_LIB={} ", shell_words::quote(&rust_lib_path.display().to_string()).dimmed());
+            
+            // Show C2RUST_LD_TARGET if build.target is configured
+            if let Ok(target) = get_config_value("build.target", feature) {
+                print!("C2RUST_LD_TARGET={} ", shell_words::quote(&target).dimmed());
+            }
         }
     }
     
@@ -174,7 +185,7 @@ fn execute_command_in_dir(
     }
     
     let feature_root = setup_hybrid_env(&mut command, &project_root, feature, set_ld_preload);
-    print_command_details(command_type, &parts, &exec_dir, &project_root, feature_root.as_ref(), set_ld_preload);
+    print_command_details(command_type, &parts, &exec_dir, &project_root, feature_root.as_ref(), feature, set_ld_preload);
     
     let start_time = Instant::now();
     let output = command.output()

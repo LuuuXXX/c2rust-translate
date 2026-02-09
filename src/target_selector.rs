@@ -2,12 +2,14 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use std::fs;
 use std::io::{self, Write};
+use std::path::Path;
 use crate::util;
 
-/// Read target artifacts from targets.list file
-/// Returns a deduplicated list of targets preserving file order
-pub fn read_targets_list(feature: &str) -> Result<Vec<String>> {
-    let project_root = util::find_project_root()?;
+/// Internal function to read targets list from a specific project root
+/// Used for testing to avoid changing global working directory
+fn read_targets_list_from_root(feature: &str, project_root: &Path) -> Result<Vec<String>> {
+    util::validate_feature_name(feature)?;
+    
     let c2rust_dir = project_root.join(".c2rust");
     let feature_path = c2rust_dir.join(feature);
     let targets_file = feature_path.join("c").join("targets.list");
@@ -45,6 +47,14 @@ pub fn read_targets_list(feature: &str) -> Result<Vec<String>> {
     
     Ok(targets)
 }
+
+/// Read target artifacts from targets.list file
+/// Returns a deduplicated list of targets preserving file order
+pub fn read_targets_list(feature: &str) -> Result<Vec<String>> {
+    let project_root = util::find_project_root()?;
+    read_targets_list_from_root(feature, &project_root)
+}
+
 
 /// Parse user input for target selection (1-based index)
 /// Returns 0-based index of selected target
@@ -140,6 +150,33 @@ pub fn store_target_in_config(feature: &str, target: &str) -> Result<()> {
         anyhow::bail!("Failed to store target in config: {}", stderr);
     }
     
+    // Verify the value was actually persisted
+    let verify_output = Command::new("c2rust-config")
+        .current_dir(&c2rust_dir)
+        .args([
+            "config",
+            "--make",
+            "--feature",
+            feature,
+            "--list",
+            "build.target",
+        ])
+        .output()
+        .context("Failed to verify build.target in config")?;
+    
+    if !verify_output.status.success() {
+        anyhow::bail!("Failed to verify build.target was stored correctly");
+    }
+    
+    let stored_value = String::from_utf8_lossy(&verify_output.stdout).trim().to_string();
+    if stored_value != target {
+        anyhow::bail!(
+            "build.target verification failed: expected '{}', got '{}'",
+            target,
+            stored_value
+        );
+    }
+    
     println!(
         "{} {} = {}",
         "✓ Stored in config:".bright_green(),
@@ -155,10 +192,8 @@ mod tests {
     use super::*;
     use std::io::Write;
     use tempfile::tempdir;
-    use serial_test::serial;
     
     #[test]
-    #[serial]
     fn test_read_targets_list_basic() {
         let temp_dir = tempdir().unwrap();
         
@@ -174,23 +209,17 @@ mod tests {
         writeln!(file, "target2").unwrap();
         writeln!(file, "target3").unwrap();
         
-        // Temporarily change to temp dir for testing
-        let original_dir = std::env::current_dir().unwrap();
-        std::env::set_current_dir(temp_dir.path()).unwrap();
-        
-        let result = read_targets_list("test_feature");
+        // Use the internal function with explicit project root
+        let result = read_targets_list_from_root("test_feature", temp_dir.path());
         assert!(result.is_ok());
         let targets = result.unwrap();
         assert_eq!(targets.len(), 3);
         assert_eq!(targets[0], "target1");
         assert_eq!(targets[1], "target2");
         assert_eq!(targets[2], "target3");
-        
-        std::env::set_current_dir(original_dir).unwrap();
     }
     
     #[test]
-    #[serial]
     fn test_read_targets_list_with_duplicates() {
         let temp_dir = tempdir().unwrap();
         
@@ -208,10 +237,7 @@ mod tests {
         writeln!(file, "target3").unwrap();
         writeln!(file, "target2").unwrap(); // duplicate
         
-        let original_dir = std::env::current_dir().unwrap();
-        std::env::set_current_dir(temp_dir.path()).unwrap();
-        
-        let result = read_targets_list("test_feature");
+        let result = read_targets_list_from_root("test_feature", temp_dir.path());
         assert!(result.is_ok());
         let targets = result.unwrap();
         // Should only have 3 unique targets in order of first appearance
@@ -219,12 +245,9 @@ mod tests {
         assert_eq!(targets[0], "target1");
         assert_eq!(targets[1], "target2");
         assert_eq!(targets[2], "target3");
-        
-        std::env::set_current_dir(original_dir).unwrap();
     }
     
     #[test]
-    #[serial]
     fn test_read_targets_list_with_empty_lines_and_comments() {
         let temp_dir = tempdir().unwrap();
         
@@ -243,18 +266,13 @@ mod tests {
         writeln!(file, "# Another comment").unwrap();
         writeln!(file, "target3").unwrap();
         
-        let original_dir = std::env::current_dir().unwrap();
-        std::env::set_current_dir(temp_dir.path()).unwrap();
-        
-        let result = read_targets_list("test_feature");
+        let result = read_targets_list_from_root("test_feature", temp_dir.path());
         assert!(result.is_ok());
         let targets = result.unwrap();
         assert_eq!(targets.len(), 3);
         assert_eq!(targets[0], "target1");
         assert_eq!(targets[1], "target2");
         assert_eq!(targets[2], "target3");
-        
-        std::env::set_current_dir(original_dir).unwrap();
     }
     
     #[test]
@@ -275,24 +293,21 @@ mod tests {
     }
     
     #[test]
-    #[serial]
     fn test_read_targets_list_file_not_found() {
         let temp_dir = tempdir().unwrap();
-        let original_dir = std::env::current_dir().unwrap();
-        std::env::set_current_dir(temp_dir.path()).unwrap();
         
         // Create .c2rust but no targets.list
-        fs::create_dir_all(".c2rust/test_feature/c").unwrap();
+        let c2rust_dir = temp_dir.path().join(".c2rust");
+        let feature_dir = c2rust_dir.join("test_feature");
+        let c_dir = feature_dir.join("c");
+        fs::create_dir_all(&c_dir).unwrap();
         
-        let result = read_targets_list("test_feature");
+        let result = read_targets_list_from_root("test_feature", temp_dir.path());
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("targets.list file not found"));
-        
-        std::env::set_current_dir(original_dir).unwrap();
     }
     
     #[test]
-    #[serial]
     fn test_read_targets_list_empty_file() {
         let temp_dir = tempdir().unwrap();
         let c2rust_dir = temp_dir.path().join(".c2rust");
@@ -303,18 +318,12 @@ mod tests {
         // Create empty targets.list
         fs::File::create(c_dir.join("targets.list")).unwrap();
         
-        let original_dir = std::env::current_dir().unwrap();
-        std::env::set_current_dir(temp_dir.path()).unwrap();
-        
-        let result = read_targets_list("test_feature");
+        let result = read_targets_list_from_root("test_feature", temp_dir.path());
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("No valid targets found"));
-        
-        std::env::set_current_dir(original_dir).unwrap();
     }
     
     #[test]
-    #[serial]
     fn test_read_targets_list_only_comments() {
         let temp_dir = tempdir().unwrap();
         let c2rust_dir = temp_dir.path().join(".c2rust");
@@ -328,13 +337,8 @@ mod tests {
         writeln!(file, "").unwrap();
         writeln!(file, "# Comment 2").unwrap();
         
-        let original_dir = std::env::current_dir().unwrap();
-        std::env::set_current_dir(temp_dir.path()).unwrap();
-        
-        let result = read_targets_list("test_feature");
+        let result = read_targets_list_from_root("test_feature", temp_dir.path());
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("No valid targets found"));
-        
-        std::env::set_current_dir(original_dir).unwrap();
     }
 }
