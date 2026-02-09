@@ -11,7 +11,7 @@ pub mod target_selector;
 
 use anyhow::{Context, Result};
 use colored::Colorize;
-use std::io::{self, Write, Read};
+use std::io::{self, Write};
 use std::process::Command;
 
 /// Error recovery choices for interactive menu
@@ -22,7 +22,51 @@ enum ErrorRecoveryChoice {
     Exit,
 }
 
-/// Open vim editor or display file path for manual editing
+/// Truncate error message to a reasonable length for API calls.
+///
+/// Limits error messages to avoid overwhelming the translator API with
+/// extremely long error outputs while preserving essential information.
+///
+/// # Arguments
+/// * `error` - The error message to truncate
+/// * `max_lines` - Maximum number of lines to keep (default: 50)
+///
+/// # Returns
+/// Truncated error string with indication if truncation occurred
+fn truncate_error_for_api(error: &str, max_lines: usize) -> String {
+    let lines: Vec<&str> = error.lines().collect();
+    
+    if lines.len() <= max_lines {
+        return error.to_string();
+    }
+    
+    let truncated_lines: Vec<&str> = lines.iter().take(max_lines).copied().collect();
+    let remaining = lines.len() - max_lines;
+    
+    format!(
+        "{}\n\n... ({} more lines truncated for brevity)",
+        truncated_lines.join("\n"),
+        remaining
+    )
+}
+
+/// Open vim editor or display file path for manual editing.
+///
+/// This function first attempts to open the file in vim. If vim is not available
+/// or fails to start, it falls back to displaying the absolute file path for manual
+/// editing in another editor.
+///
+/// # Arguments
+/// * `rs_file` - Path to the Rust source file to edit
+///
+/// # Behavior
+/// - Tries to launch vim with the file
+/// - If successful, waits for user to press Enter to continue
+/// - If vim fails/unavailable, displays canonicalized file path
+/// - Waits for user confirmation before returning
+///
+/// # Errors
+/// Returns error if file path cannot be canonicalized or stdin read fails
 fn manual_fix_file(rs_file: &std::path::Path) -> Result<()> {
     // 1. Try to use vim to open the file
     if let Ok(status) = Command::new("vim")
@@ -47,8 +91,19 @@ fn manual_fix_file(rs_file: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
-/// Get user suggestions for fixing test failures
+/// Get user suggestions for fixing test failures.
+///
+/// Prompts the user to enter multi-line suggestions for fixing a test failure.
+/// Input continues until EOF is reached (Ctrl+D on Unix, Ctrl+Z on Windows).
+///
+/// # Returns
+/// Trimmed string containing user's fix suggestions
+///
+/// # Errors
+/// Returns error if stdin cannot be read
 fn get_user_fix_suggestions() -> Result<String> {
+    use std::io::Read;
+    
     println!("│");
     println!("│ Please enter your suggestions for fixing the test failure:");
     println!("│ (Press Ctrl+D or Ctrl+Z on Windows when done)");
@@ -61,7 +116,34 @@ fn get_user_fix_suggestions() -> Result<String> {
     Ok(suggestions.trim().to_string())
 }
 
-/// Prompt user with error recovery menu
+/// Prompt user with error recovery menu and handle their choice.
+///
+/// Displays an interactive menu with three options when a build or test failure occurs:
+/// 1. Continue trying - Retry (for builds) or provide suggestions (for tests)
+/// 2. Manual fix - Edit file with vim or display path for manual editing
+/// 3. Exit - Quit the program
+///
+/// # Arguments
+/// * `error_type` - Type of error, must be "Build" or "Test" (affects menu text)
+/// * `file_name` - Name of the file being processed (used in error messages passed to caller)
+/// * `rs_file` - Path to the Rust file (used for manual editing)
+/// * `error_details` - Detailed error message to display to user
+/// * `feature` - Feature name for build/test verification
+/// * `show_full_output` - Whether to show full output during verification
+///
+/// # Returns
+/// Tuple of (ErrorRecoveryChoice, Option<String>) where:
+/// - ErrorRecoveryChoice indicates user's choice
+/// - Option<String> contains user suggestions (only for Test + Continue choice)
+///
+/// # Behavior
+/// - For option 2 (Manual fix), automatically verifies the fix by rebuilding/retesting
+/// - If verification fails, re-displays the menu
+/// - Loops until valid choice is made and (for manual fix) verification succeeds
+/// - Option 3 (Exit) terminates the process immediately
+///
+/// # Errors
+/// Returns error if stdin/stdout operations fail or verification encounters issues
 fn prompt_error_recovery(
     error_type: &str,  // "Build" or "Test"
     _file_name: &str,
@@ -244,13 +326,14 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
                 Err(_build_err) => {
                     let error_details = "Initial build failed before processing files";
                     
-                    // Use a dummy file path for the error recovery (we don't have a specific file yet)
-                    let dummy_path = rust_dir.join("build");
+                    // Use Cargo.toml as a representative file for project-level build errors
+                    // since we don't have a specific .rs file being processed yet
+                    let cargo_toml_path = rust_dir.join("Cargo.toml");
                     
                     let (choice, _) = prompt_error_recovery(
                         "Build",
                         "project",
-                        &dummy_path,
+                        &cargo_toml_path,
                         error_details,
                         feature,
                         show_full_output,
@@ -293,13 +376,14 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
                 Err(_test_err) => {
                     let error_details = "Initial test failed before processing files";
                     
-                    // Use a dummy file path for the error recovery
-                    let dummy_path = rust_dir.join("test");
+                    // Use Cargo.toml as a representative file for project-level test errors
+                    // since we don't have a specific .rs file being processed yet
+                    let cargo_toml_path = rust_dir.join("Cargo.toml");
                     
                     let (choice, suggestions) = prompt_error_recovery(
                         "Test",
                         "project",
-                        &dummy_path,
+                        &cargo_toml_path,
                         error_details,
                         feature,
                         show_full_output,
@@ -686,10 +770,13 @@ where
                             println!("│ {}", "Applying fix based on your suggestions...".bright_blue());
                             let (file_type, _) = extract_and_validate_file_info(rs_file)?;
                             
+                            // Truncate test error to avoid overwhelming the API
+                            let truncated_error = truncate_error_for_api(&test_error.to_string(), 50);
+                            
                             // Combine test error and user suggestions
                             let fix_prompt = format!(
                                 "Test Error:\n{}\n\nUser Suggestions:\n{}",
-                                test_error,
+                                truncated_error,
                                 user_suggestions
                             );
                             
