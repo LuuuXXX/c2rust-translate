@@ -76,7 +76,7 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
         git::git_commit(&format!("Initialize {} rust directory", feature), feature)?;
     }
 
-    // Step 1.5: Target artifact selection
+    // Step 1: Target artifact selection
     // Prompt user to select target artifact before processing files
     println!("\n{}", "Step 1: Select target artifact".bright_cyan().bold());
     let selected_target = target_selector::prompt_target_selection(feature)?;
