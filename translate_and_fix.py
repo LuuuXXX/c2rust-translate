@@ -14,6 +14,14 @@ import os
 import logging
 from pathlib import Path
 
+try:
+    import toml
+except ImportError:
+    toml = None
+
+# Constants
+PREVIEW_LENGTH = 200  # Maximum length for code/error previews in truncated output
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -44,13 +52,12 @@ def write_file(file_path, content):
 
 def read_config(config_path):
     """Read and parse TOML configuration file."""
-    try:
-        import toml
-        with open(config_path, 'r', encoding='utf-8') as f:
-            return toml.load(f)
-    except ImportError:
+    if toml is None:
         logger.error("toml module is not installed. Please install it using: pip install toml")
         sys.exit(1)
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            return toml.load(f)
     except Exception as e:
         logger.error(f"Failed to read config file {config_path}: {e}")
         raise
@@ -61,9 +68,12 @@ def translate_variable(config, c_code_path, output_path):
     Translate C variable declarations to Rust.
     
     Args:
-        config: Configuration dictionary from TOML file
+        config: Configuration dictionary from TOML file (reserved for future use)
         c_code_path: Path to input C code file
         output_path: Path to output Rust file
+    
+    Note: The config parameter is currently unused but reserved for future
+    implementation of configuration-based translation options.
     """
     logger.info(f"Translating variable from {c_code_path} to {output_path}")
     
@@ -96,9 +106,12 @@ def translate_function(config, c_code_path, output_path):
     Translate C functions to Rust.
     
     Args:
-        config: Configuration dictionary from TOML file
+        config: Configuration dictionary from TOML file (reserved for future use)
         c_code_path: Path to input C code file
         output_path: Path to output Rust file
+    
+    Note: The config parameter is currently unused but reserved for future
+    implementation of configuration-based translation options.
     """
     logger.info(f"Translating function from {c_code_path} to {output_path}")
     
@@ -131,12 +144,15 @@ def fix_syntax(config, c_code_path, rust_code_path, output_path, error_path, sug
     Fix syntax errors in Rust code.
     
     Args:
-        config: Configuration dictionary from TOML file
+        config: Configuration dictionary from TOML file (reserved for future use)
         c_code_path: Path to original C code file
         rust_code_path: Path to Rust code file with errors
         output_path: Path to output fixed Rust file
         error_path: Path to error message file
         suggestion_path: Optional path to user suggestions file
+    
+    Note: The config parameter is currently unused but reserved for future
+    implementation of configuration-based fixing options.
     """
     logger.info(f"Fixing syntax errors in {rust_code_path}")
     
@@ -158,12 +174,12 @@ def fix_syntax(config, c_code_path, rust_code_path, output_path, error_path, sug
     fixed_code = f"""// Syntax-fixed version of {os.path.basename(rust_code_path)}
 // Original C code reference:
 /*
-{c_code[:200]}...
+{c_code[:PREVIEW_LENGTH]}...
 */
 
 // Error encountered:
 /*
-{error_msg[:200]}...
+{error_msg[:PREVIEW_LENGTH]}...
 */
 
 {rust_code}
