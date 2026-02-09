@@ -24,7 +24,7 @@ enum ErrorRecoveryChoice {
 
 /// Custom error type to signal user requested exit
 #[derive(Debug)]
-struct UserRequestedExit;
+pub struct UserRequestedExit;
 
 impl std::fmt::Display for UserRequestedExit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -134,7 +134,7 @@ fn get_user_fix_suggestions() -> Result<String> {
     
     let trimmed = suggestions.trim();
     if trimmed.is_empty() {
-        anyhow::bail!("No fix suggestions provided; user ended input without entering any text");
+        anyhow::bail!("No fix suggestions provided. Please enter suggestions or choose a different option.");
     }
     
     Ok(trimmed.to_string())

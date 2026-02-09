@@ -58,7 +58,7 @@ fn main() {
 
     if let Err(e) = result {
         // Check if this is a user-requested exit (exit code 0)
-        if e.to_string().contains("User requested exit") {
+        if e.downcast_ref::<c2rust_translate::UserRequestedExit>().is_some() {
             eprintln!("Exiting as requested.");
             std::process::exit(0);
         }
