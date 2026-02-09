@@ -165,7 +165,14 @@ pub fn store_target_in_config(feature: &str, target: &str) -> Result<()> {
         .context("Failed to verify build.target in config")?;
     
     if !verify_output.status.success() {
-        anyhow::bail!("Failed to verify build.target was stored correctly");
+        let stdout = String::from_utf8_lossy(&verify_output.stdout);
+        let stderr = String::from_utf8_lossy(&verify_output.stderr);
+        anyhow::bail!(
+            "Failed to verify build.target was stored correctly (status: {}): stdout: {} stderr: {}",
+            verify_output.status,
+            stdout,
+            stderr
+        );
     }
     
     let stored_value = String::from_utf8_lossy(&verify_output.stdout).trim().to_string();
