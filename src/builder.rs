@@ -301,6 +301,17 @@ pub fn c2rust_test(feature: &str) -> Result<()> {
 /// Run hybrid build test suite
 /// Reports error and exits if c2rust-config is not available
 pub fn run_hybrid_build(feature: &str) -> Result<()> {
+    run_hybrid_build_interactive(feature, None, None)
+}
+
+/// Run hybrid build test suite with interactive error handling
+/// file_type and rs_file are needed for interactive error handling
+pub fn run_hybrid_build_interactive(
+    feature: &str, 
+    file_type: Option<&str>,
+    rs_file: Option<&std::path::Path>
+) -> Result<()> {
+    
     // Get build commands from config
     let project_root = util::find_project_root()?;
     let config_path = project_root.join(".c2rust/config.toml");
@@ -324,8 +335,159 @@ pub fn run_hybrid_build(feature: &str) -> Result<()> {
     println!("│ {}", "Running hybrid build tests...".bright_blue().bold());
     c2rust_clean(feature)?;
     c2rust_build(feature)?;
-    c2rust_test(feature)?;
-    println!("│ {}", "✓ Hybrid build tests passed".bright_green().bold());
+    
+    // Test with interactive error handling
+    match c2rust_test(feature) {
+        Ok(_) => {
+            println!("│ {}", "✓ Hybrid build tests passed".bright_green().bold());
+            Ok(())
+        }
+        Err(test_error) => {
+            // Only show interactive menu if we have file context
+            if let (Some(ftype), Some(rfile)) = (file_type, rs_file) {
+                handle_test_failure_interactive(feature, ftype, rfile, test_error)
+            } else {
+                // No file context, just return the error
+                Err(test_error)
+            }
+        }
+    }
+}
 
-    Ok(())
+/// Handle test failure interactively
+fn handle_test_failure_interactive(
+    feature: &str,
+    file_type: &str,
+    rs_file: &std::path::Path,
+    test_error: anyhow::Error,
+) -> Result<()> {
+    use crate::interaction;
+    use crate::suggestion;
+    use crate::translator;
+    
+    println!("│");
+    println!("│ {}", "⚠ Hybrid build tests failed!".red().bold());
+    println!("│ {}", "The test suite did not pass.".yellow());
+    
+    // Display full C and Rust code for user reference
+    let c_file = rs_file.with_extension("c");
+    
+    // Show file locations
+    interaction::display_file_paths(Some(&c_file), rs_file);
+    
+    // Display full code (always show full for interactive mode)
+    println!("│ {}", "═══ C Source Code (Full) ═══".bright_cyan().bold());
+    translator::display_code(&c_file, "─ C Source ─", usize::MAX, true);
+    
+    println!("│ {}", "═══ Rust Code (Full) ═══".bright_cyan().bold());
+    translator::display_code(rs_file, "─ Rust Code ─", usize::MAX, true);
+    
+    println!("│ {}", "═══ Test Error ═══".bright_red().bold());
+    println!("│ {}", test_error.to_string());
+    
+    // Get user choice - for test failures, suggestion is REQUIRED for Continue
+    let choice = interaction::prompt_user_choice("Test failure", true)?;
+    
+    match choice {
+        interaction::UserChoice::Continue => {
+            println!("│");
+            println!("│ {}", "You chose: Continue trying with a new suggestion".bright_cyan());
+            
+            // For test failures, suggestion is REQUIRED
+            let suggestion_text = interaction::prompt_suggestion(true)?
+                .expect("Suggestion should be present when required");
+            
+            // Save suggestion to c2rust.md
+            suggestion::append_suggestion(&suggestion_text)?;
+            
+            // Apply fix with the suggestion
+            println!("│");
+            println!("│ {}", "Applying fix based on your suggestion...".bright_blue());
+            
+            let format_progress = |op: &str| format!("Fix for test failure - {}", op);
+            crate::apply_error_fix(feature, file_type, rs_file, &test_error, &format_progress, true)?;
+            
+            // Try to build and test again
+            println!("│");
+            println!("│ {}", "Rebuilding and retesting...".bright_blue().bold());
+            
+            cargo_build(feature, true)?;
+            
+            match c2rust_test(feature) {
+                Ok(_) => {
+                    println!("│ {}", "✓ Tests passed after applying fix!".bright_green().bold());
+                    Ok(())
+                }
+                Err(e) => {
+                    println!("│ {}", "✗ Tests still failing".red());
+                    
+                    // Ask if user wants to try again
+                    println!("│");
+                    println!("│ {}", "Tests still have errors. What would you like to do?".yellow());
+                    let retry_choice = interaction::prompt_user_choice("Tests still failing", true)?;
+                    
+                    match retry_choice {
+                        interaction::UserChoice::Continue | interaction::UserChoice::ManualFix => {
+                            // Recursively handle again
+                            handle_test_failure_interactive(feature, file_type, rs_file, e)
+                        }
+                        interaction::UserChoice::Exit => {
+                            Err(e).context("Tests failed and user chose to exit")
+                        }
+                    }
+                }
+            }
+        }
+        interaction::UserChoice::ManualFix => {
+            println!("│");
+            println!("│ {}", "You chose: Manual fix".bright_cyan());
+            
+            // Try to open vim
+            match interaction::open_in_vim(rs_file) {
+                Ok(_) => {
+                    println!("│");
+                    println!("│ {}", "Vim editing completed. Rebuilding and retesting...".bright_blue());
+                    
+                    // Try building and testing after manual edit
+                    cargo_build(feature, true)?;
+                    
+                    match c2rust_test(feature) {
+                        Ok(_) => {
+                            println!("│ {}", "✓ Tests passed after manual fix!".bright_green().bold());
+                            Ok(())
+                        }
+                        Err(e) => {
+                            println!("│ {}", "✗ Tests still failing after manual fix".red());
+                            
+                            // Ask if user wants to try again
+                            println!("│");
+                            println!("│ {}", "Tests still have errors. What would you like to do?".yellow());
+                            let retry_choice = interaction::prompt_user_choice("Tests still failing", true)?;
+                            
+                            match retry_choice {
+                                interaction::UserChoice::Continue | interaction::UserChoice::ManualFix => {
+                                    // Recursively handle again
+                                    handle_test_failure_interactive(feature, file_type, rs_file, e)
+                                }
+                                interaction::UserChoice::Exit => {
+                                    Err(e).context("Tests failed after manual fix and user chose to exit")
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("│ {}", format!("Failed to open vim: {}", e).red());
+                    println!("│ {}", "Falling back to exit.".yellow());
+                    Err(test_error).context("Tests failed and could not open vim")
+                }
+            }
+        }
+        interaction::UserChoice::Exit => {
+            println!("│");
+            println!("│ {}", "You chose: Exit".yellow());
+            println!("│ {}", "Skipping due to test failures.".yellow());
+            Err(test_error).context("Tests failed and user chose to exit")
+        }
+    }
 }
