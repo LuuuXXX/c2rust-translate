@@ -12,6 +12,7 @@ import argparse
 import sys
 import os
 import logging
+import traceback
 from pathlib import Path
 
 try:
@@ -303,7 +304,6 @@ Examples:
         
     except Exception as e:
         logger.error(f"Operation failed: {e}")
-        import traceback
         traceback.print_exc()
         return 1
 
