@@ -232,7 +232,10 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
     // Get the corresponding C file
     let c_file = rs_file.with_extension("c");
     if !c_file.exists() {
-        anyhow::bail!("Corresponding C file not found: {}", c_file.display());
+        anyhow::bail!(
+            "Corresponding C file not found: {}. Ensure the C source file exists in the same directory with the same base name.",
+            c_file.display()
+        );
     }
     
     // Check if suggestion file exists

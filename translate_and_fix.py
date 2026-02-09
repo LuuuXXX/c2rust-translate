@@ -63,6 +63,34 @@ def read_config(config_path):
         raise
 
 
+def create_placeholder_translation(c_code_path, translation_type):
+    """
+    Create a placeholder translation template.
+    
+    Args:
+        c_code_path: Path to the C code file
+        translation_type: Type of translation ('variable' or 'function')
+    
+    Returns:
+        str: Placeholder Rust code with C code embedded as comment
+    """
+    c_code = read_file(c_code_path)
+    placeholder_suffix = "var" if translation_type == "variable" else "fn"
+    
+    return f"""// Auto-translated from {os.path.basename(c_code_path)}
+// Original C code:
+/*
+{c_code}
+*/
+
+// TODO: Implement {translation_type} translation
+// Placeholder Rust code
+pub fn placeholder_{placeholder_suffix}() {{
+    // Translation not yet implemented
+}}
+"""
+
+
 def translate_variable(config, c_code_path, output_path):
     """
     Translate C variable declarations to Rust.
@@ -83,18 +111,7 @@ def translate_variable(config, c_code_path, output_path):
     
     # TODO: Implement actual translation logic here
     # This is a placeholder implementation
-    rust_code = f"""// Auto-translated from {os.path.basename(c_code_path)}
-// Original C code:
-/*
-{c_code}
-*/
-
-// TODO: Implement variable translation
-// Placeholder Rust code
-pub fn placeholder_var() {{
-    // Translation not yet implemented
-}}
-"""
+    rust_code = create_placeholder_translation(c_code_path, "variable")
     
     # Write output
     write_file(output_path, rust_code)
@@ -121,22 +138,27 @@ def translate_function(config, c_code_path, output_path):
     
     # TODO: Implement actual translation logic here
     # This is a placeholder implementation
-    rust_code = f"""// Auto-translated from {os.path.basename(c_code_path)}
-// Original C code:
-/*
-{c_code}
-*/
-
-// TODO: Implement function translation
-// Placeholder Rust code
-pub fn placeholder_fn() {{
-    // Translation not yet implemented
-}}
-"""
+    rust_code = create_placeholder_translation(c_code_path, "function")
     
     # Write output
     write_file(output_path, rust_code)
     logger.info(f"Function translation completed. Output written to {output_path}")
+
+
+def truncate_text(text, max_length):
+    """
+    Truncate text to maximum length and add ellipsis if needed.
+    
+    Args:
+        text: Text to truncate
+        max_length: Maximum length before truncation
+    
+    Returns:
+        str: Truncated text with '...' appended if it was truncated
+    """
+    if len(text) > max_length:
+        return text[:max_length] + "..."
+    return text
 
 
 def fix_syntax(config, c_code_path, rust_code_path, output_path, error_path, suggestion_path=None):
@@ -174,12 +196,12 @@ def fix_syntax(config, c_code_path, rust_code_path, output_path, error_path, sug
     fixed_code = f"""// Syntax-fixed version of {os.path.basename(rust_code_path)}
 // Original C code reference:
 /*
-{c_code[:PREVIEW_LENGTH]}...
+{truncate_text(c_code, PREVIEW_LENGTH)}
 */
 
 // Error encountered:
 /*
-{error_msg[:PREVIEW_LENGTH]}...
+{truncate_text(error_msg, PREVIEW_LENGTH)}
 */
 
 {rust_code}
