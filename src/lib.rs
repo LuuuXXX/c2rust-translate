@@ -11,6 +11,141 @@ pub mod target_selector;
 
 use anyhow::{Context, Result};
 use colored::Colorize;
+use std::io::{self, Write, Read};
+use std::process::Command;
+
+/// Error recovery choices for interactive menu
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ErrorRecoveryChoice {
+    Continue,
+    ManualFix,
+    Exit,
+}
+
+/// Open vim editor or display file path for manual editing
+fn manual_fix_file(rs_file: &std::path::Path) -> Result<()> {
+    // 1. Try to use vim to open the file
+    if let Ok(status) = Command::new("vim")
+        .arg(rs_file)
+        .status() 
+    {
+        if status.success() {
+            println!("│ File edited. Press Enter to continue...");
+            let mut input = String::new();
+            io::stdin().read_line(&mut input)?;
+            return Ok(());
+        }
+    }
+    
+    // 2. If vim is not available, output file absolute path
+    let absolute_path = rs_file.canonicalize()?;
+    println!("│ Vim not available. Please manually edit the file at:");
+    println!("│ {}", absolute_path.display());
+    println!("│ Press Enter when done...");
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    Ok(())
+}
+
+/// Get user suggestions for fixing test failures
+fn get_user_fix_suggestions() -> Result<String> {
+    println!("│");
+    println!("│ Please enter your suggestions for fixing the test failure:");
+    println!("│ (Press Ctrl+D or Ctrl+Z on Windows when done)");
+    print!("│ > ");
+    io::stdout().flush()?;
+    
+    let mut suggestions = String::new();
+    io::stdin().read_to_string(&mut suggestions)?;
+    
+    Ok(suggestions.trim().to_string())
+}
+
+/// Prompt user with error recovery menu
+fn prompt_error_recovery(
+    error_type: &str,  // "Build" or "Test"
+    _file_name: &str,
+    rs_file: &std::path::Path,
+    error_details: &str,
+    feature: &str,
+    show_full_output: bool,
+) -> Result<(ErrorRecoveryChoice, Option<String>)> {
+    loop {
+        println!("│");
+        println!("│ {}", format!("⚠ {} failed!", error_type).red().bold());
+        println!("│ {}", error_details.yellow());
+        println!("│");
+        println!("│ Please choose how to proceed:");
+        
+        if error_type == "Build" {
+            println!("│ 1. Continue trying - Retry translation from scratch");
+        } else {
+            println!("│ 1. Continue trying - Provide suggestions for fixing the test");
+        }
+        
+        println!("│ 2. Manual fix - Edit the file manually");
+        println!("│ 3. Exit - Quit the program");
+        println!("│");
+        
+        print!("│ Enter your choice (1/2/3): ");
+        io::stdout().flush()?;
+        
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+        
+        match input.trim() {
+            "1" => {
+                // For test failures, get user suggestions
+                if error_type == "Test" {
+                    let suggestions = get_user_fix_suggestions()?;
+                    return Ok((ErrorRecoveryChoice::Continue, Some(suggestions)));
+                } else {
+                    return Ok((ErrorRecoveryChoice::Continue, None));
+                }
+            }
+            "2" => {
+                manual_fix_file(rs_file)?;
+                // After manual fix, verify by rebuilding/retesting
+                match error_type {
+                    "Build" => {
+                        println!("│ {}", "Verifying fix...".bright_blue());
+                        match builder::cargo_build(feature, show_full_output) {
+                            Ok(_) => {
+                                println!("│ {}", "✓ Build successful after manual fix!".bright_green().bold());
+                                return Ok((ErrorRecoveryChoice::ManualFix, None));
+                            }
+                            Err(_) => {
+                                println!("│ {}", "Build still fails. Please choose again.".yellow());
+                                continue;
+                            }
+                        }
+                    }
+                    "Test" => {
+                        println!("│ {}", "Verifying fix...".bright_blue());
+                        match builder::run_hybrid_build(feature) {
+                            Ok(_) => {
+                                println!("│ {}", "✓ Tests successful after manual fix!".bright_green().bold());
+                                return Ok((ErrorRecoveryChoice::ManualFix, None));
+                            }
+                            Err(_) => {
+                                println!("│ {}", "Tests still fail. Please choose again.".yellow());
+                                continue;
+                            }
+                        }
+                    }
+                    _ => return Ok((ErrorRecoveryChoice::ManualFix, None)),
+                }
+            }
+            "3" => {
+                return Ok((ErrorRecoveryChoice::Exit, None));
+            }
+            _ => {
+                println!("│ {}", "Invalid choice. Please enter 1, 2, or 3.".yellow());
+                continue;
+            }
+        }
+    }
+}
 
 /// Main translation workflow for a feature
 pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize, show_full_output: bool) -> Result<()> {
@@ -98,12 +233,46 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
     loop {
         // Step 2.1: Try to build first
         println!("\n{}", "Building project...".bright_blue().bold());
-        match builder::cargo_build(feature, show_full_output) {
-            Ok(_) => {
-                println!("{}", "✓ Build successful!".bright_green().bold());
-            }
-            Err(e) => {
-                return Err(e).context("Translation workflow aborted due to build failure");
+        
+        // Handle initial build failures with error recovery menu
+        loop {
+            match builder::cargo_build(feature, show_full_output) {
+                Ok(_) => {
+                    println!("{}", "✓ Build successful!".bright_green().bold());
+                    break;
+                }
+                Err(_build_err) => {
+                    let error_details = "Initial build failed before processing files";
+                    
+                    // Use a dummy file path for the error recovery (we don't have a specific file yet)
+                    let dummy_path = rust_dir.join("build");
+                    
+                    let (choice, _) = prompt_error_recovery(
+                        "Build",
+                        "project",
+                        &dummy_path,
+                        error_details,
+                        feature,
+                        show_full_output,
+                    )?;
+                    
+                    match choice {
+                        ErrorRecoveryChoice::Continue => {
+                            // Retry the build
+                            println!("│ {}", "Retrying build...".bright_cyan());
+                            continue;
+                        }
+                        ErrorRecoveryChoice::ManualFix => {
+                            // Manual fix was successful, continue
+                            println!("│ {}", "✓ Manual fix successful, continuing...".bright_green());
+                            break;
+                        }
+                        ErrorRecoveryChoice::Exit => {
+                            println!("│ {}", "Exiting as requested.".yellow());
+                            std::process::exit(0);
+                        }
+                    }
+                }
             }
         }
 
@@ -114,7 +283,49 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
         git::git_commit(&format!("Update code analysis for {}", feature), feature)?;
 
         println!("{}", "Running hybrid build tests...".bright_blue());
-        builder::run_hybrid_build(feature)?;
+        
+        // Handle initial test failures with error recovery menu
+        loop {
+            match builder::run_hybrid_build(feature) {
+                Ok(_) => {
+                    break;
+                }
+                Err(_test_err) => {
+                    let error_details = "Initial test failed before processing files";
+                    
+                    // Use a dummy file path for the error recovery
+                    let dummy_path = rust_dir.join("test");
+                    
+                    let (choice, suggestions) = prompt_error_recovery(
+                        "Test",
+                        "project",
+                        &dummy_path,
+                        error_details,
+                        feature,
+                        show_full_output,
+                    )?;
+                    
+                    match choice {
+                        ErrorRecoveryChoice::Continue => {
+                            if let Some(user_suggestions) = suggestions {
+                                println!("│ {}", format!("User suggestions noted: {}", user_suggestions).dimmed());
+                                println!("│ {}", "Retrying tests...".bright_cyan());
+                            }
+                            continue;
+                        }
+                        ErrorRecoveryChoice::ManualFix => {
+                            // Manual fix was successful, continue
+                            println!("│ {}", "✓ Manual fix successful, continuing...".bright_green());
+                            break;
+                        }
+                        ErrorRecoveryChoice::Exit => {
+                            println!("│ {}", "Exiting as requested.".yellow());
+                            std::process::exit(0);
+                        }
+                    }
+                }
+            }
+        }
         
         // Step 2.2: Scan for empty .rs files (unprocessed files)
         let empty_rs_files = file_scanner::find_empty_rs_files(&rust_dir)?;
@@ -201,7 +412,7 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, cu
         )?;
         
         if build_successful {
-            complete_file_processing(feature, file_name, &format_progress)?;
+            complete_file_processing(feature, file_name, rs_file, &format_progress, show_full_output)?;
             return Ok(());
         }
     }
@@ -312,7 +523,9 @@ where
                         rs_file,
                         is_last_attempt,
                         attempt_number,
-                        max_fix_attempts
+                        max_fix_attempts,
+                        feature,
+                        show_full_output,
                     );
                 } else {
                     apply_error_fix(feature, file_type, rs_file, &build_error, format_progress, show_full_output)?;
@@ -332,56 +545,60 @@ fn handle_max_fix_attempts_reached(
     is_last_attempt: bool,
     attempt_number: usize,
     max_fix_attempts: usize,
+    feature: &str,
+    show_full_output: bool,
 ) -> Result<bool> {
-    use std::io::{self, Write};
     use constants::MAX_TRANSLATION_ATTEMPTS;
     
-    println!("│");
-    println!("│ {}", "⚠ Maximum fix attempts reached!".red().bold());
-    println!("│ {}", format!("File {} still has build errors after {} fix attempts.", file_name, max_fix_attempts).yellow());
-    println!("│");
-    
-    if !is_last_attempt {
+    let error_details = if !is_last_attempt {
         let remaining_retries = MAX_TRANSLATION_ATTEMPTS - attempt_number;
-        println!("│ {}", format!("Do you want to retry translating this file from scratch? ({} retries remaining)", remaining_retries).bright_yellow());
-        println!("│ {} Type 'retry' to retry, or press Enter to skip:", "→".bright_yellow());
-        
-        loop {
-            print!("│ ");
-            io::stdout().flush()?;
-            
-            let mut user_input = String::new();
-            io::stdin().read_line(&mut user_input)?;
-            
-            let input_trimmed = user_input.trim();
-            if input_trimmed.eq_ignore_ascii_case("retry") {
+        format!(
+            "File {} still has build errors after {} fix attempts. ({} retries remaining)",
+            file_name, max_fix_attempts, remaining_retries
+        )
+    } else {
+        let total_retries = MAX_TRANSLATION_ATTEMPTS - 1;
+        format!(
+            "File {} still has build errors after {} fix attempts. All {} attempts exhausted (1 initial + {} retries).",
+            file_name, max_fix_attempts, MAX_TRANSLATION_ATTEMPTS, total_retries
+        )
+    };
+    
+    let (choice, _) = prompt_error_recovery(
+        "Build",
+        file_name,
+        rs_file,
+        &error_details,
+        feature,
+        show_full_output,
+    )?;
+    
+    match choice {
+        ErrorRecoveryChoice::Continue => {
+            if is_last_attempt {
+                // Cannot retry anymore
+                println!("│ {}", "Cannot retry - all attempts exhausted.".red());
+                Err(build_error).context(format!(
+                    "Build failed after {} fix attempts and all retries for file {}",
+                    max_fix_attempts,
+                    rs_file.display()
+                ))
+            } else {
                 println!("│ {}", "Retrying translation...".bright_cyan());
                 println!("│ {}", "Note: The translator will overwrite the existing file content.".bright_blue());
                 println!("│ {}", "✓ Retry scheduled".bright_green());
-                return Ok(false); // Signal retry
-            } else if input_trimmed.is_empty() {
-                // User pressed Enter to skip
-                println!("│ {}", "Skipping file due to build errors.".yellow());
-                return Err(build_error).context(format!(
-                    "Build failed after {} fix attempts for file {}",
-                    max_fix_attempts,
-                    rs_file.display()
-                ));
-            } else {
-                // Invalid input, prompt user to try again
-                println!("│ {}", format!("Invalid input '{}'. Please type 'retry' to retry, or press Enter to skip.", input_trimmed).yellow());
-                continue;
+                Ok(false) // Signal retry
             }
         }
-    } else {
-        let total_retries = MAX_TRANSLATION_ATTEMPTS - 1;
-        println!("│ {}", format!("All {} attempts exhausted (1 initial + {} retries). Cannot retry further.", MAX_TRANSLATION_ATTEMPTS, total_retries).red());
-        Err(build_error).context(format!(
-            "Build failed after {} fix attempts and {} retries for file {}",
-            max_fix_attempts,
-            total_retries,
-            rs_file.display()
-        ))
+        ErrorRecoveryChoice::ManualFix => {
+            // Manual fix was successful (verified in prompt_error_recovery)
+            println!("│ {}", "✓ Manual fix successful".bright_green());
+            Ok(true) // Continue with build successful
+        }
+        ErrorRecoveryChoice::Exit => {
+            println!("│ {}", "Exiting as requested.".yellow());
+            std::process::exit(0);
+        }
     }
 }
 
@@ -414,7 +631,13 @@ where
 }
 
 /// Complete file processing (commit, analyze, hybrid build)
-fn complete_file_processing<F>(feature: &str, file_name: &str, format_progress: &F) -> Result<()>
+fn complete_file_processing<F>(
+    feature: &str, 
+    file_name: &str, 
+    rs_file: &std::path::Path,
+    format_progress: &F,
+    show_full_output: bool,
+) -> Result<()>
 where
     F: Fn(&str) -> String
 {
@@ -437,9 +660,74 @@ where
     println!("│");
     println!("│ {}", format_progress("Hybrid Build Tests").bright_magenta().bold());
     println!("│ {}", "Running hybrid build tests...".bright_blue());
-    builder::run_hybrid_build(feature)?;
     
-    println!("{}", "└─ File processing complete".bright_white().bold());
-    
-    Ok(())
+    // Handle test failures with error recovery menu
+    loop {
+        match builder::run_hybrid_build(feature) {
+            Ok(_) => {
+                println!("{}", "└─ File processing complete".bright_white().bold());
+                return Ok(());
+            }
+            Err(test_error) => {
+                let error_details = format!("Test failed for file {}", file_name);
+                let (choice, suggestions) = prompt_error_recovery(
+                    "Test",
+                    file_name,
+                    rs_file,
+                    &error_details,
+                    feature,
+                    show_full_output,
+                )?;
+                
+                match choice {
+                    ErrorRecoveryChoice::Continue => {
+                        // Apply fix with user suggestions
+                        if let Some(user_suggestions) = suggestions {
+                            println!("│ {}", "Applying fix based on your suggestions...".bright_blue());
+                            let (file_type, _) = extract_and_validate_file_info(rs_file)?;
+                            
+                            // Combine test error and user suggestions
+                            let fix_prompt = format!(
+                                "Test Error:\n{}\n\nUser Suggestions:\n{}",
+                                test_error,
+                                user_suggestions
+                            );
+                            
+                            translator::fix_translation_error(
+                                feature,
+                                file_type,
+                                rs_file,
+                                &fix_prompt,
+                                show_full_output,
+                            )?;
+                            println!("│ {}", "✓ Fix applied, retrying tests...".bright_green());
+                            
+                            // Re-commit the fix
+                            git::git_commit(
+                                &format!("Fix test failures for {} based on user suggestions", file_name),
+                                feature,
+                            )?;
+                            
+                            // Continue loop to retry tests
+                            continue;
+                        } else {
+                            // No suggestions provided (shouldn't happen for tests)
+                            println!("│ {}", "No suggestions provided, retrying...".yellow());
+                            continue;
+                        }
+                    }
+                    ErrorRecoveryChoice::ManualFix => {
+                        // Manual fix was successful (verified in prompt_error_recovery)
+                        println!("│ {}", "✓ Manual fix successful".bright_green());
+                        println!("{}", "└─ File processing complete".bright_white().bold());
+                        return Ok(());
+                    }
+                    ErrorRecoveryChoice::Exit => {
+                        println!("│ {}", "Exiting as requested.".yellow());
+                        std::process::exit(0);
+                    }
+                }
+            }
+        }
+    }
 }
