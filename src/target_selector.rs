@@ -140,7 +140,8 @@ pub fn store_target_in_config(feature: &str, target: &str) -> Result<()> {
             "--feature",
             feature,
             "--set",
-            &format!("build.target {}", target),
+            "build.target",
+            target,
         ])
         .output()
         .context("Failed to execute c2rust-config to store target")?;
