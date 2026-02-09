@@ -155,8 +155,10 @@ mod tests {
     use super::*;
     use std::io::Write;
     use tempfile::tempdir;
+    use serial_test::serial;
     
     #[test]
+    #[serial]
     fn test_read_targets_list_basic() {
         let temp_dir = tempdir().unwrap();
         
@@ -188,6 +190,7 @@ mod tests {
     }
     
     #[test]
+    #[serial]
     fn test_read_targets_list_with_duplicates() {
         let temp_dir = tempdir().unwrap();
         
@@ -221,6 +224,7 @@ mod tests {
     }
     
     #[test]
+    #[serial]
     fn test_read_targets_list_with_empty_lines_and_comments() {
         let temp_dir = tempdir().unwrap();
         
@@ -268,5 +272,69 @@ mod tests {
         assert!(parse_target_selection("abc", 3).is_err());
         assert!(parse_target_selection("", 3).is_err());
         assert!(parse_target_selection("  ", 3).is_err());
+    }
+    
+    #[test]
+    #[serial]
+    fn test_read_targets_list_file_not_found() {
+        let temp_dir = tempdir().unwrap();
+        let original_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(temp_dir.path()).unwrap();
+        
+        // Create .c2rust but no targets.list
+        fs::create_dir_all(".c2rust/test_feature/c").unwrap();
+        
+        let result = read_targets_list("test_feature");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("targets.list file not found"));
+        
+        std::env::set_current_dir(original_dir).unwrap();
+    }
+    
+    #[test]
+    #[serial]
+    fn test_read_targets_list_empty_file() {
+        let temp_dir = tempdir().unwrap();
+        let c2rust_dir = temp_dir.path().join(".c2rust");
+        let feature_dir = c2rust_dir.join("test_feature");
+        let c_dir = feature_dir.join("c");
+        fs::create_dir_all(&c_dir).unwrap();
+        
+        // Create empty targets.list
+        fs::File::create(c_dir.join("targets.list")).unwrap();
+        
+        let original_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(temp_dir.path()).unwrap();
+        
+        let result = read_targets_list("test_feature");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("No valid targets found"));
+        
+        std::env::set_current_dir(original_dir).unwrap();
+    }
+    
+    #[test]
+    #[serial]
+    fn test_read_targets_list_only_comments() {
+        let temp_dir = tempdir().unwrap();
+        let c2rust_dir = temp_dir.path().join(".c2rust");
+        let feature_dir = c2rust_dir.join("test_feature");
+        let c_dir = feature_dir.join("c");
+        fs::create_dir_all(&c_dir).unwrap();
+        
+        let targets_file = c_dir.join("targets.list");
+        let mut file = fs::File::create(&targets_file).unwrap();
+        writeln!(file, "# Comment 1").unwrap();
+        writeln!(file, "").unwrap();
+        writeln!(file, "# Comment 2").unwrap();
+        
+        let original_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(temp_dir.path()).unwrap();
+        
+        let result = read_targets_list("test_feature");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("No valid targets found"));
+        
+        std::env::set_current_dir(original_dir).unwrap();
     }
 }
