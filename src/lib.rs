@@ -154,6 +154,7 @@ fn get_user_fix_suggestions() -> Result<String> {
 /// * `error_details` - Detailed error message to display to user
 /// * `feature` - Feature name for build/test verification
 /// * `show_full_output` - Whether to show full output during verification
+/// * `verify_with_tests` - If true, verify manual fixes by running tests; if false, verify by building
 ///
 /// # Returns
 /// Tuple of (ErrorRecoveryChoice, Option<String>) where:
@@ -175,11 +176,21 @@ fn prompt_error_recovery(
     error_details: &str,
     feature: &str,
     show_full_output: bool,
+    verify_with_tests: bool,
 ) -> Result<(ErrorRecoveryChoice, Option<String>)> {
     loop {
         println!("│");
         println!("│ {}", format!("⚠ {} failed!", error_type).red().bold());
-        println!("│ {}", error_details.yellow());
+        
+        // Print error_details line by line to maintain box formatting
+        for line in error_details.split('\n') {
+            if line.is_empty() {
+                println!("│ ");
+            } else {
+                println!("│ {}", line.yellow());
+            }
+        }
+        
         println!("│");
         println!("│ Please choose how to proceed:");
         
@@ -212,36 +223,32 @@ fn prompt_error_recovery(
             "2" => {
                 manual_fix_file(rs_file)?;
                 // After manual fix, verify by rebuilding/retesting
-                match error_type {
-                    "Build" => {
-                        println!("│ {}", "Verifying fix...".bright_blue());
-                        match builder::cargo_build(feature, show_full_output) {
-                            Ok(_) => {
-                                println!("│ {}", "✓ Build successful after manual fix!".bright_green().bold());
-                                return Ok((ErrorRecoveryChoice::ManualFix, None));
-                            }
-                            Err(e) => {
-                                println!("│ {}", "Build still fails. Please choose again.".yellow());
-                                println!("│ Error: {}", truncate_error_for_api(&e.to_string(), 10));
-                                continue;
-                            }
+                println!("│ {}", "Verifying fix...".bright_blue());
+                
+                if verify_with_tests {
+                    match builder::run_hybrid_build(feature) {
+                        Ok(_) => {
+                            println!("│ {}", "✓ Tests successful after manual fix!".bright_green().bold());
+                            return Ok((ErrorRecoveryChoice::ManualFix, None));
+                        }
+                        Err(e) => {
+                            println!("│ {}", "Tests still fail. Please choose again.".yellow());
+                            println!("│ Error: {}", truncate_error_for_api(&e.to_string(), 10));
+                            continue;
                         }
                     }
-                    "Test" => {
-                        println!("│ {}", "Verifying fix...".bright_blue());
-                        match builder::run_hybrid_build(feature) {
-                            Ok(_) => {
-                                println!("│ {}", "✓ Tests successful after manual fix!".bright_green().bold());
-                                return Ok((ErrorRecoveryChoice::ManualFix, None));
-                            }
-                            Err(e) => {
-                                println!("│ {}", "Tests still fail. Please choose again.".yellow());
-                                println!("│ Error: {}", truncate_error_for_api(&e.to_string(), 10));
-                                continue;
-                            }
+                } else {
+                    match builder::cargo_build(feature, show_full_output) {
+                        Ok(_) => {
+                            println!("│ {}", "✓ Build successful after manual fix!".bright_green().bold());
+                            return Ok((ErrorRecoveryChoice::ManualFix, None));
+                        }
+                        Err(e) => {
+                            println!("│ {}", "Build still fails. Please choose again.".yellow());
+                            println!("│ Error: {}", truncate_error_for_api(&e.to_string(), 10));
+                            continue;
                         }
                     }
-                    _ => return Ok((ErrorRecoveryChoice::ManualFix, None)),
                 }
             }
             "3" => {
@@ -367,6 +374,7 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
                         &error_details,
                         feature,
                         show_full_output,
+                        false,  // Verify with build, not tests
                     )?;
                     
                     match choice {
@@ -422,6 +430,7 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
                         &error_details,
                         feature,
                         show_full_output,
+                        true,  // Verify with tests since this is a test failure
                     )?;
                     
                     match choice {
@@ -668,14 +677,16 @@ fn handle_max_fix_attempts_reached(
     let error_details = if !is_last_attempt {
         let remaining_retries = MAX_TRANSLATION_ATTEMPTS - attempt_number;
         format!(
-            "File {} still has build errors after {} fix attempts. ({} retries remaining)",
-            file_name, max_fix_attempts, remaining_retries
+            "File {} still has build errors after {} fix attempts. ({} retries remaining)\n\n{}",
+            file_name, max_fix_attempts, remaining_retries,
+            truncate_error_for_api(&build_error.to_string(), 20)
         )
     } else {
         let total_retries = MAX_TRANSLATION_ATTEMPTS - 1;
         format!(
-            "File {} still has build errors after {} fix attempts. All {} attempts exhausted (1 initial + {} retries).",
-            file_name, max_fix_attempts, MAX_TRANSLATION_ATTEMPTS, total_retries
+            "File {} still has build errors after {} fix attempts. All {} attempts exhausted (1 initial + {} retries).\n\n{}",
+            file_name, max_fix_attempts, MAX_TRANSLATION_ATTEMPTS, total_retries,
+            truncate_error_for_api(&build_error.to_string(), 20)
         )
     };
     
@@ -686,6 +697,7 @@ fn handle_max_fix_attempts_reached(
         &error_details,
         feature,
         show_full_output,
+        false,  // Verify with build, not tests
     )?;
     
     match choice {
@@ -786,7 +798,11 @@ where
                 return Ok(());
             }
             Err(test_error) => {
-                let error_details = format!("Test failed for file {}", file_name);
+                let error_details = format!(
+                    "Test failed for file {}\n\n{}",
+                    file_name,
+                    truncate_error_for_api(&test_error.to_string(), 20)
+                );
                 let (choice, suggestions) = prompt_error_recovery(
                     "Test",
                     file_name,
@@ -794,6 +810,7 @@ where
                     &error_details,
                     feature,
                     show_full_output,
+                    true,  // Verify with tests since this is a test failure
                 )?;
                 
                 match choice {
