@@ -46,7 +46,7 @@ fn get_config_path() -> Result<PathBuf> {
 /// Build the argument list for the fix command
 /// 
 /// Returns a vector of arguments to be passed to translate_and_fix.py for fixing errors.
-/// The arguments follow the format: --config --type fix --code --output --error
+/// The arguments follow the format: --config --type fix --code --output --error [--suggestion]
 /// 
 /// # Parameters
 /// - `script_path`: Path to the translate_and_fix.py script
@@ -54,14 +54,16 @@ fn get_config_path() -> Result<PathBuf> {
 /// - `code_file`: Path to the Rust file to be fixed (input)
 /// - `output_file`: Path where the fixed result should be written (typically same as code_file)
 /// - `error_file`: Path to the temporary file containing compiler error messages
+/// - `suggestion_file`: Optional path to the suggestion file (c2rust.md)
 fn build_fix_args<'a>(
     script_path: &'a str,
     config_path: &'a str,
     code_file: &'a str,
     output_file: &'a str,
     error_file: &'a str,
+    suggestion_file: Option<&'a str>,
 ) -> Vec<&'a str> {
-    vec![
+    let mut args = vec![
         script_path,
         "--config",
         config_path,
@@ -73,7 +75,15 @@ fn build_fix_args<'a>(
         output_file,
         "--error",
         error_file,
-    ]
+    ];
+    
+    // Add suggestion file if provided
+    if let Some(suggestion) = suggestion_file {
+        args.push("--suggestion");
+        args.push(suggestion);
+    }
+    
+    args
 }
 
 /// Display code from a file with formatted output
@@ -215,6 +225,10 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
     let temp_file = create_error_temp_file(error_msg)?;
     let script_path = get_translate_script_full_path()?;
     
+    // Check if suggestion file exists
+    let suggestion_path = crate::suggestion::get_suggestion_file_path()?;
+    let suggestion_exists = suggestion_path.exists();
+    
     let script_str = script_path.to_str()
         .with_context(|| format!("Non-UTF8 path: {}", script_path.display()))?;
     let config_str = config_path.to_str()
@@ -223,18 +237,36 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
         .with_context(|| format!("Non-UTF8 path: {}", temp_file.path().display()))?;
     let rs_file_str = rs_file.to_str()
         .with_context(|| format!("Non-UTF8 path: {}", rs_file.display()))?;
+    
+    let suggestion_str = if suggestion_exists {
+        Some(suggestion_path.to_str()
+            .with_context(|| format!("Non-UTF8 path: {}", suggestion_path.display()))?)
+    } else {
+        None
+    };
 
     println!("│ {}", "Executing error fix command:".yellow());
-    println!("│ {} python {} --config {} --type fix --code {} --output {} --error {}", 
-        "→".yellow(),
-        script_str.dimmed(), 
-        config_str.dimmed(), 
-        rs_file_str.bright_yellow(), 
-        rs_file_str.bright_yellow(), 
-        error_file_str.dimmed());
+    if suggestion_exists {
+        println!("│ {} python {} --config {} --type fix --code {} --output {} --error {} --suggestion {}", 
+            "→".yellow(),
+            script_str.dimmed(), 
+            config_str.dimmed(), 
+            rs_file_str.bright_yellow(), 
+            rs_file_str.bright_yellow(), 
+            error_file_str.dimmed(),
+            suggestion_str.unwrap().bright_cyan());
+    } else {
+        println!("│ {} python {} --config {} --type fix --code {} --output {} --error {}", 
+            "→".yellow(),
+            script_str.dimmed(), 
+            config_str.dimmed(), 
+            rs_file_str.bright_yellow(), 
+            rs_file_str.bright_yellow(), 
+            error_file_str.dimmed());
+    }
     println!("│");
 
-    let args = build_fix_args(script_str, config_str, rs_file_str, rs_file_str, error_file_str);
+    let args = build_fix_args(script_str, config_str, rs_file_str, rs_file_str, error_file_str, suggestion_str);
 
     let status = Command::new("python")
         .args(&args)
@@ -409,7 +441,8 @@ mod tests {
         let output = "/project/feature/rust/code.rs";
         let error = "/tmp/error.txt";
         
-        let args = build_fix_args(script, config, code, output, error);
+        // Test without suggestion
+        let args = build_fix_args(script, config, code, output, error, None);
         
         // Verify the exact sequence of arguments
         assert_eq!(args.len(), 11);
@@ -424,6 +457,14 @@ mod tests {
         assert_eq!(args[8], output);
         assert_eq!(args[9], "--error");
         assert_eq!(args[10], error);
+        
+        // Test with suggestion
+        let suggestion = "/project/c2rust.md";
+        let args_with_suggestion = build_fix_args(script, config, code, output, error, Some(suggestion));
+        
+        assert_eq!(args_with_suggestion.len(), 13);
+        assert_eq!(args_with_suggestion[11], "--suggestion");
+        assert_eq!(args_with_suggestion[12], suggestion);
     }
     
     #[test]
