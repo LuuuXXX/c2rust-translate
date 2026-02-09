@@ -403,7 +403,7 @@ fn handle_max_fix_attempts_reached(
     translator::display_code(rs_file, "─ Rust Code ─", usize::MAX, true);
     
     println!("│ {}", "═══ Build Error ═══".bright_red().bold());
-    println!("│ {}", build_error.to_string());
+    println!("│ {}", build_error);
     
     // Get user choice
     let choice = interaction::prompt_user_choice("Build failure", false)?;
@@ -425,7 +425,7 @@ fn handle_max_fix_attempts_reached(
                 println!("│ {}", format!("Retrying translation from scratch... ({} retries remaining)", remaining_retries).bright_cyan());
                 println!("│ {}", "Note: The translator will overwrite the existing file content.".bright_blue());
                 println!("│ {}", "✓ Retry scheduled".bright_green());
-                return Ok(false); // Signal retry
+                Ok(false)// Signal retry
             } else {
                 // No more translation retries, but we can try fix again
                 println!("│ {}", "No translation retries remaining, attempting fix with new suggestion...".bright_yellow());
@@ -440,14 +440,14 @@ fn handle_max_fix_attempts_reached(
                 match builder::cargo_build(feature, true) {
                     Ok(_) => {
                         println!("│ {}", "✓ Build successful after applying suggestion!".bright_green().bold());
-                        return Ok(true);
+                        Ok(true)
                     }
                     Err(e) => {
                         println!("│ {}", "✗ Build still failing after fix attempt".red());
-                        return Err(e).context(format!(
+                        Err(e).context(format!(
                             "Build failed after fix with suggestion for file {}",
                             rs_file.display()
-                        ));
+                        ))
                     }
                 }
             }
@@ -466,7 +466,7 @@ fn handle_max_fix_attempts_reached(
                     match builder::cargo_build(feature, true) {
                         Ok(_) => {
                             println!("│ {}", "✓ Build successful after manual fix!".bright_green().bold());
-                            return Ok(true);
+                            Ok(true)
                         }
                         Err(e) => {
                             println!("│ {}", "✗ Build still failing after manual fix".red());
@@ -479,7 +479,7 @@ fn handle_max_fix_attempts_reached(
                             match retry_choice {
                                 interaction::UserChoice::Continue | interaction::UserChoice::ManualFix => {
                                     // Recursively handle again
-                                    return handle_max_fix_attempts_reached(
+                                    handle_max_fix_attempts_reached(
                                         e,
                                         file_name,
                                         rs_file,
@@ -488,13 +488,13 @@ fn handle_max_fix_attempts_reached(
                                         max_fix_attempts,
                                         feature,
                                         file_type,
-                                    );
+                                    )
                                 }
                                 interaction::UserChoice::Exit => {
-                                    return Err(e).context(format!(
+                                    Err(e).context(format!(
                                         "Build failed after manual fix for file {}",
                                         rs_file.display()
-                                    ));
+                                    ))
                                 }
                             }
                         }
@@ -503,10 +503,10 @@ fn handle_max_fix_attempts_reached(
                 Err(e) => {
                     println!("│ {}", format!("Failed to open vim: {}", e).red());
                     println!("│ {}", "Falling back to exit.".yellow());
-                    return Err(build_error).context(format!(
+                    Err(build_error).context(format!(
                         "Build failed and could not open vim for file {}",
                         rs_file.display()
-                    ));
+                    ))
                 }
             }
         }
@@ -514,11 +514,11 @@ fn handle_max_fix_attempts_reached(
             println!("│");
             println!("│ {}", "You chose: Exit".yellow());
             println!("│ {}", "Skipping this file.".yellow());
-            return Err(build_error).context(format!(
+            Err(build_error).context(format!(
                 "Build failed after {} fix attempts for file {}. User chose to exit.",
                 max_fix_attempts,
                 rs_file.display()
-            ));
+            ))
         }
     }
 }

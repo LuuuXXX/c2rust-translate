@@ -383,7 +383,7 @@ fn handle_test_failure_interactive(
     translator::display_code(rs_file, "─ Rust Code ─", usize::MAX, true);
     
     println!("│ {}", "═══ Test Error ═══".bright_red().bold());
-    println!("│ {}", test_error.to_string());
+    println!("│ {}", test_error);
     
     // Get user choice - for test failures, suggestion is REQUIRED for Continue
     let choice = interaction::prompt_user_choice("Test failure", true)?;
