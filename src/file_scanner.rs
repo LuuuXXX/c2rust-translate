@@ -12,7 +12,8 @@ pub fn count_all_rs_files(rust_dir: &Path) -> Result<usize> {
     for entry in WalkDir::new(rust_dir) {
         let entry = entry?;
         let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "rs") {
+        // Only count regular files with .rs extension, not directories
+        if path.is_file() && path.extension().is_some_and(|ext| ext == "rs") {
             count += 1;
         }
     }
@@ -27,7 +28,8 @@ pub fn find_empty_rs_files(rust_dir: &Path) -> Result<Vec<PathBuf>> {
     for entry in WalkDir::new(rust_dir) {
         let entry = entry?;
         let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "rs") {
+        // Only check regular files with .rs extension, not directories
+        if path.is_file() && path.extension().is_some_and(|ext| ext == "rs") {
             let metadata = fs::metadata(path)?;
             if metadata.len() == 0 {
                 empty_files.push(path.to_path_buf());

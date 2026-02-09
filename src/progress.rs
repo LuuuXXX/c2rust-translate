@@ -1,13 +1,13 @@
 #[derive(Debug, Default)]
 pub struct ProgressState {
-    /// Total number of files processed in current session
+    /// Total number of files processed (includes files from previous runs and current session)
     pub processed_count: usize,
     /// Total number of files to process (for display purposes)
     pub total_count: usize,
 }
 
 impl ProgressState {
-    /// Create a new progress state with total count and initial processed count
+    /// Create a new progress state with total count
     pub fn new(total_count: usize) -> Self {
         Self {
             processed_count: 0,
@@ -15,10 +15,11 @@ impl ProgressState {
         }
     }
 
-    /// Create a new progress state with both total and already-processed counts
+    /// Create a new progress state with both total and already-processed counts.
+    /// The `already_processed` value is clamped to not exceed `total_count`.
     pub fn with_initial_progress(total_count: usize, already_processed: usize) -> Self {
         Self {
-            processed_count: already_processed,
+            processed_count: already_processed.min(total_count),
             total_count,
         }
     }
@@ -110,5 +111,19 @@ mod tests {
         state.mark_processed();
         assert_eq!(state.get_current_position(), 7);
         assert_eq!(state.processed_count, 6);
+    }
+
+    #[test]
+    fn test_with_initial_progress_clamping() {
+        // Test that already_processed is clamped to total_count
+        let state = ProgressState::with_initial_progress(10, 15);
+        assert_eq!(state.processed_count, 10); // Should be clamped to 10
+        assert_eq!(state.total_count, 10);
+        assert_eq!(state.get_current_position(), 11); // 10 + 1
+        
+        // Test edge case: already_processed equals total_count
+        let state2 = ProgressState::with_initial_progress(10, 10);
+        assert_eq!(state2.processed_count, 10);
+        assert_eq!(state2.get_current_position(), 11);
     }
 }

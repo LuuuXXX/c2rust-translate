@@ -2,6 +2,25 @@ use std::fs;
 use tempfile::TempDir;
 use serial_test::serial;
 
+// RAII guard to restore current directory on drop
+struct CwdGuard {
+    original_dir: std::path::PathBuf,
+}
+
+impl CwdGuard {
+    fn new() -> std::io::Result<Self> {
+        Ok(Self {
+            original_dir: std::env::current_dir()?,
+        })
+    }
+}
+
+impl Drop for CwdGuard {
+    fn drop(&mut self) {
+        let _ = std::env::set_current_dir(&self.original_dir);
+    }
+}
+
 #[test]
 #[serial]
 fn test_logger_creates_output_directory() {
@@ -12,8 +31,8 @@ fn test_logger_creates_output_directory() {
     // Create the .c2rust directory (required by find_project_root)
     fs::create_dir(project_root.join(".c2rust")).unwrap();
     
-    // Change to the project directory
-    let original_dir = std::env::current_dir().unwrap();
+    // Change to the project directory with RAII guard
+    let _guard = CwdGuard::new().unwrap();
     std::env::set_current_dir(project_root).unwrap();
     
     // Initialize logger
@@ -24,19 +43,25 @@ fn test_logger_creates_output_directory() {
     assert!(output_dir.exists(), "Output directory should exist");
     assert!(output_dir.is_dir(), "Output path should be a directory");
     
-    // Verify a log file was created
-    let entries: Vec<_> = fs::read_dir(&output_dir).unwrap().collect();
-    assert!(!entries.is_empty(), "At least one log file should exist");
-    
-    // Verify the log file has the expected name pattern
-    let log_file = entries[0].as_ref().unwrap();
-    let filename = log_file.file_name();
-    let filename_str = filename.to_str().unwrap();
-    assert!(filename_str.starts_with("translate_"), "Log file should start with 'translate_'");
-    assert!(filename_str.ends_with(".log"), "Log file should end with '.log'");
-    
-    // Restore original directory
-    std::env::set_current_dir(original_dir).unwrap();
+    // Verify at least one log file with the expected name pattern was created
+    let log_files: Vec<String> = fs::read_dir(&output_dir)
+        .unwrap()
+        .filter_map(|entry_res| entry_res.ok())
+        .filter(|entry| entry.file_type().map(|t| t.is_file()).unwrap_or(false))
+        .filter_map(|entry| {
+            let filename = entry.file_name();
+            let filename_str = filename.to_str()?;
+            if filename_str.starts_with("translate_") && filename_str.ends_with(".log") {
+                Some(filename_str.to_string())
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert!(
+        !log_files.is_empty(),
+        "At least one log file matching 'translate_*.log' should exist"
+    );
 }
 
 #[test]
