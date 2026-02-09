@@ -70,7 +70,13 @@ fn get_config_value(key: &str, feature: &str) -> Result<String> {
 }
 
 /// Set hybrid build environment variables if LD_PRELOAD is enabled
-fn setup_hybrid_env(command: &mut Command, project_root: &std::path::Path, feature: &str, set_ld_preload: bool) -> Option<std::path::PathBuf> {
+fn setup_hybrid_env(
+    command: &mut Command, 
+    project_root: &std::path::Path, 
+    feature: &str, 
+    set_ld_preload: bool,
+    build_target: Option<&str>,
+) -> Option<std::path::PathBuf> {
     if !set_ld_preload {
         return None;
     }
@@ -85,6 +91,11 @@ fn setup_hybrid_env(command: &mut Command, project_root: &std::path::Path, featu
     command.env("C2RUST_FEATURE_ROOT", &feature_root_path);
     command.env("C2RUST_RUST_LIB", &rust_lib_path);
     
+    // Set C2RUST_LD_TARGET from build.target if provided
+    if let Some(target) = build_target {
+        command.env("C2RUST_LD_TARGET", target);
+    }
+    
     Some(feature_root_path)
 }
 
@@ -95,6 +106,7 @@ fn print_command_details(
     exec_dir: &std::path::Path,
     project_root: &std::path::Path,
     feature_root: Option<&std::path::PathBuf>,
+    build_target: Option<&str>,
     set_ld_preload: bool,
 ) {
     let colored_label = match command_type {
@@ -119,6 +131,11 @@ fn print_command_details(
             }
             print!("C2RUST_PROJECT_ROOT={} ", shell_words::quote(&project_root.display().to_string()).dimmed());
             print!("C2RUST_RUST_LIB={} ", shell_words::quote(&rust_lib_path.display().to_string()).dimmed());
+            
+            // Show C2RUST_LD_TARGET if build.target was provided
+            if let Some(target) = build_target {
+                print!("C2RUST_LD_TARGET={} ", shell_words::quote(target).dimmed());
+            }
         }
     }
     
@@ -166,6 +183,24 @@ fn execute_command_in_dir(
         anyhow::bail!("Path is not a directory: {}", exec_dir.display());
     }
     
+    // Get build.target once for both env setup and printing
+    // Distinguish between "not set" (Ok with empty check) vs actual errors
+    let build_target = match get_config_value("build.target", feature) {
+        Ok(target) if !target.is_empty() => Some(target),
+        Ok(_) => None, // Empty value means not set
+        Err(e) => {
+            // Check if it's just a "key not found" error vs a real failure
+            let err_str = e.to_string();
+            if err_str.contains("Empty") || err_str.contains("not found") {
+                None // Key not set is acceptable
+            } else {
+                // Real config error - emit warning but continue
+                eprintln!("Warning: Failed to read build.target from config: {}", e);
+                None
+            }
+        }
+    };
+    
     let mut command = Command::new(&parts[0]);
     command.current_dir(&exec_dir);
     
@@ -173,8 +208,8 @@ fn execute_command_in_dir(
         command.args(&parts[1..]);
     }
     
-    let feature_root = setup_hybrid_env(&mut command, &project_root, feature, set_ld_preload);
-    print_command_details(command_type, &parts, &exec_dir, &project_root, feature_root.as_ref(), set_ld_preload);
+    let feature_root = setup_hybrid_env(&mut command, &project_root, feature, set_ld_preload, build_target.as_deref());
+    print_command_details(command_type, &parts, &exec_dir, &project_root, feature_root.as_ref(), build_target.as_deref(), set_ld_preload);
     
     let start_time = Instant::now();
     let output = command.output()

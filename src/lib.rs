@@ -7,6 +7,7 @@ pub mod util;
 pub mod progress;
 pub mod logger;
 pub mod constants;
+pub mod target_selector;
 
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -75,6 +76,12 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
         git::git_commit(&format!("Initialize {} rust directory", feature), feature)?;
     }
 
+    // Step 1: Target artifact selection
+    // Prompt user to select target artifact before processing files
+    println!("\n{}", "Step 1: Select target artifact".bright_cyan().bold());
+    let selected_target = target_selector::prompt_target_selection(feature)?;
+    target_selector::store_target_in_config(feature, &selected_target)?;
+
     // Initialize progress state before the main loop
     // Count total .rs files and calculate how many have already been processed
     let total_rs_files = file_scanner::count_all_rs_files(&rust_dir)?;
@@ -87,6 +94,7 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
     );
 
     // Step 2: Main loop - process all empty .rs files
+    println!("\n{}", "Step 2: Translate C source files".bright_cyan().bold());
     loop {
         // Step 2.1: Try to build first
         println!("\n{}", "Building project...".bright_blue().bold());
