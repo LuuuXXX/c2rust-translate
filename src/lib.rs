@@ -75,8 +75,16 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
         git::git_commit(&format!("Initialize {} rust directory", feature), feature)?;
     }
 
-    // Load or initialize progress state
-    let mut progress_state = progress::ProgressState::load(feature)?;
+    // Initialize progress state before the main loop
+    // Count total .rs files and calculate how many have already been processed
+    let total_rs_files = file_scanner::count_all_rs_files(&rust_dir)?;
+    let initial_empty_count = file_scanner::find_empty_rs_files(&rust_dir)?.len();
+    let already_processed = total_rs_files.saturating_sub(initial_empty_count);
+    
+    let mut progress_state = progress::ProgressState::with_initial_progress(
+        total_rs_files,
+        already_processed
+    );
 
     // Step 2: Main loop - process all empty .rs files
     loop {
@@ -100,7 +108,7 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
         println!("{}", "Running hybrid build tests...".bright_blue());
         builder::run_hybrid_build(feature)?;
         
-        // Step 2.2: Scan for empty .rs files
+        // Step 2.2: Scan for empty .rs files (unprocessed files)
         let empty_rs_files = file_scanner::find_empty_rs_files(&rust_dir)?;
         
         if empty_rs_files.is_empty() {
@@ -109,45 +117,23 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
             logger::log_message(msg);
             break;
         }
-
-        // Filter out already processed files
-        let unprocessed_files: Vec<_> = empty_rs_files
-            .iter()
-            .filter(|f| !progress_state.is_processed(f, &rust_dir))
-            .collect();
         
-        if unprocessed_files.is_empty() {
-            println!("{}", "All files have been processed already.".cyan());
-            break;
-        }
-        
-        // Set total count for progress display (total unprocessed + already processed).
-        // To maintain consistent progress across runs, never decrease the total count;
-        // only update it if we observe more empty files than previously recorded.
-        let current_total = progress_state.get_total_count();
-        let new_total = std::cmp::max(current_total, empty_rs_files.len());
-        if new_total != current_total {
-            progress_state.set_total_count(new_total);
-            progress_state.save(feature)?;
-        }
-        
-        println!("{}", format!("Found {} empty .rs file(s) to process ({} already processed)", 
-            unprocessed_files.len(), 
-            empty_rs_files.len() - unprocessed_files.len()).cyan());
+        println!("{}", format!("Found {} empty .rs file(s) to process", 
+            empty_rs_files.len()).cyan());
 
         // Select files to process based on allow_all flag
-        // Use indices to avoid unnecessary cloning
         let selected_indices: Vec<usize> = if allow_all {
-            // Process all unprocessed files without prompting
-            (0..unprocessed_files.len()).collect()
+            // Process all empty files without prompting
+            (0..empty_rs_files.len()).collect()
         } else {
             // Prompt user to select files
-            file_scanner::prompt_file_selection(&unprocessed_files, &rust_dir)?
+            let file_refs: Vec<_> = empty_rs_files.iter().collect();
+            file_scanner::prompt_file_selection(&file_refs, &rust_dir)?
         };
 
         for &idx in selected_indices.iter() {
-            let rs_file = unprocessed_files[idx];
-            // Get current progress position (persisted across runs)
+            let rs_file = &empty_rs_files[idx];
+            // Get current progress position (persists across loop iterations)
             let current_position = progress_state.get_current_position();
             let total_count = progress_state.get_total_count();
             
@@ -166,9 +152,8 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
             
             process_rs_file(feature, rs_file, file_name, current_position, total_count, max_fix_attempts, show_full_output)?;
             
-            // Mark file as processed and save progress
-            progress_state.mark_processed(rs_file, &rust_dir)?;
-            progress_state.save(feature)?;
+            // Mark file as processed in this session
+            progress_state.mark_processed();
         }
     }
 
