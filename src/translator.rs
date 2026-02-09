@@ -46,10 +46,10 @@ fn get_config_path() -> Result<PathBuf> {
 /// Build the argument list for the fix command
 /// 
 /// Returns a vector of arguments to be passed to translate_and_fix.py for fixing errors.
-/// The arguments follow the format: --config --type syntax_fix --c_code --rust_code --output --error [--suggestion]
+/// The arguments follow the format: script_path --config --type syntax_fix --c_code --rust_code --output --error [--suggestion]
 /// 
 /// # Parameters
-/// - `script_path`: Path to the translate_and_fix.py script
+/// - `script_path`: Path to the translate_and_fix.py script (included as first element in returned vector)
 /// - `config_path`: Path to the config.toml file
 /// - `c_code_file`: Path to the C source file
 /// - `rust_code_file`: Path to the Rust file to be fixed (input)
@@ -232,11 +232,19 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
     // Derive C source file path from Rust file path
     // Example: var_example.rs -> var_example.c
     let c_file = rs_file.with_extension("c");
-    if !c_file.exists() {
-        anyhow::bail!(
-            "Corresponding C source file not found: {}. Expected a .c file with the same name as the .rs file.",
-            c_file.display()
-        );
+    if let Err(e) = std::fs::metadata(&c_file) {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            anyhow::bail!(
+                "Corresponding C source file not found: {}. Expected a .c file with the same name as the .rs file.",
+                c_file.display()
+            );
+        } else {
+            anyhow::bail!(
+                "Failed to access corresponding C source file {}: {}",
+                c_file.display(),
+                e
+            );
+        }
     }
     
     // Check if suggestion file exists
