@@ -177,14 +177,117 @@ c2rust-translate translate
 
 ## 错误处理
 
-工具会在以下情况下停止执行并显示错误：
+工具在遇到编译错误或测试失败时提供智能的交互式错误处理：
+
+### 自动修复尝试
+
+- 编译错误会自动尝试修复（默认最多 10 次，可通过 `--max-fix-attempts` 配置）
+- 每次修复失败后，自动应用下一次修复
+
+### 交互式错误处理
+
+当达到最大修复尝试次数后，工具会提供三个选项供用户选择：
+
+#### 1. 继续尝试（Continue）
+- 允许用户输入修复建议提示词
+- 提示词会保存到项目根目录的 `c2rust.md` 文件中
+- 后续的修复尝试会使用这些提示词作为参考
+- **对于测试失败**：必须输入修复建议才能继续
+
+**使用场景**：
+- 您已经分析了错误原因，想要给 AI 提供更具体的修复方向
+- 需要添加特定的约束或要求到修复过程中
+
+#### 2. 手工修复（Manual Fix）
+- 自动在 vim 中打开失败的 Rust 文件
+- 完整显示 C 源代码和 Rust 代码（不截断）
+- 手工修改后会自动重新执行构建
+  - 对于构建失败：手工修改保存后会自动重新执行构建
+  - 对于测试失败：手工修改保存后会自动重新执行构建和测试
+- 如果修改后仍有错误，可以继续选择处理方式
+
+**使用场景**：
+- 错误原因明确，手工修改更快
+- 需要进行复杂的代码重构
+- AI 修复多次失败，需要人工介入
+
+#### 3. 退出（Exit）
+- 停止翻译过程并退出工具
+- 未完成的文件不会被处理
+
+**使用场景**：
+- 遇到无法解决的问题，需要停止处理
+- 当前任务无法继续，需要修改项目配置或依赖后重新运行
+
+### 适用场景
+
+交互式错误处理适用于以下情况：
+
+1. **编译失败**：达到最大修复尝试次数后
+2. **测试失败**：混合构建测试失败时
+3. **启动时失败**：翻译开始前的初始构建或测试失败
+
+### 建议文件（c2rust.md）
+
+- **位置**：项目根目录下的 `c2rust.md`
+- **格式**：Markdown 格式，带时间戳
+- **用途**：存储用户输入的修复建议，供 translate_and_fix.py 参考
+- **持久化**：建议会累积保存，可以在多次翻译过程中复用
+
+### 示例流程
+
+```
+⚠ Maximum fix attempts reached!
+File example.rs still has build errors after 10 fix attempts.
+
+File Locations:
+  C file:    /path/to/example.c
+  Rust file: /path/to/example.rs
+
+═══ C Source Code (Full) ═══
+[显示完整C代码]
+
+═══ Rust Code (Full) ═══
+[显示完整Rust代码]
+
+═══ Build Error ═══
+[显示编译错误]
+
+⚠ Build failure - What would you like to do?
+
+Available options:
+  1. Continue trying (optionally enter a fix suggestion)
+  2. Manual fix (edit the file directly)
+  3. Exit (abort the translation process)
+
+Enter your choice (1/2/3): 1
+
+Please enter your fix suggestion:
+(The suggestion will be saved and used in the next fix attempt)
+(Press Enter to skip entering a suggestion)
+
+Suggestion: Please use std::ffi::CStr instead of raw pointer manipulation
+
+✓ Suggestion recorded: Please use std::ffi::CStr instead of raw pointer manipulation
+✓ Suggestion saved to /path/to/project/c2rust.md
+```
+
+### 错误类型
+
+工具会在以下情况下提供交互选项或停止执行：
+
+**提供交互选项的情况**：
+- 构建错误修复超过配置的最大尝试次数（默认 10 次）- 提供继续/手工修复/退出选项
+- 混合构建测试失败 - 提供继续/手工修复/退出选项（继续需要输入建议）
+- 启动时的初始构建失败 - 提供继续/手工修复/退出选项
+- 启动时的初始测试失败 - 提供继续/手工修复/退出选项
+
+**直接停止的情况**：
 - Rust 目录初始化失败
 - 缺少对应的 `.c` 文件
-- 翻译或错误修复失败
-- 构建错误修复超过配置的最大尝试次数仍失败（默认 10 次，可通过 `--max-fix-attempts` 配置）
-- 混合构建测试失败（需要 c2rust-config 正确配置）
+- 翻译失败
 - Git 操作失败（add/commit，"nothing to commit" 除外）
-- 最终构建失败
+- 用户选择"退出"选项
 
 ## Git 集成
 
