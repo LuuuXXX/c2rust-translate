@@ -60,3 +60,43 @@ fn test_progress_state_in_memory() {
     assert_eq!(progress.get_current_position(), 4);
     assert_eq!(progress.processed_count, 3);
 }
+
+#[test]
+#[serial]
+fn test_file_content_based_progress_tracking() {
+    use std::io::Write;
+    
+    // Create a temporary directory structure
+    let temp_dir = TempDir::new().unwrap();
+    let rust_dir = temp_dir.path().join("rust");
+    fs::create_dir(&rust_dir).unwrap();
+    
+    // Create empty .rs files (unprocessed)
+    fs::File::create(rust_dir.join("var_test1.rs")).unwrap();
+    fs::File::create(rust_dir.join("fun_test2.rs")).unwrap();
+    
+    // Create a non-empty .rs file (processed)
+    let mut processed_file = fs::File::create(rust_dir.join("var_test3.rs")).unwrap();
+    processed_file.write_all(b"pub static TEST: i32 = 42;").unwrap();
+    
+    // Use file_scanner to find empty files
+    let empty_files = c2rust_translate::file_scanner::find_empty_rs_files(&rust_dir).unwrap();
+    
+    // Should only find the two empty files, not the processed one
+    assert_eq!(empty_files.len(), 2);
+    assert!(empty_files.iter().any(|f| f.file_name().unwrap() == "var_test1.rs"));
+    assert!(empty_files.iter().any(|f| f.file_name().unwrap() == "fun_test2.rs"));
+    assert!(!empty_files.iter().any(|f| f.file_name().unwrap() == "var_test3.rs"));
+    
+    // Create a progress state for this session
+    let mut progress = c2rust_translate::progress::ProgressState::new(empty_files.len());
+    assert_eq!(progress.get_total_count(), 2);
+    
+    // Simulate processing files
+    for _ in 0..empty_files.len() {
+        progress.mark_processed();
+    }
+    
+    assert_eq!(progress.processed_count, 2);
+    assert_eq!(progress.get_current_position(), 3); // Next file would be #3
+}
