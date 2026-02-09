@@ -434,9 +434,42 @@ fn handle_test_failure_interactive(
                         let retry_choice = interaction::prompt_user_choice("Tests still failing", true)?;
                         
                         match retry_choice {
-                            interaction::UserChoice::Continue | interaction::UserChoice::ManualFix => {
-                                // Continue the loop to retry
+                            interaction::UserChoice::Continue => {
+                                // Continue the loop to retry with a new suggestion
                                 continue;
+                            }
+                            interaction::UserChoice::ManualFix => {
+                                println!("│");
+                                println!("│ {}", "You chose: Manually edit the code".bright_cyan());
+                                println!("│ {}", "Opening vim for manual fixes...".bright_blue());
+                                
+                                // Open vim to allow the user to manually edit the code
+                                match interaction::open_in_vim(rs_file) {
+                                    Ok(_) => {
+                                        println!("│");
+                                        println!("│ {}", "Rebuilding and retesting after manual fix...".bright_blue().bold());
+                                        
+                                        c2rust_build(feature)?;
+                                        
+                                        match c2rust_test(feature) {
+                                            Ok(_) => {
+                                                println!("│ {}", "✓ Tests passed after manual fix!".bright_green().bold());
+                                                return Ok(());
+                                            }
+                                            Err(e) => {
+                                                println!("│ {}", "✗ Tests still failing after manual fix".red());
+                                                // Update current_error and continue the outer loop
+                                                current_error = e;
+                                                continue;
+                                            }
+                                        }
+                                    }
+                                    Err(open_err) => {
+                                        println!("│ {}", format!("Failed to open vim: {}", open_err).red());
+                                        println!("│ {}", "Cannot continue manual fix flow; exiting.".yellow());
+                                        return Err(open_err).context("Tests failed and could not open vim for manual fix");
+                                    }
+                                }
                             }
                             interaction::UserChoice::Exit => {
                                 return Err(current_error).context("Tests failed and user chose to exit");

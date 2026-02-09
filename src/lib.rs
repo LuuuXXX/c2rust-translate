@@ -480,9 +480,26 @@ fn handle_max_fix_attempts_reached(
                                 let retry_choice = interaction::prompt_user_choice("Build still failing", false)?;
                                 
                                 match retry_choice {
-                                    interaction::UserChoice::Continue | interaction::UserChoice::ManualFix => {
-                                        // Continue the loop to retry
+                                    interaction::UserChoice::Continue => {
+                                        // Continue: just retry the build with existing changes
                                         continue;
+                                    }
+                                    interaction::UserChoice::ManualFix => {
+                                        println!("│ {}", "Reopening file in Vim for additional manual fixes...".bright_blue());
+                                        match interaction::open_in_vim(rs_file) {
+                                            Ok(_) => {
+                                                // After additional manual fixes, loop will retry the build
+                                                continue;
+                                            }
+                                            Err(open_err) => {
+                                                println!("│ {}", format!("Failed to reopen vim: {}", open_err).red());
+                                                println!("│ {}", "Cannot continue manual fix flow; exiting.".yellow());
+                                                return Err(open_err).context(format!(
+                                                    "Build still failing and could not reopen vim for file {}",
+                                                    rs_file.display()
+                                                ));
+                                            }
+                                        }
                                     }
                                     interaction::UserChoice::Exit => {
                                         return Err(e).context(format!(
@@ -520,7 +537,7 @@ fn handle_max_fix_attempts_reached(
 }
 
 /// Apply error fix to the file
-pub fn apply_error_fix<F>(
+pub(crate) fn apply_error_fix<F>(
     feature: &str,
     file_type: &str,
     rs_file: &std::path::Path,
