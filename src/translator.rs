@@ -46,21 +46,19 @@ fn get_config_path() -> Result<PathBuf> {
 /// Build the argument list for the fix command
 /// 
 /// Returns a vector of arguments to be passed to translate_and_fix.py for fixing errors.
-/// The arguments follow the format: --config --type syntax_fix --c_code --rust_code --output --error [--suggestion]
+/// The arguments follow the format: --config --type fix --code --output --error [--suggestion]
 /// 
 /// # Parameters
 /// - `script_path`: Path to the translate_and_fix.py script
 /// - `config_path`: Path to the config.toml file
-/// - `c_code_file`: Path to the original C code file
-/// - `rust_code_file`: Path to the Rust file to be fixed (input)
-/// - `output_file`: Path where the fixed result should be written (typically same as rust_code_file)
+/// - `code_file`: Path to the Rust file to be fixed (input)
+/// - `output_file`: Path where the fixed result should be written (typically same as code_file)
 /// - `error_file`: Path to the temporary file containing compiler error messages
 /// - `suggestion_file`: Optional path to the suggestion file (c2rust.md)
 fn build_fix_args<'a>(
     script_path: &'a str,
     config_path: &'a str,
-    c_code_file: &'a str,
-    rust_code_file: &'a str,
+    code_file: &'a str,
     output_file: &'a str,
     error_file: &'a str,
     suggestion_file: Option<&'a str>,
@@ -70,11 +68,9 @@ fn build_fix_args<'a>(
         "--config",
         config_path,
         "--type",
-        "syntax_fix",
-        "--c_code",
-        c_code_file,
-        "--rust_code",
-        rust_code_file,
+        "fix",
+        "--code",
+        code_file,
         "--output",
         output_file,
         "--error",
@@ -144,7 +140,7 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
         .with_context(|| format!("Non-UTF8 path: {}", rs_file.display()))?;
     
     println!("│ {}", "Executing translation command:".bright_blue());
-    println!("│ {} python {} --config {} --type {} --c_code {} --output {}", 
+    println!("│ {} python {} --config {} --type {} --code {} --output {}", 
         "→".bright_blue(),
         script_str.dimmed(), 
         config_str.dimmed(), 
@@ -160,7 +156,7 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
             config_str,
             "--type",
             file_type,
-            "--c_code",
+            "--code",
             c_file_str,
             "--output",
             rs_file_str,
@@ -229,15 +225,6 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
     let temp_file = create_error_temp_file(error_msg)?;
     let script_path = get_translate_script_full_path()?;
     
-    // Get the corresponding C file
-    let c_file = rs_file.with_extension("c");
-    if !c_file.exists() {
-        anyhow::bail!(
-            "Corresponding C file not found: {}. Ensure the C source file exists in the same directory with the same base name.",
-            c_file.display()
-        );
-    }
-    
     // Check if suggestion file exists
     let suggestion_path = crate::suggestion::get_suggestion_file_path()?;
     let suggestion_exists = suggestion_path.exists();
@@ -246,8 +233,6 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
         .with_context(|| format!("Non-UTF8 path: {}", script_path.display()))?;
     let config_str = config_path.to_str()
         .with_context(|| format!("Non-UTF8 path: {}", config_path.display()))?;
-    let c_file_str = c_file.to_str()
-        .with_context(|| format!("Non-UTF8 path: {}", c_file.display()))?;
     let error_file_str = temp_file.path().to_str()
         .with_context(|| format!("Non-UTF8 path: {}", temp_file.path().display()))?;
     let rs_file_str = rs_file.to_str()
@@ -262,28 +247,26 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
 
     println!("│ {}", "Executing error fix command:".yellow());
     if suggestion_exists {
-        println!("│ {} python {} --config {} --type syntax_fix --c_code {} --rust_code {} --output {} --error {} --suggestion {}", 
+        println!("│ {} python {} --config {} --type fix --code {} --output {} --error {} --suggestion {}", 
             "→".yellow(),
             script_str.dimmed(), 
-            config_str.dimmed(),
-            c_file_str.bright_yellow(),
+            config_str.dimmed(), 
             rs_file_str.bright_yellow(), 
             rs_file_str.bright_yellow(), 
             error_file_str.dimmed(),
             suggestion_str.unwrap().bright_cyan());
     } else {
-        println!("│ {} python {} --config {} --type syntax_fix --c_code {} --rust_code {} --output {} --error {}", 
+        println!("│ {} python {} --config {} --type fix --code {} --output {} --error {}", 
             "→".yellow(),
             script_str.dimmed(), 
-            config_str.dimmed(),
-            c_file_str.bright_yellow(),
+            config_str.dimmed(), 
             rs_file_str.bright_yellow(), 
             rs_file_str.bright_yellow(), 
             error_file_str.dimmed());
     }
     println!("│");
 
-    let args = build_fix_args(script_str, config_str, c_file_str, rs_file_str, rs_file_str, error_file_str, suggestion_str);
+    let args = build_fix_args(script_str, config_str, rs_file_str, rs_file_str, error_file_str, suggestion_str);
 
     let status = Command::new("python")
         .args(&args)
@@ -454,37 +437,34 @@ mod tests {
     fn test_build_fix_args() {
         let script = "/path/to/translate_and_fix.py";
         let config = "/project/.c2rust/config.toml";
-        let c_code = "/project/feature/rust/code.c";
-        let rust_code = "/project/feature/rust/code.rs";
+        let code = "/project/feature/rust/code.rs";
         let output = "/project/feature/rust/code.rs";
         let error = "/tmp/error.txt";
         
         // Test without suggestion
-        let args = build_fix_args(script, config, c_code, rust_code, output, error, None);
+        let args = build_fix_args(script, config, code, output, error, None);
         
         // Verify the exact sequence of arguments
-        assert_eq!(args.len(), 13);
+        assert_eq!(args.len(), 11);
         assert_eq!(args[0], script);
         assert_eq!(args[1], "--config");
         assert_eq!(args[2], config);
         assert_eq!(args[3], "--type");
-        assert_eq!(args[4], "syntax_fix");
-        assert_eq!(args[5], "--c_code");
-        assert_eq!(args[6], c_code);
-        assert_eq!(args[7], "--rust_code");
-        assert_eq!(args[8], rust_code);
-        assert_eq!(args[9], "--output");
-        assert_eq!(args[10], output);
-        assert_eq!(args[11], "--error");
-        assert_eq!(args[12], error);
+        assert_eq!(args[4], "fix");
+        assert_eq!(args[5], "--code");
+        assert_eq!(args[6], code);
+        assert_eq!(args[7], "--output");
+        assert_eq!(args[8], output);
+        assert_eq!(args[9], "--error");
+        assert_eq!(args[10], error);
         
         // Test with suggestion
         let suggestion = "/project/c2rust.md";
-        let args_with_suggestion = build_fix_args(script, config, c_code, rust_code, output, error, Some(suggestion));
+        let args_with_suggestion = build_fix_args(script, config, code, output, error, Some(suggestion));
         
-        assert_eq!(args_with_suggestion.len(), 15);
-        assert_eq!(args_with_suggestion[13], "--suggestion");
-        assert_eq!(args_with_suggestion[14], suggestion);
+        assert_eq!(args_with_suggestion.len(), 13);
+        assert_eq!(args_with_suggestion[11], "--suggestion");
+        assert_eq!(args_with_suggestion[12], suggestion);
     }
     
     #[test]
