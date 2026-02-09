@@ -148,11 +148,17 @@ Your selection: 1,3-4
 
 **翻译工具调用格式：**
 ```bash
-# 翻译
-python translate_and_fix.py --config <config.toml> --type <var|fn> --code <input.c> --output <output.rs>
+# 变量翻译
+python translate_and_fix.py --config <config.toml> --type var --c_code <input.c> --output <output.rs>
 
-# 修复错误
-python translate_and_fix.py --config <config.toml> --type fix --code <code.rs> --output <output.rs> --error <error.txt>
+# 函数翻译
+python translate_and_fix.py --config <config.toml> --type fn --c_code <input.c> --output <output.rs>
+
+# 语法修复（无用户建议）
+python translate_and_fix.py --config <config.toml> --type syntax_fix --c_code <c_code.c> --rust_code <rust_code.rs> --output <output.rs> --error <error.txt>
+
+# 语法修复（有用户建议）
+python translate_and_fix.py --config <config.toml> --type syntax_fix --c_code <c_code.c> --rust_code <rust_code.rs> --output <output.rs> --error <error.txt> --suggestion <suggestion.txt>
 ```
 
 **代码分析工具：**
