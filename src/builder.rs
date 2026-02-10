@@ -186,6 +186,14 @@ fn execute_command_in_dir(
     // 区分"未设置"（检查为空的 Ok）和实际错误
     let build_target = match get_config_value("build.target", feature) {
         Ok(target) if !target.is_empty() => {
+            // 验证 build.target 路径安全性
+            if std::path::Path::new(&target).is_absolute() {
+                anyhow::bail!("build.target path from config must be relative, got: {}", target);
+            }
+            if target.contains("..") {
+                anyhow::bail!("build.target path from config cannot contain '..', got: {}", target);
+            }
+            
             // 将 build.target 转换为基于 build.dir 的绝对路径
             let absolute_target = exec_dir.join(&target);
             Some(absolute_target.display().to_string())
