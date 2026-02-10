@@ -227,6 +227,7 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, cu
         if attempt_number > 1 {
             println!("│ {}", "Clearing previous suggestions for fresh retry...".bright_yellow());
             suggestion::clear_suggestions()?;
+            println!("│ {}", "Starting fresh translation (previous translation will be overwritten)...".bright_cyan());
         }
         
         let (file_type, _name) = extract_and_validate_file_info(rs_file)?;
