@@ -1,4 +1,4 @@
-//! Suggestion file management for c2rust.md
+//! Suggestion file management for suggestions.txt
 
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -7,14 +7,14 @@ use std::io::Write;
 use std::path::PathBuf;
 use crate::util;
 
-/// Get the path to the c2rust.md suggestion file
+/// Get the path to the suggestions.txt suggestion file
 pub fn get_suggestion_file_path() -> Result<PathBuf> {
     let project_root = util::find_project_root()?;
-    Ok(project_root.join("c2rust.md"))
+    Ok(project_root.join("suggestions.txt"))
 }
 
-/// Read the current content of c2rust.md if it exists
-#[allow(dead_code)]
+/// Read the current content of suggestions.txt if it exists
+#[cfg(test)]
 pub fn read_suggestions() -> Result<Option<String>> {
     let suggestion_file = get_suggestion_file_path()?;
     
@@ -32,7 +32,7 @@ pub fn read_suggestions() -> Result<Option<String>> {
     }
 }
 
-/// Append a suggestion to the c2rust.md file
+/// Append a suggestion to the suggestions.txt file
 pub fn append_suggestion(suggestion: &str) -> Result<()> {
     let suggestion_file = get_suggestion_file_path()?;
     
@@ -48,9 +48,7 @@ pub fn append_suggestion(suggestion: &str) -> Result<()> {
         .open(&suggestion_file)
         .with_context(|| format!("Failed to open suggestion file: {}", suggestion_file.display()))?;
     
-    // Add timestamp and suggestion
-    let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
-    writeln!(file, "\n## Suggestion added at {}", timestamp)?;
+    // Append suggestion in plain text format
     writeln!(file, "{}", suggestion)?;
     
     println!("│ {}", format!("✓ Suggestion saved to {}", suggestion_file.display()).bright_green());
@@ -58,14 +56,7 @@ pub fn append_suggestion(suggestion: &str) -> Result<()> {
     Ok(())
 }
 
-/// Get suggestions as a string to pass to translate_and_fix.py
-/// Returns the content of c2rust.md if it exists, otherwise None
-#[allow(dead_code)]
-pub fn get_suggestions_for_translation() -> Result<Option<String>> {
-    read_suggestions()
-}
-
-/// Clear all suggestions from the c2rust.md file
+/// Clear all suggestions from the suggestions.txt file
 /// This is useful when starting a fresh retry to avoid suggestion accumulation
 pub fn clear_suggestions() -> Result<()> {
     let suggestion_file = get_suggestion_file_path()?;
@@ -102,10 +93,10 @@ mod tests {
         // Restore original working directory
         env::set_current_dir(old_dir).unwrap();
 
-        // The path should be valid and point to c2rust.md in the project root
+        // The path should be valid and point to suggestions.txt in the project root
         assert!(result.is_ok());
         let path = result.unwrap();
-        assert_eq!(path.file_name().unwrap(), "c2rust.md");
+        assert_eq!(path.file_name().unwrap(), "suggestions.txt");
     }
 
     #[test]
@@ -151,7 +142,8 @@ mod tests {
         
         let content = fs::read_to_string(&suggestion_file).unwrap();
         assert!(content.contains(suggestion_text));
-        assert!(content.contains("## Suggestion added at"));
+        // Plain text format - no timestamps
+        assert!(!content.contains("## Suggestion added at"));
 
         // Append another suggestion
         let second_suggestion = "Ensure proper lifetime annotations";
@@ -163,8 +155,8 @@ mod tests {
         assert!(content2.contains(suggestion_text));
         assert!(content2.contains(second_suggestion));
         
-        // Should have two timestamp headers
-        assert_eq!(content2.matches("## Suggestion added at").count(), 2);
+        // Plain text format - no timestamp headers
+        assert!(!content2.contains("## Suggestion added at"));
 
         // Restore original working directory before temp_dir is dropped
         env::set_current_dir(&old_dir).unwrap();

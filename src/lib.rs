@@ -222,11 +222,8 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, cu
         
         print_attempt_header(attempt_number, rs_file);
         
-        // Clear suggestions before retry to start fresh
-        // This prevents suggestion accumulation from previous failed attempts
+        // Add message for retry attempts  
         if attempt_number > 1 {
-            println!("│ {}", "Clearing previous suggestions for fresh retry...".bright_yellow());
-            suggestion::clear_suggestions()?;
             println!("│ {}", "Starting fresh translation (previous translation will be overwritten)...".bright_cyan());
         }
         
@@ -422,9 +419,13 @@ fn handle_max_fix_attempts_reached(
             println!("│");
             println!("│ {}", "You chose: Continue trying with a new suggestion".bright_cyan());
             
+            // Clear old suggestions BEFORE prompting for new one
+            // This prevents the bug where the new suggestion gets cleared on next retry
+            suggestion::clear_suggestions()?;
+            
             // Get optional suggestion from user
             if let Some(suggestion_text) = interaction::prompt_suggestion(false)? {
-                // Save suggestion to c2rust.md
+                // Save suggestion to suggestions.txt
                 suggestion::append_suggestion(&suggestion_text)?;
             }
             
