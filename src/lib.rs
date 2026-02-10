@@ -8,6 +8,7 @@ pub mod progress;
 pub mod logger;
 pub mod constants;
 pub mod target_selector;
+pub mod diff_display;
 pub(crate) mod interaction;
 pub(crate) mod suggestion;
 pub(crate) mod error_handler;
