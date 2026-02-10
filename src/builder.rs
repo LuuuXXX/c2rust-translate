@@ -333,7 +333,22 @@ pub fn run_hybrid_build_interactive(
     // 执行命令
     println!("│ {}", "Running hybrid build tests...".bright_blue().bold());
     c2rust_clean(feature)?;
-    c2rust_build(feature)?;
+    
+    // 通过交互式错误处理进行构建
+    match c2rust_build(feature) {
+        Ok(_) => {
+            // 构建成功，继续测试
+        }
+        Err(build_error) => {
+            // 仅当我们有文件上下文时才显示交互菜单
+            if let (Some(ftype), Some(rfile)) = (file_type, rs_file) {
+                return handle_build_failure_interactive(feature, ftype, rfile, build_error);
+            } else {
+                // 没有文件上下文，只返回错误
+                return Err(build_error);
+            }
+        }
+    }
     
     // 通过交互式错误处理进行测试
     match c2rust_test(feature) {
@@ -349,6 +364,270 @@ pub fn run_hybrid_build_interactive(
                 // 没有文件上下文，只返回错误
                 Err(test_error)
             }
+        }
+    }
+}
+
+/// 交互式处理构建失败
+pub(crate) fn handle_build_failure_interactive(
+    feature: &str,
+    file_type: &str,
+    rs_file: &std::path::Path,
+    build_error: anyhow::Error,
+) -> Result<()> {
+    use crate::interaction;
+    use crate::suggestion;
+    use crate::diff_display;
+    
+    println!("│");
+    println!("│ {}", "⚠ Build failed!".red().bold());
+    println!("│ {}", "The build process did not succeed.".yellow());
+    
+    // 显示代码比较和构建错误
+    let c_file = rs_file.with_extension("c");
+    
+    // 显示文件位置
+    interaction::display_file_paths(Some(&c_file), rs_file);
+    
+    // 使用差异显示进行更好的比较
+    let error_message = format!("✗ Build Error:\n{}", build_error);
+    if let Err(e) = diff_display::display_code_comparison(
+        &c_file,
+        rs_file,
+        &error_message,
+        diff_display::ResultType::BuildFail,
+    ) {
+        // 如果比较失败则回退到旧显示
+        use crate::translator;
+        println!("│ {}", format!("Failed to display comparison: {}", e).yellow());
+        println!("│ {}", "═══ C Source Code (Full) ═══".bright_cyan().bold());
+        translator::display_code(&c_file, "─ C Source ─", usize::MAX, true);
+        
+        println!("│ {}", "═══ Rust Code (Full) ═══".bright_cyan().bold());
+        translator::display_code(rs_file, "─ Rust Code ─", usize::MAX, true);
+        
+        println!("│ {}", "═══ Build Error ═══".bright_red().bold());
+        println!("│ {}", build_error);
+    }
+    
+    // 使用新提示获取用户选择
+    let choice = interaction::prompt_build_failure_choice()?;
+    
+    match choice {
+        interaction::FailureChoice::AddSuggestion => {
+            println!("│");
+            println!("│ {}", "You chose: Add fix suggestion for AI to modify".bright_cyan());
+            
+            // 跟踪重试中最新的构建错误以避免递归
+            let mut current_error = build_error;
+            
+            loop {
+                // 在提示新建议之前清除旧建议
+                suggestion::clear_suggestions()?;
+                
+                // 对于构建失败，建议是必需的
+                let suggestion_text = interaction::prompt_suggestion(true)?
+                    .ok_or_else(|| anyhow::anyhow!(
+                        "Suggestion is required for build failure but none was provided. \
+                         This may indicate an issue with the prompt_suggestion function when require_input=true."
+                    ))?;
+                
+                // 将建议保存到 suggestions.txt
+                suggestion::append_suggestion(&suggestion_text)?;
+                
+                // 应用带有建议的修复
+                println!("│");
+                println!("│ {}", "Applying fix based on your suggestion...".bright_blue());
+                
+                let format_progress = |op: &str| format!("Fix for build failure - {}", op);
+                crate::apply_error_fix(feature, file_type, rs_file, &current_error, &format_progress, true)?;
+                
+                // 再次尝试构建和测试
+                println!("│");
+                println!("│ {}", "Rebuilding...".bright_blue().bold());
+                
+                match c2rust_build(feature) {
+                    Ok(_) => {
+                        // 构建成功，现在尝试测试
+                        println!("│ {}", "✓ Build passed after applying fix!".bright_green().bold());
+                        println!("│");
+                        println!("│ {}", "Running tests...".bright_blue().bold());
+                        
+                        match c2rust_test(feature) {
+                            Ok(_) => {
+                                println!("│ {}", "✓ Tests passed!".bright_green().bold());
+                                return Ok(());
+                            }
+                            Err(test_error) => {
+                                // 构建成功但测试失败，切换到测试失败处理
+                                println!("│ {}", "✗ Build succeeded but tests failed".yellow());
+                                return handle_test_failure_interactive(feature, file_type, rs_file, test_error);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        println!("│ {}", "✗ Build still failing".red());
+                        
+                        // 使用最新失败更新 current_error
+                        current_error = e;
+                        
+                        // 询问用户是否想再试一次
+                        println!("│");
+                        println!("│ {}", "Build still has errors. What would you like to do?".yellow());
+                        let retry_choice = interaction::prompt_build_failure_choice()?;
+                        
+                        match retry_choice {
+                            interaction::FailureChoice::AddSuggestion => {
+                                // 继续循环以使用新建议重试
+                                continue;
+                            }
+                            interaction::FailureChoice::ManualFix => {
+                                println!("│");
+                                println!("│ {}", "You chose: Manually edit the code".bright_cyan());
+                                println!("│ {}", "Opening vim for manual fixes...".bright_blue());
+                                
+                                // 打开 vim 允许用户手动编辑代码
+                                match interaction::open_in_vim(rs_file) {
+                                    Ok(_) => {
+                                        println!("│");
+                                        println!("│ {}", "Rebuilding after manual fix...".bright_blue().bold());
+                                        
+                                        match c2rust_build(feature) {
+                                            Ok(_) => {
+                                                // 构建成功，现在尝试测试
+                                                println!("│ {}", "✓ Build passed after manual fix!".bright_green().bold());
+                                                println!("│");
+                                                println!("│ {}", "Running tests...".bright_blue().bold());
+                                                
+                                                match c2rust_test(feature) {
+                                                    Ok(_) => {
+                                                        println!("│ {}", "✓ Tests passed!".bright_green().bold());
+                                                        return Ok(());
+                                                    }
+                                                    Err(test_error) => {
+                                                        // 构建成功但测试失败，切换到测试失败处理
+                                                        println!("│ {}", "✗ Build succeeded but tests failed".yellow());
+                                                        return handle_test_failure_interactive(feature, file_type, rs_file, test_error);
+                                                    }
+                                                }
+                                            }
+                                            Err(e) => {
+                                                println!("│ {}", "✗ Build still failing after manual fix".red());
+                                                
+                                                // 询问用户是否想再试一次
+                                                println!("│");
+                                                println!("│ {}", "Build still has errors. What would you like to do?".yellow());
+                                                let nested_retry_choice = interaction::prompt_build_failure_choice()?;
+                                                
+                                                match nested_retry_choice {
+                                                    interaction::FailureChoice::AddSuggestion => {
+                                                        // 更新 current_error 并继续外部循环以使用新建议重试
+                                                        current_error = e;
+                                                        continue;
+                                                    }
+                                                    interaction::FailureChoice::ManualFix => {
+                                                        // 重新打开 vim
+                                                        println!("│ {}", "Reopening Vim for another manual fix attempt...".bright_blue());
+                                                        interaction::open_in_vim(rs_file)
+                                                            .context("Failed to reopen vim for additional manual fix")?;
+                                                        // 更新错误并继续外部循环以重新构建
+                                                        current_error = e;
+                                                        continue;
+                                                    }
+                                                    interaction::FailureChoice::Exit => {
+                                                        return Err(e).context("Build failed after manual fix and user chose to exit");
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Err(open_err) => {
+                                        println!("│ {}", format!("Failed to open vim: {}", open_err).red());
+                                        println!("│ {}", "Cannot continue manual fix flow; exiting.".yellow());
+                                        return Err(open_err).context("Build failed and could not open vim for manual fix");
+                                    }
+                                }
+                            }
+                            interaction::FailureChoice::Exit => {
+                                return Err(current_error).context("Build failed and user chose to exit");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        interaction::FailureChoice::ManualFix => {
+            println!("│");
+            println!("│ {}", "You chose: Manual fix".bright_cyan());
+            
+            // 尝试打开 vim
+            match interaction::open_in_vim(rs_file) {
+                Ok(_) => {
+                    loop {
+                        println!("│");
+                        println!("│ {}", "Vim editing completed. Rebuilding...".bright_blue());
+                        
+                        // Vim 编辑后尝试使用混合构建流程进行构建和测试
+                        match c2rust_build(feature) {
+                            Ok(_) => {
+                                // 构建成功，现在尝试测试
+                                println!("│ {}", "✓ Build passed after manual fix!".bright_green().bold());
+                                println!("│");
+                                println!("│ {}", "Running tests...".bright_blue().bold());
+                                
+                                match c2rust_test(feature) {
+                                    Ok(_) => {
+                                        println!("│ {}", "✓ Tests passed!".bright_green().bold());
+                                        return Ok(());
+                                    }
+                                    Err(test_error) => {
+                                        // 构建成功但测试失败，切换到测试失败处理
+                                        println!("│ {}", "✗ Build succeeded but tests failed".yellow());
+                                        return handle_test_failure_interactive(feature, file_type, rs_file, test_error);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                println!("│ {}", "✗ Build still failing after manual fix".red());
+                                
+                                // 询问用户是否想再试一次
+                                println!("│");
+                                println!("│ {}", "Build still has errors. What would you like to do?".yellow());
+                                let retry_choice = interaction::prompt_build_failure_choice()?;
+                                
+                                match retry_choice {
+                                    interaction::FailureChoice::ManualFix => {
+                                        println!("│ {}", "Reopening Vim for another manual fix attempt...".bright_blue());
+                                        interaction::open_in_vim(rs_file)
+                                            .context("Failed to reopen vim for additional manual fix")?;
+                                        // Vim 关闭后，继续循环重新构建和重新测试
+                                        continue;
+                                    }
+                                    interaction::FailureChoice::AddSuggestion => {
+                                        println!("│ {}", "Switching to suggestion-based fix flow.".yellow());
+                                        // 递归调用以进入基于建议的交互式修复流程
+                                        return handle_build_failure_interactive(feature, file_type, rs_file, e);
+                                    }
+                                    interaction::FailureChoice::Exit => {
+                                        return Err(e).context("Build failed after manual fix and user chose to exit");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("│ {}", format!("Failed to open vim: {}", e).red());
+                    println!("│ {}", "Falling back to exit.".yellow());
+                    Err(e).context(format!("Build failed (original error: {}) and could not open vim", build_error))
+                }
+            }
+        }
+        interaction::FailureChoice::Exit => {
+            println!("│");
+            println!("│ {}", "You chose: Exit".yellow());
+            println!("│ {}", "Exiting due to build failures.".yellow());
+            Err(build_error).context("Build failed and user chose to exit")
         }
     }
 }
