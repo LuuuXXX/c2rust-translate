@@ -7,7 +7,6 @@ pub mod util;
 pub mod progress;
 pub mod logger;
 pub mod constants;
-pub mod target_selector;
 pub(crate) mod diff_display;
 pub(crate) mod interaction;
 pub(crate) mod suggestion;
@@ -80,12 +79,6 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
         git::git_commit(&format!("Initialize {} rust directory", feature), feature)?;
     }
 
-    // 步骤 1：目标工件选择
-    // 在处理文件之前提示用户选择目标工件
-    println!("\n{}", "Step 1: Select target artifact".bright_cyan().bold());
-    let selected_target = target_selector::prompt_target_selection(feature)?;
-    target_selector::store_target_in_config(feature, &selected_target)?;
-
     // 在主循环之前初始化进度状态
     // 计算总 .rs 文件数和已处理的文件数
     let total_rs_files = file_scanner::count_all_rs_files(&rust_dir)?;
@@ -97,10 +90,10 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
         already_processed
     );
 
-    // 步骤 2：主循环 - 处理所有空的 .rs 文件
-    println!("\n{}", "Step 2: Translate C source files".bright_cyan().bold());
+    // 步骤 1：主循环 - 处理所有空的 .rs 文件
+    println!("\n{}", "Step 1: Translate C source files".bright_cyan().bold());
     loop {
-        // 步骤 2.1：首先尝试构建
+        // 步骤 1.1：首先尝试构建
         println!("\n{}", "Building project...".bright_blue().bold());
         match builder::cargo_build(feature, show_full_output) {
             Ok(_) => {
@@ -189,7 +182,7 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
             }
         }
         
-        // 步骤 2.2：扫描空的 .rs 文件（未处理的文件）
+        // 步骤 1.2：扫描空的 .rs 文件（未处理的文件）
         let empty_rs_files = file_scanner::find_empty_rs_files(&rust_dir)?;
         
         if empty_rs_files.is_empty() {

@@ -7,11 +7,11 @@
 ### 核心功能
 - 自动化的 C 到 Rust 翻译工作流
 - 支持基于特性(feature)的翻译，使用 `--feature` 标志
-- **目标制品选择** - 在翻译前自动提示选择目标制品（从 `.c2rust/<feature>/c/targets.list` 读取）
 - 交互式文件选择或自动处理模式（`--allow-all`）
 - 自动初始化 Rust 项目结构
 - 自动检测和修复构建错误
 - 基于 Git 的版本控制集成
+- **混合构建支持** - 通过 `build.target` 配置项设置 `C2RUST_LD_TARGET` 环境变量，支持 C 和 Rust 代码的混合构建
 
 ### 用户体验优化
 - **彩色输出** - 构建/测试/清理命令使用不同颜色高亮，成功/错误/警告消息带有图标标识
@@ -104,11 +104,7 @@ Your selection: 1,3-4
 该命令将执行以下操作：
 
 1. **初始化**（如需要）- 检查并初始化 `<特性名称>/rust` 目录
-2. **目标制品选择** - 提示用户从 `.c2rust/<特性名称>/c/targets.list` 中选择目标制品
-   - 自动读取并去重制品列表
-   - 如果只有一个制品，自动选择
-   - 选择结果存储到配置文件中（`build.target`）
-3. **文件翻译** - 对每个空的 `.rs` 文件：
+2. **文件翻译** - 对每个空的 `.rs` 文件：
    - 根据文件名前缀（`var_` 或 `fun_`）确定类型
    - 翻译对应的 `.c` 文件为 Rust
    - 构建并自动修复编译错误（默认最多 10 次尝试，可通过 `--max-fix-attempts` 选项配置）
@@ -129,6 +125,32 @@ Your selection: 1,3-4
 - `translate_and_fix.py` - C 到 Rust 翻译和错误修复
 - `c2rust-config` - 配置管理（需配置 build/test/clean 的 dir 和 cmd）
 
+#### 混合构建配置
+
+如果需要进行混合构建（C 和 Rust 代码混合编译），可以使用 `c2rust-config` 工具设置 `build.target` 配置项。该配置项会被用于设置 `C2RUST_LD_TARGET` 环境变量，以支持混合构建场景。
+
+**设置 build.target：**
+
+```bash
+# 进入 .c2rust 目录
+cd .c2rust
+
+# 设置特定特性的 build.target
+c2rust-config config --make --feature <特性名称> --set build.target <目标制品>
+
+# 验证配置
+c2rust-config config --make --feature <特性名称> --list build.target
+```
+
+**示例：**
+
+```bash
+cd .c2rust
+c2rust-config config --make --feature my_feature --set build.target my_target_binary
+```
+
+配置完成后，在执行构建、测试等命令时，`C2RUST_LD_TARGET` 环境变量会自动设置为指定的目标制品。
+
 #### 项目结构
 
 ```
@@ -136,8 +158,7 @@ Your selection: 1,3-4
 ├── .c2rust/
 │   ├── config.toml           # 配置文件
 │   └── <feature>/
-│       ├── c/
-│       │   └── targets.list  # 目标制品列表
+│       ├── c/                # C 源代码目录
 │       └── rust/             # 待翻译的 .rs 和 .c 文件
 │           ├── Cargo.toml    # Rust 项目配置
 │           ├── fun_*.rs / .c # 函数翻译文件
