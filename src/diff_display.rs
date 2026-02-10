@@ -12,9 +12,9 @@ pub fn display_code_comparison(
     result_type: ResultType,
 ) -> Result<()> {
     println!("│");
-    println!("{}", "═══════════════════════════════════════════════════════════════════".bright_cyan());
-    println!("{}", "                  C vs Rust Code Comparison                        ".bright_cyan().bold());
-    println!("{}", "═══════════════════════════════════════════════════════════════════".bright_cyan());
+    println!("{}", "══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════".bright_cyan());
+    println!("{}", "                                                          C vs Rust Code Comparison                                                                  ".bright_cyan().bold());
+    println!("{}", "══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════".bright_cyan());
     
     // 读取文件内容
     let c_content = std::fs::read_to_string(c_file)
@@ -26,10 +26,10 @@ pub fn display_code_comparison(
     let rust_lines: Vec<&str> = rust_content.lines().collect();
     
     // 显示表头
-    // 行格式："│ {:3} {:<26}│ {:3} {:<31}│"
-    // C 侧：空格(1) + 行号(3) + 空格(1) + 内容(26) = 31 字符
-    // Rust 侧：空格(1) + 行号(3) + 空格(1) + 内容(31) = 36 字符
-    println!("┌{:─<31}┬{:─<36}┐", "─ C Source Code ", "─ Rust Code ─");
+    // 行格式："│ {:3} {:<60}│ {:3} {:<80}│"
+    // C 侧：空格(1) + 行号(3) + 空格(1) + 内容(60) = 65 字符
+    // Rust 侧：空格(1) + 行号(3) + 空格(1) + 内容(80) = 85 字符
+    println!("┌{:─<65}┬{:─<85}┐", "─ C Source Code ", "─ Rust Code ─");
     
     // 并排显示行
     let max_lines = std::cmp::max(c_lines.len(), rust_lines.len());
@@ -38,24 +38,24 @@ pub fn display_code_comparison(
         let rust_line = rust_lines.get(i).unwrap_or(&"");
         
         // 如果行太长而无法放入列中，则截断（使用字符计数以确保 UTF-8 安全）
-        // 列宽：C=26 字符，Rust=31 字符
+        // 列宽：C=60 字符，Rust=80 字符
         // 为 "..." 后缀保留 3 个字符
-        let c_display = if c_line.chars().count() > 26 {
-            let truncated: String = c_line.chars().take(23).collect();
+        let c_display = if c_line.chars().count() > 60 {
+            let truncated: String = c_line.chars().take(57).collect();
             format!("{}...", truncated)
         } else {
             c_line.to_string()
         };
         
-        let rust_display = if rust_line.chars().count() > 31 {
-            let truncated: String = rust_line.chars().take(28).collect();
+        let rust_display = if rust_line.chars().count() > 80 {
+            let truncated: String = rust_line.chars().take(77).collect();
             format!("{}...", truncated)
         } else {
             rust_line.to_string()
         };
         
         println!(
-            "│ {:3} {:<26}│ {:3} {:<31}│",
+            "│ {:3} {:<60}│ {:3} {:<80}│",
             format!("{}", i + 1).dimmed(),
             c_display,
             format!("{}", i + 1).dimmed(),
@@ -63,7 +63,7 @@ pub fn display_code_comparison(
         );
     }
     
-    println!("└{:─<31}┴{:─<36}┘", "", "");
+    println!("└{:─<65}┴{:─<85}┘", "", "");
     
     // 显示结果部分
     display_result_section(result_message, result_type);
@@ -74,17 +74,17 @@ pub fn display_code_comparison(
 /// 显示测试或构建结果部分
 fn display_result_section(message: &str, result_type: ResultType) {
     println!();
-    println!("{}", "═══════════════════════════════════════════════════════════════════".bright_cyan());
+    println!("{}", "══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════".bright_cyan());
     
     let header = match result_type {
-        ResultType::TestPass => "                        Test Result                                ".bright_green().bold(),
-        ResultType::TestFail => "                        Test Result                                ".bright_red().bold(),
-        ResultType::BuildSuccess => "                       Build Result                               ".bright_green().bold(),
-        ResultType::BuildFail => "                       Build Result                               ".bright_red().bold(),
+        ResultType::TestPass => "                                                              Test Result                                                                      ".bright_green().bold(),
+        ResultType::TestFail => "                                                              Test Result                                                                      ".bright_red().bold(),
+        ResultType::BuildSuccess => "                                                             Build Result                                                                     ".bright_green().bold(),
+        ResultType::BuildFail => "                                                             Build Result                                                                     ".bright_red().bold(),
     };
     
     println!("{}", header);
-    println!("{}", "═══════════════════════════════════════════════════════════════════".bright_cyan());
+    println!("{}", "══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════".bright_cyan());
     
     // 用适当的颜色格式化消息
     let formatted_message = match result_type {
