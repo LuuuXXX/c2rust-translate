@@ -355,7 +355,7 @@ pub fn run_hybrid_build_interactive(
 }
 
 /// Handle test failure interactively
-fn handle_test_failure_interactive(
+pub fn handle_test_failure_interactive(
     feature: &str,
     file_type: &str,
     rs_file: &std::path::Path,

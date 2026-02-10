@@ -631,26 +631,105 @@ fn complete_file_processing<F>(
 where
     F: Fn(&str) -> String
 {
+    // Run hybrid build tests first before committing
+    println!("│");
+    println!("│ {}", format_progress("Hybrid Build Tests").bright_magenta().bold());
+    println!("│ {}", "Running hybrid build tests...".bright_blue());
+    
+    // Run tests with custom handling to detect success/failure
+    builder::c2rust_clean(feature)?;
+    builder::c2rust_build(feature)?;
+    
+    let test_result = builder::c2rust_test(feature);
+    
+    match test_result {
+        Ok(_) => {
+            println!("│ {}", "✓ Hybrid build tests passed".bright_green().bold());
+            
+            // Show code comparison and success prompt if not in auto-accept mode
+            if !interaction::is_auto_accept_mode() {
+                let c_file = rs_file.with_extension("c");
+                
+                // Show file locations
+                interaction::display_file_paths(Some(&c_file), rs_file);
+                
+                // Use diff display for better comparison
+                let success_message = "✓ All tests passed";
+                if let Err(e) = diff_display::display_code_comparison(
+                    &c_file,
+                    rs_file,
+                    success_message,
+                    diff_display::ResultType::TestPass,
+                ) {
+                    // Fallback to simple message if comparison fails
+                    println!("│ {}", format!("Failed to display comparison: {}", e).yellow());
+                    println!("│ {}", success_message.bright_green().bold());
+                }
+                
+                // Get user choice
+                let choice = interaction::prompt_compile_success_choice()?;
+                
+                match choice {
+                    interaction::CompileSuccessChoice::Accept => {
+                        println!("│ {}", "You chose: Accept this code".bright_cyan());
+                        // Continue with commit
+                    }
+                    interaction::CompileSuccessChoice::AutoAccept => {
+                        println!("│ {}", "You chose: Auto-accept all subsequent translations".bright_cyan());
+                        interaction::enable_auto_accept_mode();
+                        // Continue with commit
+                    }
+                    interaction::CompileSuccessChoice::ManualFix => {
+                        println!("│ {}", "You chose: Manual fix".bright_cyan());
+                        
+                        // Open vim for manual editing
+                        match interaction::open_in_vim(rs_file) {
+                            Ok(_) => {
+                                // After editing, rebuild and test again
+                                println!("│ {}", "Rebuilding and retesting after manual changes...".bright_blue());
+                                builder::c2rust_build(feature)?;
+                                builder::c2rust_test(feature)?;
+                                println!("│ {}", "✓ Tests still pass after manual changes".bright_green());
+                                // Continue with commit
+                            }
+                            Err(e) => {
+                                return Err(e).context("Failed to open vim for manual editing");
+                            }
+                        }
+                    }
+                    interaction::CompileSuccessChoice::Exit => {
+                        println!("│ {}", "You chose: Exit".yellow());
+                        anyhow::bail!("User chose to exit after successful tests");
+                    }
+                }
+            } else {
+                println!("│ {}", "Auto-accept mode: automatically accepting translation".bright_green());
+            }
+        }
+        Err(test_error) => {
+            // Tests failed - use interactive handler
+            builder::handle_test_failure_interactive(feature, file_type, rs_file, test_error)?;
+        }
+    }
+    
+    // Commit the changes
     println!("│");
     println!("│ {}", format_progress("Commit").bright_magenta().bold());
     println!("│ {}", "Committing changes...".bright_blue());
     git::git_commit(&format!("Translate {} from C to Rust (feature: {})", file_name, feature), feature)?;
     println!("│ {}", "✓ Changes committed".bright_green());
 
+    // Update code analysis
     println!("│");
     println!("│ {}", format_progress("Update Analysis").bright_magenta().bold());
     println!("│ {}", "Updating code analysis...".bright_blue());
     analyzer::update_code_analysis(feature)?;
     println!("│ {}", "✓ Code analysis updated".bright_green());
 
+    // Commit analysis
     println!("│");
     println!("│ {}", format_progress("Commit Analysis").bright_magenta().bold());
     git::git_commit(&format!("Update code analysis for {}", feature), feature)?;
-
-    println!("│");
-    println!("│ {}", format_progress("Hybrid Build Tests").bright_magenta().bold());
-    println!("│ {}", "Running hybrid build tests...".bright_blue());
-    builder::run_hybrid_build_interactive(feature, Some(file_type), Some(rs_file))?;
     
     println!("{}", "└─ File processing complete".bright_white().bold());
     
