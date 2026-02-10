@@ -501,11 +501,6 @@ pub(crate) fn handle_build_failure_interactive(
                                             Ok(_) => {
                                                 // 构建成功，现在尝试测试
                                                 println!("│ {}", "✓ Build passed after manual fix!".bright_green().bold());
-                                                
-                                                println!("│ {}", "Updating code analysis...".bright_blue());
-                                                crate::analyzer::update_code_analysis(feature)?;
-                                                println!("│ {}", "✓ Code analysis updated".bright_green());
-                                                
                                                 println!("│");
                                                 println!("│ {}", "Running tests...".bright_blue().bold());
                                                 
@@ -582,11 +577,6 @@ pub(crate) fn handle_build_failure_interactive(
                             Ok(_) => {
                                 // 构建成功，现在尝试测试
                                 println!("│ {}", "✓ Build passed after manual fix!".bright_green().bold());
-                                
-                                println!("│ {}", "Updating code analysis...".bright_blue());
-                                crate::analyzer::update_code_analysis(feature)?;
-                                println!("│ {}", "✓ Code analysis updated".bright_green());
-                                
                                 println!("│");
                                 println!("│ {}", "Running tests...".bright_blue().bold());
                                 
@@ -730,11 +720,6 @@ pub(crate) fn handle_test_failure_interactive(
                 match c2rust_test(feature) {
                     Ok(_) => {
                         println!("│ {}", "✓ Tests passed after applying fix!".bright_green().bold());
-                        
-                        println!("│ {}", "Updating code analysis...".bright_blue());
-                        crate::analyzer::update_code_analysis(feature)?;
-                        println!("│ {}", "✓ Code analysis updated".bright_green());
-                        
                         return Ok(());
                     }
                     Err(e) => {
@@ -769,11 +754,6 @@ pub(crate) fn handle_test_failure_interactive(
                                         match c2rust_test(feature) {
                                             Ok(_) => {
                                                 println!("│ {}", "✓ Tests passed after manual fix!".bright_green().bold());
-                                                
-                                                println!("│ {}", "Updating code analysis...".bright_blue());
-                                                crate::analyzer::update_code_analysis(feature)?;
-                                                println!("│ {}", "✓ Code analysis updated".bright_green());
-                                                
                                                 return Ok(());
                                             }
                                             Err(e) => {
@@ -816,11 +796,6 @@ pub(crate) fn handle_test_failure_interactive(
                         match c2rust_test(feature) {
                             Ok(_) => {
                                 println!("│ {}", "✓ Tests passed after manual fix!".bright_green().bold());
-                                
-                                println!("│ {}", "Updating code analysis...".bright_blue());
-                                crate::analyzer::update_code_analysis(feature)?;
-                                println!("│ {}", "✓ Code analysis updated".bright_green());
-                                
                                 return Ok(());
                             }
                             Err(e) => {
