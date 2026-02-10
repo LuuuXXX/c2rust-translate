@@ -4,6 +4,7 @@ use std::process::Command;
 use std::time::Instant;
 use crate::util;
 use colored::Colorize;
+use crate::analyzer;
 
 /// 在每个特性的 Rust 项目目录 `<feature>/rust` 中运行 `cargo build`
 ///
