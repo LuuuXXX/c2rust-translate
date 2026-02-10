@@ -247,6 +247,35 @@ pub fn prompt_compile_failure_choice() -> Result<FailureChoice> {
     }
 }
 
+/// 构建失败时提示用户
+pub fn prompt_build_failure_choice() -> Result<FailureChoice> {
+    println!("│");
+    println!("│ {}", "⚠ Build failed - What would you like to do?".red().bold());
+    println!("│");
+    println!("│ {}", "Available options:".bright_cyan());
+    println!("│   {} Add fix suggestion for AI to modify", "1.".bright_white());
+    println!("│   {} Manual fix (edit the file with VIM)", "2.".bright_white());
+    println!("│   {} Exit (abort the translation process)", "3.".bright_white());
+    println!("│");
+    
+    loop {
+        print!("│ {} ", "Enter your choice (1/2/3):".bright_yellow());
+        io::stdout().flush()?;
+        
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+        
+        match input.trim() {
+            "1" => return Ok(FailureChoice::AddSuggestion),
+            "2" => return Ok(FailureChoice::ManualFix),
+            "3" => return Ok(FailureChoice::Exit),
+            _ => {
+                println!("│ {}", format!("Invalid choice '{}'. Please enter 1, 2, or 3.", input.trim()).yellow());
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

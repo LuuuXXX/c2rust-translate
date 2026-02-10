@@ -411,7 +411,7 @@ pub(crate) fn handle_build_failure_interactive(
     }
     
     // 使用新提示获取用户选择
-    let choice = interaction::prompt_compile_failure_choice()?;
+    let choice = interaction::prompt_build_failure_choice()?;
     
     match choice {
         interaction::FailureChoice::AddSuggestion => {
@@ -474,7 +474,7 @@ pub(crate) fn handle_build_failure_interactive(
                         // 询问用户是否想再试一次
                         println!("│");
                         println!("│ {}", "Build still has errors. What would you like to do?".yellow());
-                        let retry_choice = interaction::prompt_compile_failure_choice()?;
+                        let retry_choice = interaction::prompt_build_failure_choice()?;
                         
                         match retry_choice {
                             interaction::FailureChoice::AddSuggestion => {
@@ -513,9 +513,31 @@ pub(crate) fn handle_build_failure_interactive(
                                             }
                                             Err(e) => {
                                                 println!("│ {}", "✗ Build still failing after manual fix".red());
-                                                // 更新 current_error 并继续外部循环
-                                                current_error = e;
-                                                continue;
+                                                
+                                                // 询问用户是否想再试一次
+                                                println!("│");
+                                                println!("│ {}", "Build still has errors. What would you like to do?".yellow());
+                                                let nested_retry_choice = interaction::prompt_build_failure_choice()?;
+                                                
+                                                match nested_retry_choice {
+                                                    interaction::FailureChoice::AddSuggestion => {
+                                                        // 更新 current_error 并继续外部循环以使用新建议重试
+                                                        current_error = e;
+                                                        continue;
+                                                    }
+                                                    interaction::FailureChoice::ManualFix => {
+                                                        // 重新打开 vim
+                                                        println!("│ {}", "Reopening Vim for another manual fix attempt...".bright_blue());
+                                                        interaction::open_in_vim(rs_file)
+                                                            .context("Failed to reopen vim for additional manual fix")?;
+                                                        // 更新错误并继续外部循环以重新构建
+                                                        current_error = e;
+                                                        continue;
+                                                    }
+                                                    interaction::FailureChoice::Exit => {
+                                                        return Err(e).context("Build failed after manual fix and user chose to exit");
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -571,7 +593,7 @@ pub(crate) fn handle_build_failure_interactive(
                                 // 询问用户是否想再试一次
                                 println!("│");
                                 println!("│ {}", "Build still has errors. What would you like to do?".yellow());
-                                let retry_choice = interaction::prompt_compile_failure_choice()?;
+                                let retry_choice = interaction::prompt_build_failure_choice()?;
                                 
                                 match retry_choice {
                                     interaction::FailureChoice::ManualFix => {
@@ -583,7 +605,8 @@ pub(crate) fn handle_build_failure_interactive(
                                     }
                                     interaction::FailureChoice::AddSuggestion => {
                                         println!("│ {}", "Switching to suggestion-based fix flow.".yellow());
-                                        return Err(e).context("Build still failing after manual fix; user chose to add a suggestion");
+                                        // 递归调用以进入基于建议的交互式修复流程
+                                        return handle_build_failure_interactive(feature, file_type, rs_file, e);
                                     }
                                     interaction::FailureChoice::Exit => {
                                         return Err(e).context("Build failed after manual fix and user chose to exit");
