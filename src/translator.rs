@@ -6,10 +6,10 @@ use crate::util;
 use crate::constants;
 use colored::Colorize;
 
-/// Get the translate script directory from environment variable
+/// 从环境变量获取翻译脚本目录
 /// 
-/// The environment variable should contain the path to the directory
-/// containing the translate_and_fix.py script.
+/// 环境变量应包含包含 translate_and_fix.py 脚本的
+/// 目录的路径。
 fn get_translate_script_dir() -> Result<PathBuf> {
     match std::env::var("C2RUST_TRANSLATE_DIT") {
         Ok(path) => {
@@ -28,34 +28,34 @@ fn get_translate_script_dir() -> Result<PathBuf> {
     }
 }
 
-/// Get the full path to the translate_and_fix.py script
+/// 获取 translate_and_fix.py 脚本的完整路径
 /// 
-/// This reads the directory path from C2RUST_TRANSLATE_DIT environment variable
-/// and appends the script filename.
+/// 这从 C2RUST_TRANSLATE_DIT 环境变量读取目录路径
+/// 并附加脚本文件名。
 fn get_translate_script_full_path() -> Result<PathBuf> {
     let translate_script_dir = get_translate_script_dir()?;
     Ok(translate_script_dir.join("translate_and_fix.py"))
 }
 
-/// Get the config.toml path by searching for .c2rust directory
+/// 通过搜索 .c2rust 目录获取 config.toml 路径
 fn get_config_path() -> Result<PathBuf> {
     let project_root = util::find_project_root()?;
     Ok(project_root.join(".c2rust/config.toml"))
 }
 
-/// Build the argument list for the fix command
+/// 构建修复命令的参数列表
 /// 
-/// Returns a vector of arguments to be passed to translate_and_fix.py for fixing errors.
-/// The arguments follow the format: script_path --config --type syntax_fix --c_code --rust_code --output --error [--suggestion]
+/// 返回一个参数向量，传递给 translate_and_fix.py 用于修复错误。
+/// 参数遵循格式：script_path --config --type syntax_fix --c_code --rust_code --output --error [--suggestion]
 /// 
-/// # Parameters
-/// - `script_path`: Path to the translate_and_fix.py script (included as first element in returned vector)
-/// - `config_path`: Path to the config.toml file
-/// - `c_code_file`: Path to the C source file
-/// - `rust_code_file`: Path to the Rust file to be fixed (input)
-/// - `output_file`: Path where the fixed result should be written (typically same as rust_code_file)
-/// - `error_file`: Path to the temporary file containing compiler error messages
-/// - `suggestion_file`: Optional path to the suggestion file (c2rust.md)
+/// # 参数
+/// - `script_path`: translate_and_fix.py 脚本的路径（作为返回向量的第一个元素包含）
+/// - `config_path`: config.toml 文件的路径
+/// - `c_code_file`: C 源文件的路径
+/// - `rust_code_file`: 要修复的 Rust 文件的路径（输入）
+/// - `output_file`: 应写入修复结果的路径（通常与 rust_code_file 相同）
+/// - `error_file`: 包含编译器错误消息的临时文件的路径
+/// - `suggestion_file`: 建议文件的可选路径（c2rust.md）
 fn build_fix_args<'a>(
     script_path: &'a str,
     config_path: &'a str,
@@ -81,7 +81,7 @@ fn build_fix_args<'a>(
         error_file,
     ];
     
-    // Add suggestion file if provided
+    // 如果提供了建议文件则添加
     if let Some(suggestion) = suggestion_file {
         args.push("--suggestion");
         args.push(suggestion);
@@ -90,7 +90,7 @@ fn build_fix_args<'a>(
     args
 }
 
-/// Display code from a file with formatted output
+/// 使用格式化输出显示文件中的代码
 pub(crate) fn display_code(file_path: &Path, header: &str, max_lines: usize, show_full: bool) {
     match std::fs::read_to_string(file_path) {
         Ok(content) => {
@@ -114,7 +114,7 @@ pub(crate) fn display_code(file_path: &Path, header: &str, max_lines: usize, sho
     }
 }
 
-/// Translate a C file to Rust using the translation tool
+/// 使用翻译工具将 C 文件翻译为 Rust
 pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_file: &Path, show_full_output: bool) -> Result<()> {
     util::validate_feature_name(feature)?;
     
@@ -174,13 +174,13 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
         anyhow::bail!("Translation failed with exit code: {} (check output above for details)", status.code().unwrap_or(-1));
     }
 
-    // Read and display the translated Rust code
+    // 读取并显示翻译后的 Rust 代码
     display_code(rs_file, "─ Translated Rust Code ─", constants::CODE_PREVIEW_LINES, show_full_output);
 
     Ok(())
 }
 
-/// Display error message preview
+/// 显示错误消息预览
 fn display_error_preview(error_msg: &str, show_full: bool) {
     let error_lines: Vec<&str> = error_msg.lines().collect();
     let total_lines = error_lines.len();
@@ -200,7 +200,7 @@ fn display_error_preview(error_msg: &str, show_full: bool) {
     println!("│");
 }
 
-/// Create temporary file with error message
+/// 创建包含错误消息的临时文件
 fn create_error_temp_file(error_msg: &str) -> Result<tempfile::NamedTempFile> {
     let mut temp_file = tempfile::NamedTempFile::new()
         .context("Failed to create temporary error file")?;
@@ -209,7 +209,7 @@ fn create_error_temp_file(error_msg: &str) -> Result<tempfile::NamedTempFile> {
     Ok(temp_file)
 }
 
-/// Fix translation errors using the translation tool
+/// 使用翻译工具修复翻译错误
 pub fn fix_translation_error(
     feature: &str, 
     _file_type: &str, 
@@ -236,8 +236,8 @@ pub fn fix_translation_error(
     let temp_file = create_error_temp_file(error_msg)?;
     let script_path = get_translate_script_full_path()?;
     
-    // Derive C source file path from Rust file path
-    // Example: var_example.rs -> var_example.c
+    // 从 Rust 文件路径派生 C 源文件路径
+    // 示例：var_example.rs -> var_example.c
     let c_file = rs_file.with_extension("c");
     if let Err(e) = std::fs::metadata(&c_file) {
         if e.kind() == std::io::ErrorKind::NotFound {
@@ -254,7 +254,7 @@ pub fn fix_translation_error(
         }
     }
     
-    // Check if suggestion file exists
+    // 检查建议文件是否存在
     let suggestion_path = crate::suggestion::get_suggestion_file_path()?;
     let suggestion_exists = suggestion_path.exists();
     
@@ -324,7 +324,7 @@ mod tests {
     use super::*;
     use serial_test::serial;
     
-    /// Guard to ensure environment variable is restored even on panic
+    /// 确保即使在 panic 时也能恢复环境变量的守卫
     struct EnvVarGuard {
         key: &'static str,
         original_value: Option<std::ffi::OsString>,
@@ -475,10 +475,10 @@ mod tests {
         let output = "/project/feature/rust/code.rs";
         let error = "/tmp/error.txt";
         
-        // Test without suggestion
+        // 测试没有建议
         let args = build_fix_args(script, config, c_code, rust_code, output, error, None);
         
-        // Verify the exact sequence of arguments
+        // 验证参数的准确顺序
         assert_eq!(args.len(), 13);
         assert_eq!(args[0], script);
         assert_eq!(args[1], "--config");
@@ -494,7 +494,7 @@ mod tests {
         assert_eq!(args[11], "--error");
         assert_eq!(args[12], error);
         
-        // Test with suggestion
+        // 测试带有建议
         let suggestion = "/project/c2rust.md";
         let args_with_suggestion = build_fix_args(script, config, c_code, rust_code, output, error, Some(suggestion));
         
@@ -508,28 +508,28 @@ mod tests {
         use tempfile::NamedTempFile;
         use std::io::Write;
         
-        // Create a temporary file with 20 lines
+        // 创建包含 20 行的临时文件
         let mut temp_file = NamedTempFile::new().unwrap();
         for i in 1..=20 {
             writeln!(temp_file, "Line {}", i).unwrap();
         }
         temp_file.flush().unwrap();
         
-        // Test with show_full = false (should truncate to max_lines)
-        // We can't easily capture stdout in a unit test, but we can verify the function
-        // doesn't panic and reads the file correctly by testing the logic independently
+        // 测试 show_full = false（应截断到 max_lines）
+        // 我们无法在单元测试中轻松捕获 stdout，但我们可以通过
+        // 独立测试逻辑来验证函数不会 panic 并正确读取文件
         let content = std::fs::read_to_string(temp_file.path()).unwrap();
         let lines: Vec<&str> = content.lines().collect();
         let total_lines = lines.len();
         let max_lines = 10;
         
-        // Verify truncation logic when show_full = false
+        // 当 show_full = false 时验证截断逻辑
         let show_full = false;
         let display_lines = if show_full { total_lines } else { std::cmp::min(total_lines, max_lines) };
         assert_eq!(display_lines, 10, "Should truncate to max_lines when show_full is false");
         assert!(total_lines > display_lines, "Should show truncation message");
         
-        // Verify full display logic when show_full = true
+        // 当 show_full = true 时验证完整显示逻辑
         let show_full = true;
         let display_lines = if show_full { total_lines } else { std::cmp::min(total_lines, max_lines) };
         assert_eq!(display_lines, 20, "Should display all lines when show_full is true");
@@ -541,7 +541,7 @@ mod tests {
         use tempfile::NamedTempFile;
         use std::io::Write;
         
-        // Create a temporary file with only 5 lines
+        // 创建只有 5 行的临时文件
         let mut temp_file = NamedTempFile::new().unwrap();
         for i in 1..=5 {
             writeln!(temp_file, "Line {}", i).unwrap();
@@ -553,7 +553,7 @@ mod tests {
         let total_lines = lines.len();
         let max_lines = 10;
         
-        // Verify no truncation when lines <= max_lines, regardless of show_full
+        // 验证当行数 <= max_lines 时不截断，无论 show_full 如何
         let show_full = false;
         let display_lines = if show_full { total_lines } else { std::cmp::min(total_lines, max_lines) };
         assert_eq!(display_lines, 5, "Should display all lines when total < max_lines");
@@ -566,7 +566,7 @@ mod tests {
     
     #[test]
     fn test_display_error_preview_truncation_behavior() {
-        // Create an error message with many lines
+        // 创建包含多行的错误消息
         let mut error_msg = String::new();
         for i in 1..=25 {
             error_msg.push_str(&format!("Error line {}\n", i));
@@ -575,14 +575,14 @@ mod tests {
         let error_lines: Vec<&str> = error_msg.lines().collect();
         let total_lines = error_lines.len();
         
-        // Verify truncation logic when show_full = false
+        // 当 show_full = false 时验证截断逻辑
         let show_full = false;
         let display_lines = if show_full { total_lines } else { std::cmp::min(total_lines, constants::ERROR_PREVIEW_LINES) };
         assert_eq!(display_lines, constants::ERROR_PREVIEW_LINES, 
             "Should truncate to ERROR_PREVIEW_LINES when show_full is false");
         assert!(total_lines > display_lines, "Should show truncation message");
         
-        // Verify full display logic when show_full = true
+        // 当 show_full = true 时验证完整显示逻辑
         let show_full = true;
         let display_lines = if show_full { total_lines } else { std::cmp::min(total_lines, constants::ERROR_PREVIEW_LINES) };
         assert_eq!(display_lines, 25, "Should display all error lines when show_full is true");
@@ -591,13 +591,13 @@ mod tests {
     
     #[test]
     fn test_display_error_preview_no_truncation_when_lines_less_than_max() {
-        // Create a short error message
+        // 创建简短的错误消息
         let error_msg = "Error line 1\nError line 2\nError line 3";
         
         let error_lines: Vec<&str> = error_msg.lines().collect();
         let total_lines = error_lines.len();
         
-        // Verify no truncation when lines <= ERROR_PREVIEW_LINES, regardless of show_full
+        // 验证当行数 <= ERROR_PREVIEW_LINES 时不截断，无论 show_full 如何
         let show_full = false;
         let display_lines = if show_full { total_lines } else { std::cmp::min(total_lines, constants::ERROR_PREVIEW_LINES) };
         assert_eq!(display_lines, 3, "Should display all error lines when total < ERROR_PREVIEW_LINES");
@@ -610,7 +610,7 @@ mod tests {
     
     #[test]
     fn test_display_error_preview_line_count_message() {
-        // Create an error message with exactly ERROR_PREVIEW_LINES + 5 lines
+        // 创建正好 ERROR_PREVIEW_LINES + 5 行的错误消息
         let num_lines = constants::ERROR_PREVIEW_LINES + 5;
         let mut error_msg = String::new();
         for i in 1..=num_lines {
@@ -620,11 +620,11 @@ mod tests {
         let error_lines: Vec<&str> = error_msg.lines().collect();
         let total_lines = error_lines.len();
         
-        // When truncated, verify the counts are correct
+        // 截断时，验证计数是正确的
         let show_full = false;
         let display_lines = if show_full { total_lines } else { std::cmp::min(total_lines, constants::ERROR_PREVIEW_LINES) };
         
-        // The truncation message should show: "showing {display_lines} of {total_lines} lines"
+        // 截断消息应显示："showing {display_lines} of {total_lines} lines"
         assert_eq!(display_lines, constants::ERROR_PREVIEW_LINES);
         assert_eq!(total_lines, num_lines);
         assert!(total_lines > display_lines, "Total lines should be greater than displayed lines");

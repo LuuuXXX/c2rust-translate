@@ -16,19 +16,19 @@ pub(crate) mod error_handler;
 use anyhow::{Context, Result};
 use colored::Colorize;
 
-/// Main translation workflow for a feature
+/// 特性的主要翻译工作流
 pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize, show_full_output: bool) -> Result<()> {
     let msg = format!("Starting translation for feature: {}", feature);
     println!("{}", msg.bright_cyan().bold());
     logger::log_message(&msg);
 
-    // Validate feature name to prevent path traversal attacks
+    // 验证特性名称以防止路径遍历攻击
     util::validate_feature_name(feature)?;
 
-    // Find the project root first
+    // 首先查找项目根目录
     let project_root = util::find_project_root()?;
     
-    // Step 1: Check if rust directory exists (with proper IO error handling)
+    // 步骤 1：检查 rust 目录是否存在（通过适当的 IO 错误处理）
     let feature_path = project_root.join(".c2rust").join(feature);
     let rust_dir = feature_path.join("rust");
 
@@ -55,7 +55,7 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
         println!("{}", "Rust directory does not exist. Initializing...".yellow());
         analyzer::initialize_feature(feature)?;
         
-        // Verify rust directory was created and is actually a directory
+        // 验证 rust 目录已创建并且确实是一个目录
         match std::fs::metadata(&rust_dir) {
             Ok(metadata) => {
                 if !metadata.is_dir() {
@@ -76,18 +76,18 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
             }
         }
         
-        // Commit the initialization
+        // 提交初始化
         git::git_commit(&format!("Initialize {} rust directory", feature), feature)?;
     }
 
-    // Step 1: Target artifact selection
-    // Prompt user to select target artifact before processing files
+    // 步骤 1：目标工件选择
+    // 在处理文件之前提示用户选择目标工件
     println!("\n{}", "Step 1: Select target artifact".bright_cyan().bold());
     let selected_target = target_selector::prompt_target_selection(feature)?;
     target_selector::store_target_in_config(feature, &selected_target)?;
 
-    // Initialize progress state before the main loop
-    // Count total .rs files and calculate how many have already been processed
+    // 在主循环之前初始化进度状态
+    // 计算总 .rs 文件数和已处理的文件数
     let total_rs_files = file_scanner::count_all_rs_files(&rust_dir)?;
     let initial_empty_count = file_scanner::find_empty_rs_files(&rust_dir)?.len();
     let already_processed = total_rs_files.saturating_sub(initial_empty_count);
@@ -97,10 +97,10 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
         already_processed
     );
 
-    // Step 2: Main loop - process all empty .rs files
+    // 步骤 2：主循环 - 处理所有空的 .rs 文件
     println!("\n{}", "Step 2: Translate C source files".bright_cyan().bold());
     loop {
-        // Step 2.1: Try to build first
+        // 步骤 2.1：首先尝试构建
         println!("\n{}", "Building project...".bright_blue().bold());
         match builder::cargo_build(feature, show_full_output) {
             Ok(_) => {
@@ -110,13 +110,13 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
                 println!("{}", "✗ Initial build failed!".red().bold());
                 println!("{}", "This may indicate issues with the project setup or previous translations.".yellow());
                 
-                // Offer interactive handling for startup build failure
+                // 为启动构建失败提供交互式处理
                 let choice = interaction::prompt_user_choice("Initial build failure", false)?;
                 
                 match choice {
                     interaction::UserChoice::Continue => {
                         println!("│ {}", "Continuing despite build failure. You can fix issues during file processing.".yellow());
-                        // Continue with the workflow
+                        // 继续工作流
                     }
                     interaction::UserChoice::ManualFix => {
                         println!("│ {}", "Please manually fix the build issues and run the tool again.".yellow());
@@ -143,15 +143,15 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
             Err(e) => {
                 println!("{}", "✗ Initial hybrid build tests failed!".red().bold());
                 
-                // Try to parse error and locate files
+                // 尝试解析错误并定位文件
                 match error_handler::parse_error_for_files(&e.to_string(), feature) {
                     Ok(files) if !files.is_empty() => {
-                        // Found files, enter repair flow
+                        // 找到文件，进入修复流程
                         println!("{}", "Attempting to automatically locate and fix files from error...".yellow());
                         error_handler::handle_startup_test_failure_with_files(feature, e, files)?;
                     }
                     Ok(_) => {
-                        // No files found in error message
+                        // 错误消息中未找到文件
                         println!("{}", "Unable to automatically locate files from error.".yellow());
                         println!("{}", "This may indicate issues with the test environment or previous translations.".yellow());
                         
@@ -160,7 +160,7 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
                         match choice {
                             interaction::UserChoice::Continue => {
                                 println!("│ {}", "Continuing despite test failure. You can fix issues during file processing.".yellow());
-                                // Continue with the workflow
+                                // 继续工作流
                             }
                             interaction::UserChoice::ManualFix | interaction::UserChoice::Exit => {
                                 return Err(e).context("Initial tests failed");
@@ -168,7 +168,7 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
                         }
                     }
                     Err(parse_err) => {
-                        // Failed to parse error message (e.g., find_project_root failure)
+                        // 解析错误消息失败（例如，find_project_root 失败）
                         println!("{}", format!("Error parsing failure message: {}", parse_err).yellow());
                         println!("{}", "Unable to automatically locate files from error.".yellow());
                         println!("{}", "This may indicate issues with the test environment or previous translations.".yellow());
@@ -178,7 +178,7 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
                         match choice {
                             interaction::UserChoice::Continue => {
                                 println!("│ {}", "Continuing despite test failure. You can fix issues during file processing.".yellow());
-                                // Continue with the workflow
+                                // 继续工作流
                             }
                             interaction::UserChoice::ManualFix | interaction::UserChoice::Exit => {
                                 return Err(e).context("Initial tests failed");
@@ -189,7 +189,7 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
             }
         }
         
-        // Step 2.2: Scan for empty .rs files (unprocessed files)
+        // 步骤 2.2：扫描空的 .rs 文件（未处理的文件）
         let empty_rs_files = file_scanner::find_empty_rs_files(&rust_dir)?;
         
         if empty_rs_files.is_empty() {
@@ -202,23 +202,23 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
         println!("{}", format!("Found {} empty .rs file(s) to process", 
             empty_rs_files.len()).cyan());
 
-        // Select files to process based on allow_all flag
+        // 基于 allow_all 标志选择要处理的文件
         let selected_indices: Vec<usize> = if allow_all {
-            // Process all empty files without prompting
+            // 不提示处理所有空文件
             (0..empty_rs_files.len()).collect()
         } else {
-            // Prompt user to select files
+            // 提示用户选择文件
             let file_refs: Vec<_> = empty_rs_files.iter().collect();
             file_scanner::prompt_file_selection(&file_refs, &rust_dir)?
         };
 
         for &idx in selected_indices.iter() {
             let rs_file = &empty_rs_files[idx];
-            // Get current progress position (persists across loop iterations)
+            // 获取当前进度位置（在循环迭代之间保持）
             let current_position = progress_state.get_current_position();
             let total_count = progress_state.get_total_count();
             
-            // Get file name for display
+            // 获取文件名以供显示
             let file_name = rs_file
                 .file_name()
                 .and_then(|s| s.to_str())
@@ -233,7 +233,7 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
             
             process_rs_file(feature, rs_file, file_name, current_position, total_count, max_fix_attempts, show_full_output)?;
             
-            // Mark file as processed in this session
+            // 标记此会话中已处理的文件
             progress_state.mark_processed();
         }
     }
@@ -241,7 +241,7 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
     Ok(())
 }
 
-/// Process a single .rs file through the translation workflow
+/// 通过翻译工作流处理单个 .rs 文件
 fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, current_position: usize, total_count: usize, max_fix_attempts: usize, show_full_output: bool) -> Result<()> {
     use constants::MAX_TRANSLATION_ATTEMPTS;
     
@@ -250,7 +250,7 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, cu
         
         print_attempt_header(attempt_number, rs_file);
         
-        // Add message for retry attempts  
+        // 为重试尝试添加消息  
         if attempt_number > 1 {
             println!("│ {}", "Starting fresh translation (previous translation will be overwritten)...".bright_cyan());
         }
@@ -262,10 +262,10 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, cu
             format!("[{}/{}] Processing {} - {}", current_position, total_count, file_name, operation)
         };
         
-        // Translate C to Rust
+        // 将 C 翻译为 Rust
         translate_file(feature, file_type, rs_file, &format_progress, show_full_output)?;
         
-        // Build and fix errors
+        // 构建并修复错误
         let build_successful = build_and_fix_loop(
             feature, 
             file_type, 
@@ -287,7 +287,7 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, cu
     anyhow::bail!("Unexpected: all retry attempts completed without resolution")
 }
 
-/// Print header for current attempt
+/// 打印当前尝试的标题
 fn print_attempt_header(attempt_number: usize, rs_file: &std::path::Path) {
     if attempt_number > 1 {
         let retry_number = attempt_number - 1;
@@ -298,7 +298,7 @@ fn print_attempt_header(attempt_number: usize, rs_file: &std::path::Path) {
     }
 }
 
-/// Extract file type and name, print info
+/// 提取文件类型和名称，打印信息
 fn extract_and_validate_file_info(rs_file: &std::path::Path) -> Result<(&'static str, &str)> {
     let file_stem = rs_file
         .file_stem()
@@ -314,7 +314,7 @@ fn extract_and_validate_file_info(rs_file: &std::path::Path) -> Result<(&'static
     Ok((file_type, name))
 }
 
-/// Check if corresponding C file exists
+/// 检查对应的 C 文件是否存在
 fn check_c_file_exists(rs_file: &std::path::Path) -> Result<()> {
     use std::fs;
     
@@ -333,7 +333,7 @@ fn check_c_file_exists(rs_file: &std::path::Path) -> Result<()> {
     }
 }
 
-/// Translate C file to Rust
+/// 将 C 文件翻译为 Rust
 fn translate_file<F>(feature: &str, file_type: &str, rs_file: &std::path::Path, format_progress: &F, show_full_output: bool) -> Result<()> 
 where
     F: Fn(&str) -> String
@@ -356,7 +356,7 @@ where
     Ok(())
 }
 
-/// Build and fix errors in a loop
+/// 在循环中构建并修复错误
 fn build_and_fix_loop<F>(
     feature: &str,
     file_type: &str,
@@ -405,8 +405,8 @@ where
     Ok(false)
 }
 
-/// Handle the case when max fix attempts are reached
-/// Returns Ok(true) if processing should continue without retrying translation, Ok(false) if translation should be retried
+/// 处理达到最大修复尝试次数的情况
+/// 如果处理应继续而不重试翻译，则返回 Ok(true)；如果应重试翻译，则返回 Ok(false)
 fn handle_max_fix_attempts_reached(
     build_error: anyhow::Error,
     file_name: &str,
@@ -423,13 +423,13 @@ fn handle_max_fix_attempts_reached(
     println!("│ {}", "⚠ Maximum fix attempts reached!".red().bold());
     println!("│ {}", format!("File {} still has build errors after {} fix attempts.", file_name, max_fix_attempts).yellow());
     
-    // Display code comparison and build error
+    // 显示代码比较和构建错误
     let c_file = rs_file.with_extension("c");
     
-    // Show file locations
+    // 显示文件位置
     interaction::display_file_paths(Some(&c_file), rs_file);
     
-    // Use diff display for better comparison
+    // 使用差异显示进行更好的比较
     let error_message = format!("✗ Build Error:\n{}", build_error);
     if let Err(e) = diff_display::display_code_comparison(
         &c_file,
@@ -437,7 +437,7 @@ fn handle_max_fix_attempts_reached(
         &error_message,
         diff_display::ResultType::BuildFail,
     ) {
-        // Fallback to old display if comparison fails
+        // 如果比较失败则回退到旧显示
         println!("│ {}", format!("Failed to display comparison: {}", e).yellow());
         println!("│ {}", "═══ C Source Code (Full) ═══".bright_cyan().bold());
         translator::display_code(&c_file, "─ C Source ─", usize::MAX, true);
@@ -449,7 +449,7 @@ fn handle_max_fix_attempts_reached(
         println!("│ {}", build_error);
     }
     
-    // Get user choice using new prompt
+    // 使用新提示获取用户选择
     let choice = interaction::prompt_compile_failure_choice()?;
     
     match choice {
@@ -457,35 +457,35 @@ fn handle_max_fix_attempts_reached(
             println!("│");
             println!("│ {}", "You chose: Add fix suggestion for AI to modify".bright_cyan());
             
-            // Clear old suggestions BEFORE prompting for new one
+            // 在提示新建议之前清除旧建议
             suggestion::clear_suggestions()?;
             
-            // Get required suggestion from user
+            // 从用户获取必需的建议
             let suggestion_text = interaction::prompt_suggestion(true)?
                 .ok_or_else(|| anyhow::anyhow!(
                     "Suggestion is required for compilation failure but none was provided. \
                      This may indicate an issue with the prompt_suggestion function when require_input=true."
                 ))?;
             
-            // Save suggestion to suggestions.txt
+            // 将建议保存到 suggestions.txt
             suggestion::append_suggestion(&suggestion_text)?;
             
-            // If we can still retry translation, do so
+            // 如果我们仍然可以重试翻译，则执行
             if !is_last_attempt {
                 let remaining_retries = MAX_TRANSLATION_ATTEMPTS - attempt_number;
                 println!("│ {}", format!("Retrying translation from scratch... ({} retries remaining)", remaining_retries).bright_cyan());
                 println!("│ {}", "Note: The translator will overwrite the existing file content.".bright_blue());
                 println!("│ {}", "✓ Retry scheduled".bright_green());
-                Ok(false) // Signal retry
+                Ok(false) // 发出重试信号
             } else {
-                // No more translation retries, but we can try fix again
+                // 没有更多翻译重试，但我们可以再次尝试修复
                 println!("│ {}", "No translation retries remaining, attempting fix with new suggestion...".bright_yellow());
                 
-                // Apply fix with the suggestion
+                // 应用带有建议的修复
                 let format_progress = |op: &str| format!("Fix with suggestion - {}", op);
                 apply_error_fix(feature, file_type, rs_file, &build_error, &format_progress, true)?;
                 
-                // Try to build one more time
+                // 再试一次构建
                 println!("│");
                 println!("│ {}", "Building with applied fix...".bright_blue().bold());
                 match builder::cargo_build(feature, true) {
@@ -507,16 +507,16 @@ fn handle_max_fix_attempts_reached(
             println!("│");
             println!("│ {}", "You chose: Manual fix".bright_cyan());
             
-            // Try to open vim
+            // 尝试打开 vim
             match interaction::open_in_vim(rs_file) {
                 Ok(_) => {
-                    // After Vim editing, repeatedly try building and allow the user
-                    // to decide whether to retry or exit, using a loop to avoid recursion
+                    // Vim 编辑后，重复尝试构建并允许用户
+                    // 决定是重试还是退出，使用循环来避免递归
                     loop {
                         println!("│");
                         println!("│ {}", "Vim editing completed. Attempting to build...".bright_blue());
                         
-                        // Try building after manual edit
+                        // 手动编辑后尝试构建
                         match builder::cargo_build(feature, true) {
                             Ok(_) => {
                                 println!("│ {}", "✓ Build successful after manual fix!".bright_green().bold());
@@ -525,21 +525,21 @@ fn handle_max_fix_attempts_reached(
                             Err(e) => {
                                 println!("│ {}", "✗ Build still failing after manual fix".red());
                                 
-                                // Ask if user wants to try again
+                                // 询问用户是否想再试一次
                                 println!("│");
                                 println!("│ {}", "Build still has errors. What would you like to do?".yellow());
                                 let retry_choice = interaction::prompt_user_choice("Build still failing", false)?;
                                 
                                 match retry_choice {
                                     interaction::UserChoice::Continue => {
-                                        // Continue: just retry the build with existing changes
+                                        // 继续：只需使用现有更改重试构建
                                         continue;
                                     }
                                     interaction::UserChoice::ManualFix => {
                                         println!("│ {}", "Reopening file in Vim for additional manual fixes...".bright_blue());
                                         match interaction::open_in_vim(rs_file) {
                                             Ok(_) => {
-                                                // After additional manual fixes, loop will retry the build
+                                                // 在额外的手动修复后，循环将重试构建
                                                 continue;
                                             }
                                             Err(open_err) => {
@@ -587,7 +587,7 @@ fn handle_max_fix_attempts_reached(
     }
 }
 
-/// Apply error fix to the file
+/// 对文件应用错误修复
 pub(crate) fn apply_error_fix<F>(
     feature: &str,
     file_type: &str,
@@ -604,14 +604,14 @@ where
     println!("│ {}", "⚠ Build failed, attempting to fix errors...".yellow().bold());
     println!("│");
     println!("│ {}", format_progress("Fix").bright_magenta().bold());
-    // Always show full fixed code, but respect user's preference for error preview
+    // 始终显示完整的修复代码，但尊重用户对错误预览的偏好
     translator::fix_translation_error(
         feature, 
         file_type, 
         rs_file, 
         &build_error.to_string(), 
-        show_full_output,  // User's preference for error preview
-        true,              // Always show full fixed code
+        show_full_output,  // 用户对错误预览的偏好
+        true,              // 始终显示完整的修复代码
     )?;
 
     let metadata = fs::metadata(rs_file)?;
@@ -623,7 +623,7 @@ where
     Ok(())
 }
 
-/// Complete file processing (commit, analyze, hybrid build)
+/// 完成文件处理（提交、分析、混合构建）
 fn complete_file_processing<F>(
     feature: &str, 
     file_name: &str, 
@@ -634,12 +634,12 @@ fn complete_file_processing<F>(
 where
     F: Fn(&str) -> String
 {
-    // Run hybrid build tests first before committing
+    // 在提交之前首先运行混合构建测试
     println!("│");
     println!("│ {}", format_progress("Hybrid Build Tests").bright_magenta().bold());
     println!("│ {}", "Running hybrid build tests...".bright_blue());
     
-    // Preflight checks (same as in run_hybrid_build_interactive)
+    // 预检查（与 run_hybrid_build_interactive 中相同）
     let project_root = util::find_project_root()?;
     let config_path = project_root.join(".c2rust/config.toml");
     
@@ -648,7 +648,7 @@ where
         anyhow::bail!("Config file not found, cannot run hybrid build tests");
     }
 
-    // Check if c2rust-config is available before proceeding
+    // 继续之前检查 c2rust-config 是否可用
     let check_output = std::process::Command::new("c2rust-config")
         .arg("--version")
         .output();
@@ -677,7 +677,7 @@ where
         }
     }
     
-    // Run tests with custom handling to detect success/failure
+    // 使用自定义处理运行测试以检测成功/失败
     builder::c2rust_clean(feature)?;
     builder::c2rust_build(feature)?;
     
@@ -687,14 +687,14 @@ where
         Ok(_) => {
             println!("│ {}", "✓ Hybrid build tests passed".bright_green().bold());
             
-            // Show code comparison and success prompt if not in auto-accept mode
+            // 如果不在自动接受模式下，显示代码比较和成功提示
             if !interaction::is_auto_accept_mode() {
                 let c_file = rs_file.with_extension("c");
                 
-                // Show file locations
+                // 显示文件位置
                 interaction::display_file_paths(Some(&c_file), rs_file);
                 
-                // Use diff display for better comparison
+                // 使用差异显示进行更好的比较
                 let success_message = "✓ All tests passed";
                 if let Err(e) = diff_display::display_code_comparison(
                     &c_file,
@@ -702,36 +702,36 @@ where
                     success_message,
                     diff_display::ResultType::TestPass,
                 ) {
-                    // Fallback to simple message if comparison fails
+                    // 如果比较失败则回退到简单消息
                     println!("│ {}", format!("Failed to display comparison: {}", e).yellow());
                     println!("│ {}", success_message.bright_green().bold());
                 }
                 
-                // Get user choice
+                // 获取用户选择
                 let choice = interaction::prompt_compile_success_choice()?;
                 
                 match choice {
                     interaction::CompileSuccessChoice::Accept => {
                         println!("│ {}", "You chose: Accept this code".bright_cyan());
-                        // Continue with commit
+                        // 继续提交
                     }
                     interaction::CompileSuccessChoice::AutoAccept => {
                         println!("│ {}", "You chose: Auto-accept all subsequent translations".bright_cyan());
                         interaction::enable_auto_accept_mode();
-                        // Continue with commit
+                        // 继续提交
                     }
                     interaction::CompileSuccessChoice::ManualFix => {
                         println!("│ {}", "You chose: Manual fix".bright_cyan());
                         
-                        // Open vim for manual editing
+                        // 打开 vim 进行手动编辑
                         match interaction::open_in_vim(rs_file) {
                             Ok(_) => {
-                                // After editing, rebuild and test again
+                                // 编辑后，重新构建并再次测试
                                 println!("│ {}", "Rebuilding and retesting after manual changes...".bright_blue());
                                 builder::c2rust_build(feature)?;
                                 builder::c2rust_test(feature)?;
                                 println!("│ {}", "✓ Tests still pass after manual changes".bright_green());
-                                // Continue with commit
+                                // 继续提交
                             }
                             Err(e) => {
                                 return Err(e).context("Failed to open vim for manual editing");
@@ -748,26 +748,26 @@ where
             }
         }
         Err(test_error) => {
-            // Tests failed - use interactive handler
+            // 测试失败 - 使用交互式处理器
             builder::handle_test_failure_interactive(feature, file_type, rs_file, test_error)?;
         }
     }
     
-    // Commit the changes
+    // 提交更改
     println!("│");
     println!("│ {}", format_progress("Commit").bright_magenta().bold());
     println!("│ {}", "Committing changes...".bright_blue());
     git::git_commit(&format!("Translate {} from C to Rust (feature: {})", file_name, feature), feature)?;
     println!("│ {}", "✓ Changes committed".bright_green());
 
-    // Update code analysis
+    // 更新代码分析
     println!("│");
     println!("│ {}", format_progress("Update Analysis").bright_magenta().bold());
     println!("│ {}", "Updating code analysis...".bright_blue());
     analyzer::update_code_analysis(feature)?;
     println!("│ {}", "✓ Code analysis updated".bright_green());
 
-    // Commit analysis
+    // 提交分析
     println!("│");
     println!("│ {}", format_progress("Commit Analysis").bright_magenta().bold());
     git::git_commit(&format!("Update code analysis for {}", feature), feature)?;
