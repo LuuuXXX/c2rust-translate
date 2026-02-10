@@ -274,6 +274,10 @@ fn print_command_success(command_type: &str, duration: std::time::Duration) {
 /// 为给定特性运行清理命令
 pub fn c2rust_clean(feature: &str) -> Result<()> {
     util::validate_feature_name(feature)?;
+
+    println!("{}", "Updating code analysis...".bright_blue());
+    analyzer::update_code_analysis(feature)?;
+    println!("{}", "✓ Code analysis updated".bright_green());
     
     let clean_cmd = get_config_value("clean.cmd", feature)?;
     
@@ -284,6 +288,11 @@ pub fn c2rust_clean(feature: &str) -> Result<()> {
 /// 如果设置了 C2RUST_HYBRID_BUILD_LIB，则自动检测并设置 LD_PRELOAD
 pub fn c2rust_build(feature: &str) -> Result<()> {
     util::validate_feature_name(feature)?;
+
+    println!("{}", "Updating code analysis...".bright_blue());
+    analyzer::update_code_analysis(feature)?;
+    println!("{}", "✓ Code analysis updated".bright_green());
+    
     let build_cmd = get_config_value("build.cmd", feature)?;
     
     execute_command_in_dir(&build_cmd, "build.dir", feature, true, "build")
@@ -292,6 +301,10 @@ pub fn c2rust_build(feature: &str) -> Result<()> {
 /// 为给定特性运行测试命令
 pub fn c2rust_test(feature: &str) -> Result<()> {
     util::validate_feature_name(feature)?;
+
+    println!("{}", "Updating code analysis...".bright_blue());
+    analyzer::update_code_analysis(feature)?;
+    println!("{}", "✓ Code analysis updated".bright_green());
     
     let test_cmd = get_config_value("test.cmd", feature)?;
     
@@ -300,12 +313,7 @@ pub fn c2rust_test(feature: &str) -> Result<()> {
 
 /// 运行混合构建测试套件
 /// 如果 c2rust-config 不可用，则报告错误并退出
-pub fn run_hybrid_build(feature: &str) -> Result<()> {
-    
-    println!("{}", "Updating code analysis...".bright_blue());
-    analyzer::update_code_analysis(feature)?;
-    println!("{}", "✓ Code analysis updated".bright_green());
-    
+pub fn run_hybrid_build(feature: &str) -> Result<()> {   
     run_hybrid_build_interactive(feature, None, None)
 }
 
