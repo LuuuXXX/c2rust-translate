@@ -380,4 +380,135 @@ note: expected signature from here
         assert!(matches.contains(&"src/var_main.rs".to_string()));
         assert!(matches.contains(&"src/fun_foo.rs".to_string()));
     }
+    
+    #[test]
+    #[serial_test::serial]
+    fn test_parse_error_for_files_with_real_directory() {
+        use std::env;
+        use std::fs;
+        use tempfile::tempdir;
+        
+        // Create a temporary directory structure
+        let temp_dir = tempdir().unwrap();
+        let project_root = temp_dir.path();
+        
+        // Set current directory to temp directory so find_project_root can work
+        let original_dir = env::current_dir().unwrap();
+        env::set_current_dir(project_root).unwrap();
+        
+        // Create .git directory so find_project_root succeeds
+        fs::create_dir(project_root.join(".git")).unwrap();
+        
+        // Create feature directory structure
+        let feature = "test_feature";
+        let c2rust_dir = project_root.join(".c2rust");
+        fs::create_dir_all(&c2rust_dir).unwrap();
+        
+        let feature_dir = c2rust_dir.join(feature);
+        let rust_dir = feature_dir.join("rust");
+        let src_dir = rust_dir.join("src");
+        fs::create_dir_all(&src_dir).unwrap();
+        
+        // Create test files
+        let test_file1 = src_dir.join("var_test.rs");
+        fs::write(&test_file1, "// test content").unwrap();
+        
+        let test_file2 = src_dir.join("fun_helper.rs");
+        fs::write(&test_file2, "// helper content").unwrap();
+        
+        // Create a file outside the rust directory that should be filtered out
+        let outside_file = c2rust_dir.join("outside.rs");
+        fs::write(&outside_file, "// outside").unwrap();
+        
+        // Test error message with multiple files
+        let error_msg = "error[E0308]: mismatched types
+   --> src/var_test.rs:10:5
+    |
+10  |     let x: i32 = \"hello\";
+    |     ^^^^^^ expected `i32`, found `&str`
+
+error[E0425]: cannot find value `y` in this scope
+  --> src/fun_helper.rs:20:9
+   |
+20 |         y
+   |         ^ not found in this scope
+   
+note: some note about outside file
+  --> ../../outside.rs:1:1";
+        
+        let result = parse_error_for_files(error_msg, feature).unwrap();
+        
+        // Restore original directory
+        env::set_current_dir(&original_dir).unwrap();
+        
+        // Should find exactly 2 files (not the outside.rs)
+        assert_eq!(result.len(), 2);
+        
+        // Check that both files are present and canonical
+        let canonical_file1 = test_file1.canonicalize().unwrap();
+        let canonical_file2 = test_file2.canonicalize().unwrap();
+        
+        assert!(result.contains(&canonical_file1), "Should contain var_test.rs");
+        assert!(result.contains(&canonical_file2), "Should contain fun_helper.rs");
+        
+        // Verify files are sorted
+        assert!(result[0] < result[1], "Files should be sorted");
+    }
+    
+    #[test]
+    #[serial_test::serial]
+    fn test_parse_error_for_files_deduplication() {
+        use std::env;
+        use std::fs;
+        use tempfile::tempdir;
+        
+        let temp_dir = tempdir().unwrap();
+        let project_root = temp_dir.path();
+        
+        let original_dir = env::current_dir().unwrap();
+        env::set_current_dir(project_root).unwrap();
+        
+        fs::create_dir(project_root.join(".git")).unwrap();
+        
+        let feature = "test_feature";
+        let rust_dir = project_root.join(".c2rust").join(feature).join("rust");
+        let src_dir = rust_dir.join("src");
+        fs::create_dir_all(&src_dir).unwrap();
+        
+        let test_file = src_dir.join("var_test.rs");
+        fs::write(&test_file, "// test").unwrap();
+        
+        // Error message with the same file mentioned multiple times
+        let error_msg = "error[E0308]: mismatched types
+   --> src/var_test.rs:10:5
+    |
+10  |     let x: i32 = \"hello\";
+    
+error[E0308]: another error
+   --> src/var_test.rs:15:5
+    
+note: note about same file
+   --> src/var_test.rs:20:1";
+        
+        let result = parse_error_for_files(error_msg, feature).unwrap();
+        
+        env::set_current_dir(&original_dir).unwrap();
+        
+        // Should only have 1 file despite multiple mentions
+        assert_eq!(result.len(), 1);
+        assert!(result[0].ends_with("var_test.rs"));
+    }
+    
+    #[test]
+    fn test_parse_error_for_files_validates_feature_name() {
+        // Test that invalid feature names are rejected
+        let error_msg = "error: --> src/test.rs:1:1";
+        
+        // Feature names with path traversal should fail
+        let result = parse_error_for_files(error_msg, "../bad");
+        assert!(result.is_err(), "Should reject feature name with ..");
+        
+        let result = parse_error_for_files(error_msg, "good/bad");
+        assert!(result.is_err(), "Should reject feature name with /");
+    }
 }
