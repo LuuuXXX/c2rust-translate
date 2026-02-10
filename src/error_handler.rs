@@ -62,6 +62,7 @@ pub(crate) fn parse_error_for_files(error_msg: &str, feature: &str) -> Result<Ve
 }
 
 /// Handle startup test failure when files can be located
+#[allow(unused_assignments)]
 pub(crate) fn handle_startup_test_failure_with_files(
     feature: &str,
     test_error: anyhow::Error,

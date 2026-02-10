@@ -26,7 +26,6 @@ pub fn cargo_build(feature: &str, _show_full_output: bool) -> Result<()> {
     
     let output = Command::new("cargo")
         .arg("build")
-        // .args(["--message-format", "short"])
         .current_dir(&build_dir)
         .env("RUSTFLAGS", "-A warnings")
         .output()

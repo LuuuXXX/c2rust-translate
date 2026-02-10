@@ -3,6 +3,7 @@ use colored::Colorize;
 use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
+use std::process::Command;
 use crate::util;
 
 /// Internal function to read targets list from a specific project root
@@ -124,8 +125,6 @@ pub fn prompt_target_selection(feature: &str) -> Result<String> {
 
 /// Store selected target in config using c2rust-config
 pub fn store_target_in_config(feature: &str, target: &str) -> Result<()> {
-    use std::process::Command;
-    
     util::validate_feature_name(feature)?;
     
     let project_root = util::find_project_root()?;

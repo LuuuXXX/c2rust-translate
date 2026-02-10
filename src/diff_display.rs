@@ -98,6 +98,7 @@ fn display_result_section(message: &str, result_type: ResultType) {
 
 /// Type of result being displayed
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 pub enum ResultType {
     TestPass,
     TestFail,

@@ -21,7 +21,8 @@ pub fn enable_auto_accept_mode() {
     println!("│ {}", "✓ Auto-accept mode enabled. All future translations will be automatically accepted.".bright_green().bold());
 }
 
-/// Disable auto-accept mode
+/// Disable auto-accept mode (test only)
+#[cfg(test)]
 pub fn disable_auto_accept_mode() {
     AUTO_ACCEPT_MODE.store(false, Ordering::Relaxed);
 }
@@ -140,14 +141,6 @@ pub fn open_in_vim(file_path: &Path) -> Result<()> {
     }
     
     Ok(())
-}
-
-/// Display the absolute path of a file
-#[cfg(test)]
-pub fn display_file_path(file_path: &Path, label: &str) {
-    println!("│");
-    println!("│ {}", format!("{}: {}", label, file_path.display()).bright_cyan().bold());
-    println!("│");
 }
 
 /// Display multiple file paths

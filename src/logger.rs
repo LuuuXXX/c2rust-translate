@@ -80,27 +80,7 @@ fn log_to_file(text: &str) {
     }
 }
 
-/// Macro to print to both stdout and log file
-#[macro_export]
-macro_rules! log_println {
-    ($($arg:tt)*) => {{
-        let text = format!($($arg)*);
-        println!("{}", text);
-        $crate::logger::log_message(&text);
-    }};
-}
-
-/// Macro to print to both stderr and log file
-#[macro_export]
-macro_rules! log_eprintln {
-    ($($arg:tt)*) => {{
-        let text = format!($($arg)*);
-        eprintln!("{}", text);
-        $crate::logger::log_message(&text);
-    }};
-}
-
-/// Public function to log a message (for use by macros)
+/// Public function to log a message
 pub fn log_message(text: &str) {
     log_to_file(text);
 }
