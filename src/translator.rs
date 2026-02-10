@@ -210,7 +210,14 @@ fn create_error_temp_file(error_msg: &str) -> Result<tempfile::NamedTempFile> {
 }
 
 /// Fix translation errors using the translation tool
-pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, error_msg: &str, show_full_output: bool) -> Result<()> {
+pub fn fix_translation_error(
+    feature: &str, 
+    _file_type: &str, 
+    rs_file: &Path, 
+    error_msg: &str, 
+    show_full_error: bool,
+    show_full_fixed_code: bool,
+) -> Result<()> {
     util::validate_feature_name(feature)?;
     
     let project_root = util::find_project_root()?;
@@ -224,7 +231,7 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
         );
     }
     
-    display_error_preview(error_msg, show_full_output);
+    display_error_preview(error_msg, show_full_error);
     
     let temp_file = create_error_temp_file(error_msg)?;
     let script_path = get_translate_script_full_path()?;
@@ -305,7 +312,7 @@ pub fn fix_translation_error(feature: &str, _file_type: &str, rs_file: &Path, er
         anyhow::bail!("Fix failed with exit code: {}", status.code().unwrap_or(-1));
     }
 
-    display_code(rs_file, "─ Fixed Rust Code ─", constants::CODE_PREVIEW_LINES, show_full_output);
+    display_code(rs_file, "─ Fixed Rust Code ─", constants::CODE_PREVIEW_LINES, show_full_fixed_code);
 
     Ok(())
 }

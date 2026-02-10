@@ -222,6 +222,11 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, cu
         
         print_attempt_header(attempt_number, rs_file);
         
+        // Add message for retry attempts  
+        if attempt_number > 1 {
+            println!("│ {}", "Starting fresh translation (previous translation will be overwritten)...".bright_cyan());
+        }
+        
         let (file_type, _name) = extract_and_validate_file_info(rs_file)?;
         check_c_file_exists(rs_file)?;
         
@@ -362,6 +367,7 @@ where
                         file_type,
                     );
                 } else {
+                    // Show full fixed code for visibility, respect user's error preview preference
                     apply_error_fix(feature, file_type, rs_file, &build_error, format_progress, show_full_output)?;
                 }
             }
@@ -413,9 +419,13 @@ fn handle_max_fix_attempts_reached(
             println!("│");
             println!("│ {}", "You chose: Continue trying with a new suggestion".bright_cyan());
             
+            // Clear old suggestions BEFORE prompting for new one
+            // This prevents the bug where the new suggestion gets cleared on next retry
+            suggestion::clear_suggestions()?;
+            
             // Get optional suggestion from user
             if let Some(suggestion_text) = interaction::prompt_suggestion(false)? {
-                // Save suggestion to c2rust.md
+                // Save suggestion to suggestions.txt
                 suggestion::append_suggestion(&suggestion_text)?;
             }
             
@@ -553,7 +563,15 @@ where
     println!("│ {}", "⚠ Build failed, attempting to fix errors...".yellow().bold());
     println!("│");
     println!("│ {}", format_progress("Fix").bright_magenta().bold());
-    translator::fix_translation_error(feature, file_type, rs_file, &build_error.to_string(), show_full_output)?;
+    // Always show full fixed code, but respect user's preference for error preview
+    translator::fix_translation_error(
+        feature, 
+        file_type, 
+        rs_file, 
+        &build_error.to_string(), 
+        show_full_output,  // User's preference for error preview
+        true,              // Always show full fixed code
+    )?;
 
     let metadata = fs::metadata(rs_file)?;
     if metadata.len() == 0 {

@@ -147,6 +147,9 @@ Your selection: 1,3-4
 #### 工具用法示例
 
 **翻译工具调用格式：**
+
+> **说明**：`--suggestion` 参数仅在语法修复（`syntax_fix`）时可用。翻译阶段（`var`/`fn`）不支持建议参数。用户提供的建议会保存到 `suggestions.txt` 文件，在修复阶段自动使用。
+
 ```bash
 # 变量翻译
 python translate_and_fix.py --config <config.toml> --type var --c_code <input.c> --output <output.rs>
@@ -158,7 +161,7 @@ python translate_and_fix.py --config <config.toml> --type fn --c_code <input.c> 
 python translate_and_fix.py --config <config.toml> --type syntax_fix --c_code <code.c> --rust_code <code.rs> --output <output.rs> --error <error.txt>
 
 # 语法修复（有修复建议时）
-python translate_and_fix.py --config <config.toml> --type syntax_fix --c_code <code.c> --rust_code <code.rs> --output <output.rs> --error <error.txt> --suggestion <suggestion.txt>
+python translate_and_fix.py --config <config.toml> --type syntax_fix --c_code <code.c> --rust_code <code.rs> --output <output.rs> --error <error.txt> --suggestion suggestions.txt
 ```
 
 **代码分析工具：**
@@ -196,13 +199,24 @@ c2rust-translate translate
 
 #### 1. 继续尝试（Continue）
 - 允许用户输入修复建议提示词
-- 提示词会保存到项目根目录的 `c2rust.md` 文件中
-- 后续的修复尝试会使用这些提示词作为参考
+- 提示词会保存到项目根目录的 `suggestions.txt` 文件中
+- **重新执行完整的翻译流程**：选择重试会清空之前的建议，从头开始翻译
+- 新的翻译会覆盖之前生成的 Rust 代码
+- **翻译阶段**：重新从 C 代码生成 Rust 代码（不使用建议）
+- **修复阶段**：使用新输入的建议来修复编译错误
+- 成功后会执行完整的后续流程：修复 → 清空 → 构建 → 测试
 - **对于测试失败**：必须输入修复建议才能继续
+
+**重试机制说明**：
+- 每次重试都会从翻译阶段重新开始，确保获得全新的翻译结果
+- 重试前会自动清空之前的建议（`suggestions.txt`），避免旧建议的干扰
+- **翻译阶段不使用建议**（translate_and_fix.py 脚本的翻译接口不支持 `--suggestion` 参数），只在修复阶段使用建议
+- 最多可重试 3 次（含首次尝试），每次都是完整的翻译流程
 
 **使用场景**：
 - 您已经分析了错误原因，想要给 AI 提供更具体的修复方向
-- 需要添加特定的约束或要求到修复过程中
+- 需要添加特定的约束或要求到错误修复过程中
+- 希望从头开始重新翻译，并在修复阶段应用新的建议
 
 #### 2. 手工修复（Manual Fix）
 - 自动在 vim 中打开失败的 Rust 文件
@@ -233,12 +247,18 @@ c2rust-translate translate
 2. **测试失败**：混合构建测试失败时
 3. **启动时失败**：翻译开始前的初始构建或测试失败
 
-### 建议文件（c2rust.md）
+### 建议文件（suggestions.txt）
 
-- **位置**：项目根目录下的 `c2rust.md`
-- **格式**：Markdown 格式，带时间戳
-- **用途**：存储用户输入的修复建议，供 translate_and_fix.py 参考
-- **持久化**：建议会累积保存，可以在多次翻译过程中复用
+- **位置**：项目根目录下的 `suggestions.txt`
+- **格式**：纯文本格式，每行一个建议
+- **用途**：存储用户输入的修复建议，仅供修复过程参考
+- **自动管理**：
+  - 重试翻译时会自动清空旧建议，避免建议积累和冲突
+  - 每次重试都从空白状态开始，只使用新输入的建议
+  - 保证每次重试的修复阶段都基于最新的指导
+- **应用范围**：
+  - **翻译阶段**：不使用建议（translate_and_fix.py 的翻译接口不支持 `--suggestion` 参数）
+  - **修复阶段**：自动检测并使用 `suggestions.txt` 中的建议来指导错误修复
 
 ### 示例流程
 
@@ -275,7 +295,7 @@ Please enter your fix suggestion:
 Suggestion: Please use std::ffi::CStr instead of raw pointer manipulation
 
 ✓ Suggestion recorded: Please use std::ffi::CStr instead of raw pointer manipulation
-✓ Suggestion saved to /path/to/project/c2rust.md
+✓ Suggestion saved to /path/to/project/suggestions.txt
 ```
 
 ### 错误类型
