@@ -26,7 +26,10 @@ pub fn display_code_comparison(
     let rust_lines: Vec<&str> = rust_content.lines().collect();
     
     // Display header
-    println!("┌{:─<30}┬{:─<35}┐", "─ C Source Code ", "─ Rust Code ─");
+    // Row format: "│ {:3} {:<26}│ {:3} {:<31}│"
+    // C side: space(1) + line_num(3) + space(1) + content(26) = 31 chars
+    // Rust side: space(1) + line_num(3) + space(1) + content(31) = 36 chars
+    println!("┌{:─<31}┬{:─<36}┐", "─ C Source Code ", "─ Rust Code ─");
     
     // Display lines side by side
     let max_lines = std::cmp::max(c_lines.len(), rust_lines.len());
@@ -60,7 +63,7 @@ pub fn display_code_comparison(
         );
     }
     
-    println!("└{:─<30}┴{:─<35}┘", "", "");
+    println!("└{:─<31}┴{:─<36}┘", "", "");
     
     // Display result section
     display_result_section(result_message, result_type);

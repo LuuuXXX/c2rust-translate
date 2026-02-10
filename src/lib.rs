@@ -653,9 +653,28 @@ where
         .arg("--version")
         .output();
     
-    if check_output.is_err() {
-        eprintln!("{}", "Error: c2rust-config not found".red());
-        anyhow::bail!("c2rust-config not found, cannot run hybrid build tests");
+    match check_output {
+        Ok(output) => {
+            if !output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                eprintln!(
+                    "{}",
+                    format!(
+                        "Error: c2rust-config --version failed.\nstdout:\n{}\nstderr:\n{}",
+                        stdout, stderr
+                    )
+                    .red()
+                );
+                anyhow::bail!(
+                    "c2rust-config is present but failed to run successfully, cannot run hybrid build tests"
+                );
+            }
+        }
+        Err(_) => {
+            eprintln!("{}", "Error: c2rust-config not found".red());
+            anyhow::bail!("c2rust-config not found, cannot run hybrid build tests");
+        }
     }
     
     // Run tests with custom handling to detect success/failure

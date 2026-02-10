@@ -355,7 +355,7 @@ pub fn run_hybrid_build_interactive(
 }
 
 /// Handle test failure interactively
-pub fn handle_test_failure_interactive(
+pub(crate) fn handle_test_failure_interactive(
     feature: &str,
     file_type: &str,
     rs_file: &std::path::Path,
@@ -413,7 +413,10 @@ pub fn handle_test_failure_interactive(
                 
                 // For test failures, suggestion is REQUIRED
                 let suggestion_text = interaction::prompt_suggestion(true)?
-                    .expect("Suggestion should be present when required");
+                    .ok_or_else(|| anyhow::anyhow!(
+                        "Suggestion is required for test failure but none was provided. \
+                         This may indicate an issue with the prompt_suggestion function when require_input=true."
+                    ))?;
                 
                 // Save suggestion to suggestions.txt
                 suggestion::append_suggestion(&suggestion_text)?;
@@ -521,9 +524,16 @@ pub fn handle_test_failure_interactive(
                                 let retry_choice = interaction::prompt_test_failure_choice()?;
                                 
                                 match retry_choice {
-                                    interaction::FailureChoice::AddSuggestion | interaction::FailureChoice::ManualFix => {
-                                        // Continue the loop to retry without recursion
+                                    interaction::FailureChoice::ManualFix => {
+                                        println!("│ {}", "Reopening Vim for another manual fix attempt...".bright_blue());
+                                        interaction::open_in_vim(rs_file)
+                                            .context("Failed to reopen vim for additional manual fix")?;
+                                        // After Vim closes, continue the loop to rebuild and retest
                                         continue;
+                                    }
+                                    interaction::FailureChoice::AddSuggestion => {
+                                        println!("│ {}", "Switching to suggestion-based fix flow.".yellow());
+                                        return Err(e).context("Tests still failing after manual fix; user chose to add a suggestion");
                                     }
                                     interaction::FailureChoice::Exit => {
                                         return Err(e).context("Tests failed after manual fix and user chose to exit");
