@@ -11,26 +11,26 @@ use colored::Colorize;
 /// 环境变量应包含包含 translate_and_fix.py 脚本的
 /// 目录的路径。
 fn get_translate_script_dir() -> Result<PathBuf> {
-    match std::env::var("C2RUST_TRANSLATE_DIT") {
+    match std::env::var("C2RUST_TRANSLATE_DIR") {
         Ok(path) => {
             let trimmed = path.trim();
             if trimmed.is_empty() {
-                anyhow::bail!("Environment variable C2RUST_TRANSLATE_DIT is empty. Please set it to the directory containing translate_and_fix.py script.");
+                anyhow::bail!("Environment variable C2RUST_TRANSLATE_DIR is empty. Please set it to the directory containing translate_and_fix.py script.");
             }
             Ok(PathBuf::from(trimmed))
         }
         Err(std::env::VarError::NotPresent) => {
-            anyhow::bail!("Environment variable C2RUST_TRANSLATE_DIT is not set. Please set it to the directory containing translate_and_fix.py script.");
+            anyhow::bail!("Environment variable C2RUST_TRANSLATE_DIR is not set. Please set it to the directory containing translate_and_fix.py script.");
         }
         Err(std::env::VarError::NotUnicode(_)) => {
-            anyhow::bail!("Environment variable C2RUST_TRANSLATE_DIT contains non-UTF8 data. Please ensure it contains a valid UTF-8 path.");
+            anyhow::bail!("Environment variable C2RUST_TRANSLATE_DIR contains non-UTF8 data. Please ensure it contains a valid UTF-8 path.");
         }
     }
 }
 
 /// 获取 translate_and_fix.py 脚本的完整路径
 /// 
-/// 这从 C2RUST_TRANSLATE_DIT 环境变量读取目录路径
+/// 这从 C2RUST_TRANSLATE_DIR 环境变量读取目录路径
 /// 并附加脚本文件名。
 fn get_translate_script_full_path() -> Result<PathBuf> {
     let translate_script_dir = get_translate_script_dir()?;
@@ -371,49 +371,49 @@ mod tests {
     #[test]
     #[serial]
     fn test_get_translate_script_dir_not_set() {
-        let _guard = EnvVarGuard::new("C2RUST_TRANSLATE_DIT");
+        let _guard = EnvVarGuard::new("C2RUST_TRANSLATE_DIR");
         _guard.remove();
         
         let result = get_translate_script_dir();
         assert!(result.is_err());
         
         let err_msg = format!("{:#}", result.unwrap_err());
-        assert!(err_msg.contains("C2RUST_TRANSLATE_DIT"));
+        assert!(err_msg.contains("C2RUST_TRANSLATE_DIR"));
         assert!(err_msg.contains("not set"));
     }
     
     #[test]
     #[serial]
     fn test_get_translate_script_dir_empty() {
-        let _guard = EnvVarGuard::new("C2RUST_TRANSLATE_DIT");
+        let _guard = EnvVarGuard::new("C2RUST_TRANSLATE_DIR");
         _guard.set("");
         
         let result = get_translate_script_dir();
         assert!(result.is_err());
         
         let err_msg = format!("{:#}", result.unwrap_err());
-        assert!(err_msg.contains("C2RUST_TRANSLATE_DIT"));
+        assert!(err_msg.contains("C2RUST_TRANSLATE_DIR"));
         assert!(err_msg.contains("empty"));
     }
     
     #[test]
     #[serial]
     fn test_get_translate_script_dir_whitespace() {
-        let _guard = EnvVarGuard::new("C2RUST_TRANSLATE_DIT");
+        let _guard = EnvVarGuard::new("C2RUST_TRANSLATE_DIR");
         _guard.set("   ");
         
         let result = get_translate_script_dir();
         assert!(result.is_err());
         
         let err_msg = format!("{:#}", result.unwrap_err());
-        assert!(err_msg.contains("C2RUST_TRANSLATE_DIT"));
+        assert!(err_msg.contains("C2RUST_TRANSLATE_DIR"));
         assert!(err_msg.contains("empty"));
     }
     
     #[test]
     #[serial]
     fn test_get_translate_script_dir_valid() {
-        let _guard = EnvVarGuard::new("C2RUST_TRANSLATE_DIT");
+        let _guard = EnvVarGuard::new("C2RUST_TRANSLATE_DIR");
         _guard.set("/path/to/scripts");
         
         let result = get_translate_script_dir();
@@ -424,7 +424,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_get_translate_script_full_path() {
-        let _guard = EnvVarGuard::new("C2RUST_TRANSLATE_DIT");
+        let _guard = EnvVarGuard::new("C2RUST_TRANSLATE_DIR");
         _guard.set("/path/to/scripts");
         
         let result = get_translate_script_full_path();
@@ -440,24 +440,24 @@ mod tests {
     fn test_get_translate_script_dir_non_utf8() {
         use std::os::unix::ffi::OsStringExt;
         
-        let _guard = EnvVarGuard::new("C2RUST_TRANSLATE_DIT");
+        let _guard = EnvVarGuard::new("C2RUST_TRANSLATE_DIR");
         
         // Create an invalid UTF-8 sequence
         let invalid_utf8 = std::ffi::OsString::from_vec(vec![0xFF, 0xFE, 0xFD]);
-        std::env::set_var("C2RUST_TRANSLATE_DIT", &invalid_utf8);
+        std::env::set_var("C2RUST_TRANSLATE_DIR", &invalid_utf8);
         
         let result = get_translate_script_dir();
         assert!(result.is_err());
         
         let err_msg = format!("{:#}", result.unwrap_err());
-        assert!(err_msg.contains("C2RUST_TRANSLATE_DIT"));
+        assert!(err_msg.contains("C2RUST_TRANSLATE_DIR"));
         assert!(err_msg.contains("non-UTF8"));
     }
     
     #[test]
     #[serial]
     fn test_get_translate_script_dir_whitespace_trimming() {
-        let _guard = EnvVarGuard::new("C2RUST_TRANSLATE_DIT");
+        let _guard = EnvVarGuard::new("C2RUST_TRANSLATE_DIR");
         _guard.set("  /path/to/scripts  ");
         
         let result = get_translate_script_dir();

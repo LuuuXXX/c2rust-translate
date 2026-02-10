@@ -71,7 +71,7 @@ pub(crate) fn handle_startup_test_failure_with_files(
     let mut current_error = test_error;
     
     // 使用循环迭代处理文件，避免深度递归
-    loop {
+    'outer: loop {
         if files.is_empty() {
             // 没有要处理的文件，返回当前错误
             return Err(current_error).context("No files found to fix");
@@ -163,7 +163,7 @@ pub(crate) fn handle_startup_test_failure_with_files(
                                         // 更新文件和错误以进行下一次迭代
                                         files = new_files;
                                         current_error = e;
-                                        break; // 跳出内循环以使用新文件重新开始
+                                        continue 'outer; // 重新开始外部循环以处理新文件
                                     }
                                     _ => {
                                         // 没有更多文件需要处理，返回错误
@@ -396,9 +396,6 @@ note: expected signature from here
         // 将当前目录设置为临时目录，以便 find_project_root 可以工作
         let original_dir = env::current_dir().unwrap();
         env::set_current_dir(project_root).unwrap();
-        
-        // 创建 .git 目录以便 find_project_root 成功
-        fs::create_dir(project_root.join(".git")).unwrap();
         
         // 创建特性目录结构
         let feature = "test_feature";
