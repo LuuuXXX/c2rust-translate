@@ -370,7 +370,8 @@ where
                         file_type,
                     );
                 } else {
-                    apply_error_fix(feature, file_type, rs_file, &build_error, format_progress, show_full_output)?;
+                    // Always show full output for fixed code so users can see the changes
+                    apply_error_fix(feature, file_type, rs_file, &build_error, format_progress, true)?;
                 }
             }
         }
