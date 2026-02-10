@@ -367,8 +367,8 @@ where
                         file_type,
                     );
                 } else {
-                    // Always show full output for fixed code so users can see the changes
-                    apply_error_fix(feature, file_type, rs_file, &build_error, format_progress, true)?;
+                    // Show full fixed code for visibility, respect user's error preview preference
+                    apply_error_fix(feature, file_type, rs_file, &build_error, format_progress, show_full_output)?;
                 }
             }
         }
@@ -563,7 +563,15 @@ where
     println!("│ {}", "⚠ Build failed, attempting to fix errors...".yellow().bold());
     println!("│");
     println!("│ {}", format_progress("Fix").bright_magenta().bold());
-    translator::fix_translation_error(feature, file_type, rs_file, &build_error.to_string(), show_full_output)?;
+    // Always show full fixed code, but respect user's preference for error preview
+    translator::fix_translation_error(
+        feature, 
+        file_type, 
+        rs_file, 
+        &build_error.to_string(), 
+        show_full_output,  // User's preference for error preview
+        true,              // Always show full fixed code
+    )?;
 
     let metadata = fs::metadata(rs_file)?;
     if metadata.len() == 0 {
