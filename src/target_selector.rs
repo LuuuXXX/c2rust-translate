@@ -6,8 +6,8 @@ use std::path::Path;
 use std::process::Command;
 use crate::util;
 
-/// Internal function to read targets list from a specific project root
-/// Used for testing to avoid changing global working directory
+/// 从特定项目根目录读取目标列表的内部函数
+/// 用于测试，以避免更改全局工作目录
 fn read_targets_list_from_root(feature: &str, project_root: &Path) -> Result<Vec<String>> {
     util::validate_feature_name(feature)?;
     
@@ -25,18 +25,18 @@ fn read_targets_list_from_root(feature: &str, project_root: &Path) -> Result<Vec
     let content = fs::read_to_string(&targets_file)
         .with_context(|| format!("Failed to read targets.list from {}", targets_file.display()))?;
     
-    // Read targets line by line, deduplicate while preserving order
+    // 逐行读取目标，在保留顺序的同时去重
     let mut targets = Vec::new();
     let mut seen = std::collections::HashSet::new();
     
     for line in content.lines() {
         let trimmed = line.trim();
-        // Skip empty lines and comments
+        // 跳过空行和注释
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
         
-        // Only add if not seen before (deduplication)
+        // 仅在之前未见过时添加（去重）
         if seen.insert(trimmed.to_string()) {
             targets.push(trimmed.to_string());
         }
@@ -49,16 +49,16 @@ fn read_targets_list_from_root(feature: &str, project_root: &Path) -> Result<Vec
     Ok(targets)
 }
 
-/// Read target artifacts from targets.list file
-/// Returns a deduplicated list of targets preserving file order
+/// 从 targets.list 文件读取目标构件
+/// 返回保留文件顺序的去重目标列表
 pub fn read_targets_list(feature: &str) -> Result<Vec<String>> {
     let project_root = util::find_project_root()?;
     read_targets_list_from_root(feature, &project_root)
 }
 
 
-/// Parse user input for target selection (1-based index)
-/// Returns 0-based index of selected target
+/// 解析用于目标选择的用户输入（基于 1 的索引）
+/// 返回所选目标的基于 0 的索引
 fn parse_target_selection(input: &str, total_targets: usize) -> Result<usize> {
     let input = input.trim();
     
@@ -80,11 +80,11 @@ fn parse_target_selection(input: &str, total_targets: usize) -> Result<usize> {
     Ok(index - 1)
 }
 
-/// Prompt user to select a target from the list
+/// 提示用户从列表中选择一个目标
 pub fn prompt_target_selection(feature: &str) -> Result<String> {
     let targets = read_targets_list(feature)?;
     
-    // If only one target, auto-select it
+    // 如果只有一个目标，自动选择它
     if targets.len() == 1 {
         let target = &targets[0];
         println!(
@@ -95,7 +95,7 @@ pub fn prompt_target_selection(feature: &str) -> Result<String> {
         return Ok(target.clone());
     }
     
-    // Display available targets
+    // 显示可用的目标
     println!("\n{}", "Available target artifacts:".bright_cyan().bold());
     for (idx, target) in targets.iter().enumerate() {
         println!("  {}. {}", idx + 1, target.bright_yellow());
@@ -107,7 +107,7 @@ pub fn prompt_target_selection(feature: &str) -> Result<String> {
     print!("\n{} ", "Your selection:".bright_green().bold());
     io::stdout().flush()?;
     
-    // Read user input
+    // 读取用户输入
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;
     
@@ -123,14 +123,14 @@ pub fn prompt_target_selection(feature: &str) -> Result<String> {
     Ok(selected_target.clone())
 }
 
-/// Store selected target in config using c2rust-config
+/// 使用 c2rust-config 将选定的目标存储在配置中
 pub fn store_target_in_config(feature: &str, target: &str) -> Result<()> {
     util::validate_feature_name(feature)?;
     
     let project_root = util::find_project_root()?;
     let c2rust_dir = project_root.join(".c2rust");
     
-    // Use c2rust-config to set build.target
+    // 使用 c2rust-config 设置 build.target
     let output = Command::new("c2rust-config")
         .current_dir(&c2rust_dir)
         .args([
@@ -150,7 +150,7 @@ pub fn store_target_in_config(feature: &str, target: &str) -> Result<()> {
         anyhow::bail!("Failed to store target in config: {}", stderr);
     }
     
-    // Verify the value was actually persisted
+    // 验证值实际上已被持久化
     let verify_output = Command::new("c2rust-config")
         .current_dir(&c2rust_dir)
         .args([
@@ -216,7 +216,7 @@ mod tests {
         writeln!(file, "target2").unwrap();
         writeln!(file, "target3").unwrap();
         
-        // Use the internal function with explicit project root
+        // 使用带有显式项目根目录的内部函数
         let result = read_targets_list_from_root("test_feature", temp_dir.path());
         assert!(result.is_ok());
         let targets = result.unwrap();
@@ -230,7 +230,7 @@ mod tests {
     fn test_read_targets_list_with_duplicates() {
         let temp_dir = tempdir().unwrap();
         
-        // Create .c2rust/test_feature/c directory structure
+        // 创建 .c2rust/test_feature/c 目录结构
         let c2rust_dir = temp_dir.path().join(".c2rust");
         let feature_dir = c2rust_dir.join("test_feature");
         let c_dir = feature_dir.join("c");
@@ -240,14 +240,14 @@ mod tests {
         let mut file = fs::File::create(&targets_file).unwrap();
         writeln!(file, "target1").unwrap();
         writeln!(file, "target2").unwrap();
-        writeln!(file, "target1").unwrap(); // duplicate
+        writeln!(file, "target1").unwrap(); // 重复
         writeln!(file, "target3").unwrap();
-        writeln!(file, "target2").unwrap(); // duplicate
+        writeln!(file, "target2").unwrap(); // 重复
         
         let result = read_targets_list_from_root("test_feature", temp_dir.path());
         assert!(result.is_ok());
         let targets = result.unwrap();
-        // Should only have 3 unique targets in order of first appearance
+        // 应该只有 3 个唯一目标，按首次出现的顺序
         assert_eq!(targets.len(), 3);
         assert_eq!(targets[0], "target1");
         assert_eq!(targets[1], "target2");
@@ -258,7 +258,7 @@ mod tests {
     fn test_read_targets_list_with_empty_lines_and_comments() {
         let temp_dir = tempdir().unwrap();
         
-        // Create .c2rust/test_feature/c directory structure
+        // 创建 .c2rust/test_feature/c 目录结构
         let c2rust_dir = temp_dir.path().join(".c2rust");
         let feature_dir = c2rust_dir.join("test_feature");
         let c_dir = feature_dir.join("c");
@@ -268,8 +268,8 @@ mod tests {
         let mut file = fs::File::create(&targets_file).unwrap();
         writeln!(file, "# This is a comment").unwrap();
         writeln!(file, "target1").unwrap();
-        writeln!(file, "").unwrap(); // empty line
-        writeln!(file, "  target2  ").unwrap(); // with whitespace
+        writeln!(file, "").unwrap(); // 空行
+        writeln!(file, "  target2  ").unwrap(); // 带空格
         writeln!(file, "# Another comment").unwrap();
         writeln!(file, "target3").unwrap();
         
@@ -303,7 +303,7 @@ mod tests {
     fn test_read_targets_list_file_not_found() {
         let temp_dir = tempdir().unwrap();
         
-        // Create .c2rust but no targets.list
+        // 创建 .c2rust 但没有 targets.list
         let c2rust_dir = temp_dir.path().join(".c2rust");
         let feature_dir = c2rust_dir.join("test_feature");
         let c_dir = feature_dir.join("c");
@@ -322,7 +322,7 @@ mod tests {
         let c_dir = feature_dir.join("c");
         fs::create_dir_all(&c_dir).unwrap();
         
-        // Create empty targets.list
+        // 创建空的 targets.list
         fs::File::create(c_dir.join("targets.list")).unwrap();
         
         let result = read_targets_list_from_root("test_feature", temp_dir.path());

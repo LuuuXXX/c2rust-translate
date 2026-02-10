@@ -1,4 +1,4 @@
-//! User interaction utilities for prompting and collecting input
+//! 用于提示和收集输入的用户交互工具
 
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -7,27 +7,27 @@ use std::path::Path;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// Global auto-accept mode flag
+/// 全局自动接受模式标志
 static AUTO_ACCEPT_MODE: AtomicBool = AtomicBool::new(false);
 
-/// Check if auto-accept mode is enabled
+/// 检查是否启用了自动接受模式
 pub fn is_auto_accept_mode() -> bool {
     AUTO_ACCEPT_MODE.load(Ordering::Relaxed)
 }
 
-/// Enable auto-accept mode
+/// 启用自动接受模式
 pub fn enable_auto_accept_mode() {
     AUTO_ACCEPT_MODE.store(true, Ordering::Relaxed);
     println!("│ {}", "✓ Auto-accept mode enabled. All future translations will be automatically accepted.".bright_green().bold());
 }
 
-/// Disable auto-accept mode (test only)
+/// 禁用自动接受模式（仅用于测试）
 #[cfg(test)]
 pub fn disable_auto_accept_mode() {
     AUTO_ACCEPT_MODE.store(false, Ordering::Relaxed);
 }
 
-/// User choice for handling failures
+/// 处理失败时的用户选择
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum UserChoice {
     Continue,
@@ -35,7 +35,7 @@ pub enum UserChoice {
     Exit,
 }
 
-/// User choice when compilation succeeds and tests pass
+/// 编译成功且测试通过时的用户选择
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CompileSuccessChoice {
     Accept,
@@ -44,7 +44,7 @@ pub enum CompileSuccessChoice {
     Exit,
 }
 
-/// User choice when compilation or tests fail
+/// 编译或测试失败时的用户选择
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FailureChoice {
     AddSuggestion,
@@ -52,7 +52,7 @@ pub enum FailureChoice {
     Exit,
 }
 
-/// Prompt user for their choice when max attempts are reached
+/// 当达到最大尝试次数时提示用户选择
 pub fn prompt_user_choice(failure_type: &str, require_suggestion: bool) -> Result<UserChoice> {
     println!("│");
     println!("│ {}", format!("⚠ {} - What would you like to do?", failure_type).yellow().bold());
@@ -87,8 +87,8 @@ pub fn prompt_user_choice(failure_type: &str, require_suggestion: bool) -> Resul
     }
 }
 
-/// Prompt user to enter a fix suggestion
-/// If require_input is true, user must provide non-empty input
+/// 提示用户输入修复建议
+/// 如果 require_input 为 true，用户必须提供非空输入
 pub fn prompt_suggestion(require_input: bool) -> Result<Option<String>> {
     loop {
         println!("│");
@@ -111,7 +111,7 @@ pub fn prompt_suggestion(require_input: bool) -> Result<Option<String>> {
         if trimmed.is_empty() {
             if require_input {
                 println!("│ {}", "Error: A suggestion is required to continue.".red());
-                // Loop again to re-prompt instead of recursing
+                // 再次循环以重新提示而不是递归
                 continue;
             } else {
                 println!("│ {}", "No suggestion provided.".yellow());
@@ -124,7 +124,7 @@ pub fn prompt_suggestion(require_input: bool) -> Result<Option<String>> {
     }
 }
 
-/// Open a file in vim for manual editing
+/// 在 vim 中打开文件进行手动编辑
 pub fn open_in_vim(file_path: &Path) -> Result<()> {
     println!("│");
     println!("│ {}", format!("Opening {} in vim...", file_path.display()).bright_cyan());
@@ -143,7 +143,7 @@ pub fn open_in_vim(file_path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Display multiple file paths
+/// 显示多个文件路径
 pub fn display_file_paths(c_file: Option<&Path>, rust_file: &Path) {
     println!("│");
     println!("│ {}", "File Locations:".bright_cyan().bold());
@@ -156,7 +156,7 @@ pub fn display_file_paths(c_file: Option<&Path>, rust_file: &Path) {
     println!("│");
 }
 
-/// Prompt user when compilation succeeds and tests pass
+/// 编译成功且测试通过时提示用户
 pub fn prompt_compile_success_choice() -> Result<CompileSuccessChoice> {
     println!("│");
     println!("│ {}", "✓ Compilation and tests successful!".bright_green().bold());
@@ -189,7 +189,7 @@ pub fn prompt_compile_success_choice() -> Result<CompileSuccessChoice> {
     }
 }
 
-/// Prompt user when tests fail
+/// 测试失败时提示用户
 pub fn prompt_test_failure_choice() -> Result<FailureChoice> {
     println!("│");
     println!("│ {}", "⚠ Tests failed - What would you like to do?".yellow().bold());
@@ -218,7 +218,7 @@ pub fn prompt_test_failure_choice() -> Result<FailureChoice> {
     }
 }
 
-/// Prompt user when compilation fails after max retries
+/// 在达到最大重试次数后编译失败时提示用户
 pub fn prompt_compile_failure_choice() -> Result<FailureChoice> {
     println!("│");
     println!("│ {}", "⚠ Compilation failed - What would you like to do?".red().bold());
@@ -280,21 +280,21 @@ mod tests {
     #[test]
     #[serial]
     fn test_auto_accept_mode() {
-        // Ensure clean state before test
+        // 测试前确保状态干净
         disable_auto_accept_mode();
         
-        // Initially should be disabled
+        // 初始应该是禁用的
         assert!(!is_auto_accept_mode());
         
-        // Enable it
+        // 启用它
         enable_auto_accept_mode();
         assert!(is_auto_accept_mode());
         
-        // Disable it
+        // 禁用它
         disable_auto_accept_mode();
         assert!(!is_auto_accept_mode());
         
-        // Clean up - ensure disabled for next test
+        // 清理 - 确保下次测试时禁用
         disable_auto_accept_mode();
     }
 }
