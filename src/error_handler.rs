@@ -11,6 +11,9 @@ use crate::{builder, file_scanner, interaction, suggestion, translator, util};
 /// Returns a list of file paths found in the error message
 /// Filters to only include files within the project
 pub(crate) fn parse_error_for_files(error_msg: &str, feature: &str) -> Result<Vec<PathBuf>> {
+    // Validate feature name to prevent path traversal
+    util::validate_feature_name(feature)?;
+    
     lazy_static::lazy_static! {
         static ref ERROR_PATH_RE: regex::Regex = 
             regex::Regex::new(r"(?:-->|at)\s+([^\s:]+\.rs)(?::\d+:\d+)?")
@@ -61,26 +64,35 @@ pub(crate) fn parse_error_for_files(error_msg: &str, feature: &str) -> Result<Ve
 /// Handle startup test failure when files can be located
 pub(crate) fn handle_startup_test_failure_with_files(
     feature: &str,
-    test_error: &anyhow::Error,
-    files: Vec<PathBuf>,
+    test_error: anyhow::Error,
+    mut files: Vec<PathBuf>,
 ) -> Result<()> {
-    println!("│");
-    println!("│ {}", format!("Found {} file(s) in error message:", files.len()).bright_cyan());
-    for (idx, file) in files.iter().enumerate() {
-        println!("│   {}. {}", idx + 1, file.display());
-    }
+    let mut current_error = test_error;
     
-    // Process each file found in the error
-    for (idx, file) in files.iter().enumerate() {
-        println!("│");
-        let file_display_name = file.file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "<unknown>".to_string());
-        println!("│ {}", format!("═══ Processing file {}/{}: {} ═══", 
-            idx + 1, files.len(), file_display_name).bright_cyan().bold());
+    // Use a loop to handle files iteratively, avoiding deep recursion
+    loop {
+        if files.is_empty() {
+            // No files to process, return the current error
+            return Err(current_error).context("No files found to fix");
+        }
         
-        // Extract file type (var_ or fun_) from file stem
-        let file_stem = file.file_stem()
+        println!("│");
+        println!("│ {}", format!("Found {} file(s) in error message:", files.len()).bright_cyan());
+        for (idx, file) in files.iter().enumerate() {
+            println!("│   {}. {}", idx + 1, file.display());
+        }
+        
+        // Process each file found in the error
+        for (idx, file) in files.iter().enumerate() {
+            println!("│");
+            let file_display_name = file.file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "<unknown>".to_string());
+            println!("│ {}", format!("═══ Processing file {}/{}: {} ═══", 
+                idx + 1, files.len(), file_display_name).bright_cyan().bold());
+            
+            // Extract file type (var_ or fun_) from file stem
+            let file_stem = file.file_stem()
             .and_then(|s| s.to_str())
             .context("Invalid file stem")?;
             
@@ -103,7 +115,7 @@ pub(crate) fn handle_startup_test_failure_with_files(
         translator::display_code(file, "─ Rust Code ─", usize::MAX, true);
         
         println!("│ {}", "═══ Test Error ═══".bright_red().bold());
-        println!("│ {}", test_error);
+        println!("│ {}", current_error);
         
         // Offer same choices as handle_max_fix_attempts_reached
         let choice = interaction::prompt_user_choice("Initial test failure", false)?;
@@ -124,7 +136,7 @@ pub(crate) fn handle_startup_test_failure_with_files(
                 
                 // Apply fix with the suggestion
                 let format_progress = |op: &str| format!("Fix startup test failure - {}", op);
-                crate::apply_error_fix(feature, file_type, file, test_error, &format_progress, true)?;
+                crate::apply_error_fix(feature, file_type, file, &current_error, &format_progress, true)?;
                 
                 // Try to build and test one more time
                 println!("│");
@@ -137,8 +149,8 @@ pub(crate) fn handle_startup_test_failure_with_files(
                         match builder::run_hybrid_build(feature) {
                             Ok(_) => {
                                 println!("│ {}", "✓ Hybrid build tests passed!".bright_green().bold());
-                                // Continue to next file if any
-                                continue;
+                                // Hybrid build is now passing; stop further error handling
+                                return Ok(());
                             }
                             Err(e) => {
                                 println!("│ {}", "✗ Hybrid build tests still failing".red());
@@ -147,8 +159,10 @@ pub(crate) fn handle_startup_test_failure_with_files(
                                 match parse_error_for_files(&e.to_string(), feature) {
                                     Ok(new_files) if !new_files.is_empty() => {
                                         println!("│ {}", "Found additional files in new error, will process them...".yellow());
-                                        // Recursively handle the new files
-                                        return handle_startup_test_failure_with_files(feature, &e, new_files);
+                                        // Update files and error for the next iteration
+                                        files = new_files;
+                                        current_error = e;
+                                        break; // Break inner loop to restart with new files
                                     }
                                     _ => {
                                         // No more files to process, return error
@@ -188,8 +202,8 @@ pub(crate) fn handle_startup_test_failure_with_files(
                                     match builder::run_hybrid_build(feature) {
                                         Ok(_) => {
                                             println!("│ {}", "✓ Hybrid build tests passed after manual fix!".bright_green().bold());
-                                            // Exit the loop and continue to next file
-                                            break;
+                                            // All tests have passed; exit the handler successfully
+                                            return Ok(());
                                         }
                                         Err(e) => {
                                             println!("│ {}", "✗ Hybrid build tests still failing".red());
@@ -282,14 +296,16 @@ pub(crate) fn handle_startup_test_failure_with_files(
             interaction::UserChoice::Exit => {
                 println!("│");
                 println!("│ {}", "You chose: Exit".yellow());
-                anyhow::bail!("User chose to exit during startup test failure handling. Original error: {}", test_error);
+                return Err(current_error).context("User chose to exit during startup test failure handling");
             }
         }
-    }
-    
-    println!("│");
-    println!("│ {}", "✓ All files processed successfully".bright_green().bold());
-    Ok(())
+        } // End of inner for loop
+        
+        // If we've processed all files without errors or early returns, we're done
+        println!("│");
+        println!("│ {}", "✓ All files processed successfully".bright_green().bold());
+        return Ok(());
+    } // End of outer loop
 }
 
 #[cfg(test)]

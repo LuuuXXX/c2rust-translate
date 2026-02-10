@@ -147,10 +147,28 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
                     Ok(files) if !files.is_empty() => {
                         // Found files, enter repair flow
                         println!("{}", "Attempting to automatically locate and fix files from error...".yellow());
-                        error_handler::handle_startup_test_failure_with_files(feature, &e, files)?;
+                        error_handler::handle_startup_test_failure_with_files(feature, e, files)?;
                     }
-                    _ => {
-                        // Cannot locate files, offer basic choices
+                    Ok(_) => {
+                        // No files found in error message
+                        println!("{}", "Unable to automatically locate files from error.".yellow());
+                        println!("{}", "This may indicate issues with the test environment or previous translations.".yellow());
+                        
+                        let choice = interaction::prompt_user_choice("Initial test failure", false)?;
+                        
+                        match choice {
+                            interaction::UserChoice::Continue => {
+                                println!("│ {}", "Continuing despite test failure. You can fix issues during file processing.".yellow());
+                                // Continue with the workflow
+                            }
+                            interaction::UserChoice::ManualFix | interaction::UserChoice::Exit => {
+                                return Err(e).context("Initial tests failed");
+                            }
+                        }
+                    }
+                    Err(parse_err) => {
+                        // Failed to parse error message (e.g., find_project_root failure)
+                        println!("{}", format!("Error parsing failure message: {}", parse_err).yellow());
                         println!("{}", "Unable to automatically locate files from error.".yellow());
                         println!("{}", "This may indicate issues with the test environment or previous translations.".yellow());
                         
