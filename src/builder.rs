@@ -300,6 +300,11 @@ pub fn c2rust_test(feature: &str) -> Result<()> {
 /// 运行混合构建测试套件
 /// 如果 c2rust-config 不可用，则报告错误并退出
 pub fn run_hybrid_build(feature: &str) -> Result<()> {
+    
+    println!("{}", "Updating code analysis...".bright_blue());
+    analyzer::update_code_analysis(feature)?;
+    println!("{}", "✓ Code analysis updated".bright_green());
+    
     run_hybrid_build_interactive(feature, None, None)
 }
 
