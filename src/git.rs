@@ -2,15 +2,15 @@ use anyhow::{Context, Result};
 use std::process::Command;
 use crate::util;
 
-/// Commit changes with a message
-/// Only stages .c2rust/ directory and the specific feature directory to avoid committing unrelated changes
+/// 使用消息提交更改
+/// 仅暂存 .c2rust/ 目录和特定功能目录，以避免提交无关的更改
 pub fn git_commit(message: &str, feature: &str) -> Result<()> {
     let project_root = util::find_project_root()?;
     let c2rust_dir = project_root.join(".c2rust");
     
-    // Add only .c2rust directory and the specific feature directory (not all features)
-    // This prevents accidentally committing unrelated local modifications
-    // Path is relative to .c2rust directory (.c2rust/<feature>/rust/)
+    // 仅添加 .c2rust 目录和特定功能目录（而非所有功能）
+    // 这可防止意外提交无关的本地修改
+    // 路径相对于 .c2rust 目录（.c2rust/<feature>/rust/）
     let feature_rust_path = format!("{}/rust/", feature);
     let add_output = Command::new("git")
         .current_dir(&c2rust_dir)
@@ -23,7 +23,7 @@ pub fn git_commit(message: &str, feature: &str) -> Result<()> {
         anyhow::bail!("git add failed: {}", stderr);
     }
 
-    // Commit from the .c2rust directory
+    // 从 .c2rust 目录提交
     let commit_output = Command::new("git")
         .current_dir(&c2rust_dir)
         .args(["commit", "-m", message])
@@ -36,7 +36,7 @@ pub fn git_commit(message: &str, feature: &str) -> Result<()> {
         let combined_output = format!("{}{}", stdout, stderr);
         let exit_code = commit_output.status.code();
 
-        // It's okay if there's nothing to commit (git typically exits with code 1 here)
+        // 如果没有可提交的内容也没关系（git 通常在这里以代码 1 退出）
         let is_nothing_to_commit = exit_code == Some(1) && combined_output.contains("nothing to commit");
 
         if !is_nothing_to_commit {

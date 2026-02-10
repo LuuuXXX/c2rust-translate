@@ -1,26 +1,26 @@
-# Enhanced User Interaction Interface
+# 增强的用户交互界面
 
-This document describes the enhanced user interaction features implemented in the c2rust-translate tool.
+本文档描述了在 c2rust-translate 工具中实现的增强用户交互功能。
 
-## Overview
+## 概述
 
-The tool now provides a more intuitive and flexible user interaction experience with:
-- Side-by-side code comparison display
-- Context-specific interactive prompts
-- Auto-accept mode for batch processing
-- Consistent UI across all interactive scenarios
+该工具现在提供了更直观和灵活的用户交互体验，包括：
+- 并排代码比较显示
+- 基于上下文的交互式提示
+- 用于批处理的自动接受模式
+- 在所有交互场景中保持一致的用户界面
 
-## New Features
+## 新功能
 
-### 1. Code Comparison Display
+### 1. 代码比较显示
 
-The tool now displays C and Rust code side-by-side in a formatted comparison view:
+该工具现在以格式化的比较视图并排显示 C 和 Rust 代码：
 
 ```
 ═══════════════════════════════════════════════════════════════════
-                  C vs Rust Code Comparison                        
+                   C vs Rust 代码比较                        
 ═══════════════════════════════════════════════════════════════════
-┌─────── C Source Code ────────┬─────── Rust Code ────────────────┐
+┌─────── C 源代码 ────────┬─────── Rust 代码 ────────────────┐
 │ 1 int add(int a, int b) {    │ 1 pub fn add(a: i32, b: i32)    │
 │ 2     return a + b;          │ 2     -> i32 {                  │
 │ 3 }                          │ 3     a + b                      │
@@ -28,105 +28,105 @@ The tool now displays C and Rust code side-by-side in a formatted comparison vie
 └──────────────────────────────┴──────────────────────────────────┘
 
 ═══════════════════════════════════════════════════════════════════
-                        Test Result                                
+                         测试结果                                
 ═══════════════════════════════════════════════════════════════════
-✓ All tests passed
+✓ 所有测试通过
 ```
 
-### 2. Interactive Prompts Based on Context
+### 2. 基于上下文的交互式提示
 
-#### Scenario 1: Compilation Success with Passing Tests
+#### 场景 1：编译成功且测试通过
 
-When compilation succeeds and all tests pass, you get 4 options:
-
-```
-✓ Compilation and tests successful!
-
-What would you like to do?
-
-Available options:
-  1. Accept this code (will be committed)
-  2. Auto-accept all subsequent translations
-  3. Manual fix (edit the file with VIM)
-  4. Exit (abort the translation process)
-
-Enter your choice (1/2/3/4):
-```
-
-**Option 1 - Accept**: Accepts the current translation and commits it.
-
-**Option 2 - Auto-accept**: Enables auto-accept mode for the current session, automatically accepting all future successful translations without prompting. Useful for batch processing.
-
-**Option 3 - Manual Fix**: Opens the Rust file in VIM for manual editing, then rebuilds and retests.
-
-**Option 4 - Exit**: Aborts the translation process.
-
-#### Scenario 2: Test Failure
-
-When tests fail after successful compilation, you get 3 options:
+当编译成功且所有测试通过时，您会看到 4 个选项：
 
 ```
-⚠ Tests failed - What would you like to do?
+✓ 编译和测试成功！
 
-Available options:
-  1. Add fix suggestion for AI to modify
-  2. Manual fix (edit the file with VIM)
-  3. Exit (abort the translation process)
+您想做什么？
 
-Enter your choice (1/2/3):
+可用选项：
+  1. 接受此代码（将被提交）
+  2. 自动接受所有后续翻译
+  3. 手动修复（使用 VIM 编辑文件）
+  4. 退出（中止翻译过程）
+
+输入您的选择 (1/2/3/4):
 ```
 
-**Option 1 - Add Suggestion**: Prompts you to enter a fix suggestion that will be used by the AI to modify the code.
+**选项 1 - 接受**：接受当前翻译并提交。
 
-**Option 2 - Manual Fix**: Opens the file in VIM for manual editing.
+**选项 2 - 自动接受**：为当前会话启用自动接受模式，自动接受所有未来的成功翻译而无需提示。对批处理很有用。
 
-**Option 3 - Exit**: Aborts the translation process.
+**选项 3 - 手动修复**：在 VIM 中打开 Rust 文件进行手动编辑，然后重新构建和测试。
 
-#### Scenario 3: Compilation Failure (Max Retries Reached)
+**选项 4 - 退出**：中止翻译过程。
 
-When compilation fails after reaching the maximum number of fix attempts, you get 3 options:
+#### 场景 2：测试失败
+
+当编译成功但测试失败时，您会看到 3 个选项：
 
 ```
-⚠ Compilation failed - What would you like to do?
+⚠ 测试失败 - 您想做什么？
 
-Available options:
-  1. Add fix suggestion for AI to modify
-  2. Manual fix (edit the file with VIM)
-  3. Exit (abort the translation process)
+可用选项：
+  1. 添加修复建议让 AI 修改
+  2. 手动修复（使用 VIM 编辑文件）
+  3. 退出（中止翻译过程）
 
-Enter your choice (1/2/3):
+输入您的选择 (1/2/3):
 ```
 
-The options work the same as in the test failure scenario.
+**选项 1 - 添加建议**：提示您输入修复建议，AI 将使用该建议修改代码。
 
-### 3. Auto-Accept Mode
+**选项 2 - 手动修复**：在 VIM 中打开文件进行手动编辑。
 
-Auto-accept mode allows you to process multiple files without manual intervention:
+**选项 3 - 退出**：中止翻译过程。
 
-- Enabled by selecting option 2 when tests pass
-- Once enabled, all future successful translations are automatically accepted
-- Particularly useful for batch processing large codebases
-- Mode is session-based (resets when you restart the tool)
+#### 场景 3：编译失败（达到最大重试次数）
 
-### 4. Improved Error Context
+当达到最大修复尝试次数后编译仍然失败时，您会看到 3 个选项：
 
-All interactive prompts now show:
-- File locations (C source and Rust target)
-- Side-by-side code comparison
-- Build or test error messages
-- Clear result indicators (✓ for success, ✗ for failure)
+```
+⚠ 编译失败 - 您想做什么？
 
-## Implementation Details
+可用选项：
+  1. 添加修复建议让 AI 修改
+  2. 手动修复（使用 VIM 编辑文件）
+  3. 退出（中止翻译过程）
 
-### New Modules
+输入您的选择 (1/2/3):
+```
 
-- **`src/diff_display.rs`**: Handles side-by-side code comparison display
-- Enhanced **`src/interaction.rs`**: New enums and prompts for different scenarios
+这些选项的工作方式与测试失败场景相同。
 
-### New Enums
+### 3. 自动接受模式
+
+自动接受模式允许您在无需手动干预的情况下处理多个文件：
+
+- 通过在测试通过时选择选项 2 启用
+- 启用后，所有未来的成功翻译都会自动被接受
+- 对批量处理大型代码库特别有用
+- 模式基于会话（重启工具时会重置）
+
+### 4. 改进的错误上下文
+
+所有交互式提示现在都会显示：
+- 文件位置（C 源文件和 Rust 目标文件）
+- 并排代码比较
+- 构建或测试错误消息
+- 清晰的结果指示器（✓ 表示成功，✗ 表示失败）
+
+## 实现细节
+
+### 新模块
+
+- **`src/diff_display.rs`**：处理并排代码比较显示
+- 增强的 **`src/interaction.rs`**：为不同场景提供新的枚举和提示
+
+### 新枚举
 
 ```rust
-// For compilation success with passing tests
+// 用于编译成功且测试通过的情况
 pub enum CompileSuccessChoice {
     Accept,
     AutoAccept,
@@ -134,7 +134,7 @@ pub enum CompileSuccessChoice {
     Exit,
 }
 
-// For test or compilation failures
+// 用于测试或编译失败的情况
 pub enum FailureChoice {
     AddSuggestion,
     ManualFix,
@@ -142,31 +142,32 @@ pub enum FailureChoice {
 }
 ```
 
-### Key Functions
+### 关键函数
 
-- `prompt_compile_success_choice()`: 4-option prompt for test success
-- `prompt_test_failure_choice()`: 3-option prompt for test failure
-- `prompt_compile_failure_choice()`: 3-option prompt for compilation failure
-- `display_code_comparison()`: Side-by-side code display
-- `is_auto_accept_mode()`, `enable_auto_accept_mode()`: Auto-accept mode management
+- `prompt_compile_success_choice()`：测试成功时的 4 选项提示
+- `prompt_test_failure_choice()`：测试失败时的 3 选项提示
+- `prompt_compile_failure_choice()`：编译失败时的 3 选项提示
+- `display_code_comparison()`：并排代码显示
+- `is_auto_accept_mode()`, `enable_auto_accept_mode()`：自动接受模式管理
 
-## Backward Compatibility
+## 向后兼容性
 
-The enhanced UI maintains backward compatibility:
-- Existing `UserChoice` enum is preserved for compatibility
-- Old prompts still work where needed
-- All new features are additive, not replacing existing functionality
+增强的用户界面保持向后兼容性：
+- 保留现有的 `UserChoice` 枚举以实现兼容性
+- 旧提示在需要时仍然有效
+- 所有新功能都是附加的，而不是替换现有功能
 
-## Testing
+## 测试
 
-Run the test suite to verify the implementation:
+运行测试套件以验证实现：
 
 ```bash
 cargo test
 ```
 
-All 60+ unit tests pass, ensuring:
-- Enum variants work correctly
-- Auto-accept mode state management functions properly
-- Code comparison display handles edge cases
-- File path display works correctly
+所有 60+ 个单元测试都通过，确保：
+- 枚举变体正常工作
+- 自动接受模式状态管理正常运作
+- 代码比较显示处理边缘情况
+- 文件路径显示正常工作
+

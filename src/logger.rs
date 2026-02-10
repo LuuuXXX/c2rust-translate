@@ -6,28 +6,28 @@ use std::sync::{Mutex, OnceLock};
 
 static GLOBAL_LOGGER: OnceLock<Mutex<Option<File>>> = OnceLock::new();
 
-/// Initialize the logger with a timestamped log file
+/// 使用带时间戳的日志文件初始化日志记录器
 pub fn init_logger() -> Result<()> {
     let project_root = crate::util::find_project_root()?;
     let output_dir = project_root.join(".c2rust").join("output");
     
-    // Create output directory if it doesn't exist
+    // 如果输出目录不存在则创建
     std::fs::create_dir_all(&output_dir)
         .with_context(|| format!("Failed to create output directory: {}", output_dir.display()))?;
     
-    // Generate timestamped filename with milliseconds to avoid collisions
+    // 生成带毫秒的时间戳文件名以避免冲突
     let timestamp = Local::now().format("%Y%m%d_%H%M%S%.3f");
     let log_filename = format!("translate_{}.log", timestamp);
     let log_path = output_dir.join(&log_filename);
     
-    // Create the log file
+    // 创建日志文件
     let (file, actual_path) = OpenOptions::new()
         .create_new(true)
         .write(true)
         .open(&log_path)
         .map(|f| (f, log_path))
         .or_else(|_| {
-            // If file exists (unlikely with milliseconds but possible), append a counter
+            // 如果文件已存在（使用毫秒时不太可能但仍有可能），追加计数器
             for i in 1..100 {
                 let alternate_filename = format!("translate_{}_{}.log", timestamp, i);
                 let alternate_path = output_dir.join(&alternate_filename);
@@ -46,16 +46,16 @@ pub fn init_logger() -> Result<()> {
     
     println!("Log file created: {}", actual_path.display());
     
-    // Initialize or update the global logger
+    // 初始化或更新全局日志记录器
     match GLOBAL_LOGGER.get() {
         Some(logger_mutex) => {
-            // Logger already exists, replace the file
+            // 日志记录器已存在，替换文件
             if let Ok(mut logger_opt) = logger_mutex.lock() {
                 *logger_opt = Some(file);
             }
         }
         None => {
-            // First time initialization
+            // 首次初始化
             GLOBAL_LOGGER.get_or_init(|| Mutex::new(Some(file)));
         }
     }
@@ -63,7 +63,7 @@ pub fn init_logger() -> Result<()> {
     Ok(())
 }
 
-/// Log a message to the file (if logger is initialized)
+/// 将消息记录到文件（如果日志记录器已初始化）
 fn log_to_file(text: &str) {
     if let Some(logger_mutex) = GLOBAL_LOGGER.get() {
         if let Ok(mut logger_opt) = logger_mutex.lock() {
@@ -80,27 +80,7 @@ fn log_to_file(text: &str) {
     }
 }
 
-/// Macro to print to both stdout and log file
-#[macro_export]
-macro_rules! log_println {
-    ($($arg:tt)*) => {{
-        let text = format!($($arg)*);
-        println!("{}", text);
-        $crate::logger::log_message(&text);
-    }};
-}
-
-/// Macro to print to both stderr and log file
-#[macro_export]
-macro_rules! log_eprintln {
-    ($($arg:tt)*) => {{
-        let text = format!($($arg)*);
-        eprintln!("{}", text);
-        $crate::logger::log_message(&text);
-    }};
-}
-
-/// Public function to log a message (for use by macros)
+/// 记录消息的公共函数
 pub fn log_message(text: &str) {
     log_to_file(text);
 }
