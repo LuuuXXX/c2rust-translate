@@ -106,6 +106,7 @@ pub fn open_in_vim(file_path: &Path) -> Result<()> {
 }
 
 /// Display the absolute path of a file
+#[allow(dead_code)]
 pub fn display_file_path(file_path: &Path, label: &str) {
     println!("│");
     println!("│ {}", format!("{}: {}", label, file_path.display()).bright_cyan().bold());

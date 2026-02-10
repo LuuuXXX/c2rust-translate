@@ -14,6 +14,7 @@ pub fn get_suggestion_file_path() -> Result<PathBuf> {
 }
 
 /// Read the current content of c2rust.md if it exists
+#[allow(dead_code)]
 pub fn read_suggestions() -> Result<Option<String>> {
     let suggestion_file = get_suggestion_file_path()?;
     
@@ -59,6 +60,7 @@ pub fn append_suggestion(suggestion: &str) -> Result<()> {
 
 /// Get suggestions as a string to pass to translate_and_fix.py
 /// Returns the content of c2rust.md if it exists, otherwise None
+#[allow(dead_code)]
 pub fn get_suggestions_for_translation() -> Result<Option<String>> {
     read_suggestions()
 }
