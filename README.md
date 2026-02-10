@@ -147,23 +147,26 @@ Your selection: 1,3-4
 #### 工具用法示例
 
 **翻译工具调用格式：**
+
+> **说明**：`--suggestion` 参数是可选的。当用户在重试时提供了修复建议，工具会自动将建议保存到 `c2rust.md` 文件，然后在翻译和修复时使用。首次翻译时通常不需要建议参数。
+
 ```bash
-# 变量翻译（无建议）
+# 变量翻译（无建议 - 首次翻译时使用）
 python translate_and_fix.py --config <config.toml> --type var --c_code <input.c> --output <output.rs>
 
-# 函数翻译（无建议）
+# 函数翻译（无建议 - 首次翻译时使用）
 python translate_and_fix.py --config <config.toml> --type fn --c_code <input.c> --output <output.rs>
 
-# 变量翻译（使用建议）
+# 变量翻译（使用建议 - 重试时自动应用）
 python translate_and_fix.py --config <config.toml> --type var --c_code <input.c> --output <output.rs> --suggestion <c2rust.md>
 
-# 函数翻译（使用建议）
+# 函数翻译（使用建议 - 重试时自动应用）
 python translate_and_fix.py --config <config.toml> --type fn --c_code <input.c> --output <output.rs> --suggestion <c2rust.md>
 
 # 语法修复（没有修复建议时）
 python translate_and_fix.py --config <config.toml> --type syntax_fix --c_code <code.c> --rust_code <code.rs> --output <output.rs> --error <error.txt>
 
-# 语法修复（有修复建议时）
+# 语法修复（有修复建议时 - 自动检测并使用）
 python translate_and_fix.py --config <config.toml> --type syntax_fix --c_code <code.c> --rust_code <code.rs> --output <output.rs> --error <error.txt> --suggestion <c2rust.md>
 ```
 
@@ -198,7 +201,7 @@ c2rust-translate translate
 
 ### 交互式错误处理
 
-当达到最大修复尝试次数后,工具会提供三个选项供用户选择：
+当达到最大修复尝试次数后，工具会提供三个选项供用户选择：
 
 #### 1. 继续尝试（Continue）
 - 允许用户输入修复建议提示词
