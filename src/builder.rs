@@ -365,6 +365,13 @@ fn handle_test_failure_interactive(
     use crate::suggestion;
     use crate::translator;
     
+    // Helper function to extract file name from path
+    let get_file_name = || -> &str {
+        rs_file.file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown")
+    };
+    
     println!("│");
     println!("│ {}", "⚠ Hybrid build tests failed!".red().bold());
     println!("│ {}", "The test suite did not pass.".yellow());
@@ -424,11 +431,8 @@ fn handle_test_failure_interactive(
                         // Commit the fix
                         println!("│");
                         println!("│ {}", "Committing test fix...".bright_blue());
-                        let file_name = rs_file.file_stem()
-                            .and_then(|s| s.to_str())
-                            .unwrap_or("unknown");
                         crate::git::git_commit(
-                            &format!("Fix tests for {} (feature: {})", file_name, feature),
+                            &format!("Fix tests for {} (feature: {})", get_file_name(), feature),
                             feature
                         )?;
                         println!("│ {}", "✓ Test fix committed".bright_green());
@@ -471,11 +475,8 @@ fn handle_test_failure_interactive(
                                                 // Commit the manual fix
                                                 println!("│");
                                                 println!("│ {}", "Committing manual test fix...".bright_blue());
-                                                let file_name = rs_file.file_stem()
-                                                    .and_then(|s| s.to_str())
-                                                    .unwrap_or("unknown");
                                                 crate::git::git_commit(
-                                                    &format!("Manually fix tests for {} (feature: {})", file_name, feature),
+                                                    &format!("Manually fix tests for {} (feature: {})", get_file_name(), feature),
                                                     feature
                                                 )?;
                                                 println!("│ {}", "✓ Manual test fix committed".bright_green());
@@ -526,11 +527,8 @@ fn handle_test_failure_interactive(
                                 // Commit the manual fix
                                 println!("│");
                                 println!("│ {}", "Committing manual test fix...".bright_blue());
-                                let file_name = rs_file.file_stem()
-                                    .and_then(|s| s.to_str())
-                                    .unwrap_or("unknown");
                                 crate::git::git_commit(
-                                    &format!("Manually fix tests for {} (feature: {})", file_name, feature),
+                                    &format!("Manually fix tests for {} (feature: {})", get_file_name(), feature),
                                     feature
                                 )?;
                                 println!("│ {}", "✓ Manual test fix committed".bright_green());
