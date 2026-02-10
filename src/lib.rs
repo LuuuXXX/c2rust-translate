@@ -748,6 +748,11 @@ where
                                 builder::c2rust_build(feature)?;
                                 builder::c2rust_test(feature)?;
                                 println!("│ {}", "✓ Tests still pass after manual changes".bright_green());
+                                
+                                println!("│ {}", "Updating code analysis...".bright_blue());
+                                analyzer::update_code_analysis(feature)?;
+                                println!("│ {}", "✓ Code analysis updated".bright_green());
+                                
                                 // 继续提交
                             }
                             Err(e) => {
