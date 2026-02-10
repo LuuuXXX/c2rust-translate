@@ -363,33 +363,44 @@ fn handle_test_failure_interactive(
 ) -> Result<()> {
     use crate::interaction;
     use crate::suggestion;
-    use crate::translator;
+    use crate::diff_display;
     
     println!("│");
     println!("│ {}", "⚠ Hybrid build tests failed!".red().bold());
     println!("│ {}", "The test suite did not pass.".yellow());
     
-    // Display full C and Rust code for user reference
+    // Display code comparison and test error
     let c_file = rs_file.with_extension("c");
     
     // Show file locations
     interaction::display_file_paths(Some(&c_file), rs_file);
     
-    // Display full code (always show full for interactive mode)
-    println!("│ {}", "═══ C Source Code (Full) ═══".bright_cyan().bold());
-    translator::display_code(&c_file, "─ C Source ─", usize::MAX, true);
+    // Use diff display for better comparison
+    let error_message = format!("✗ Test Error:\n{}", test_error);
+    if let Err(e) = diff_display::display_code_comparison(
+        &c_file,
+        rs_file,
+        &error_message,
+        diff_display::ResultType::TestFail,
+    ) {
+        // Fallback to old display if comparison fails
+        use crate::translator;
+        println!("│ {}", format!("Failed to display comparison: {}", e).yellow());
+        println!("│ {}", "═══ C Source Code (Full) ═══".bright_cyan().bold());
+        translator::display_code(&c_file, "─ C Source ─", usize::MAX, true);
+        
+        println!("│ {}", "═══ Rust Code (Full) ═══".bright_cyan().bold());
+        translator::display_code(rs_file, "─ Rust Code ─", usize::MAX, true);
+        
+        println!("│ {}", "═══ Test Error ═══".bright_red().bold());
+        println!("│ {}", test_error);
+    }
     
-    println!("│ {}", "═══ Rust Code (Full) ═══".bright_cyan().bold());
-    translator::display_code(rs_file, "─ Rust Code ─", usize::MAX, true);
-    
-    println!("│ {}", "═══ Test Error ═══".bright_red().bold());
-    println!("│ {}", test_error);
-    
-    // Get user choice - for test failures, suggestion is REQUIRED for Continue
-    let choice = interaction::prompt_user_choice("Test failure", true)?;
+    // Get user choice using new prompt
+    let choice = interaction::prompt_test_failure_choice()?;
     
     match choice {
-        interaction::UserChoice::Continue => {
+        interaction::FailureChoice::AddSuggestion => {
             println!("│");
             println!("│ {}", "You chose: Continue trying with a new suggestion".bright_cyan());
             
@@ -431,14 +442,14 @@ fn handle_test_failure_interactive(
                         // Ask if user wants to try again
                         println!("│");
                         println!("│ {}", "Tests still have errors. What would you like to do?".yellow());
-                        let retry_choice = interaction::prompt_user_choice("Tests still failing", true)?;
+                        let retry_choice = interaction::prompt_test_failure_choice()?;
                         
                         match retry_choice {
-                            interaction::UserChoice::Continue => {
+                            interaction::FailureChoice::AddSuggestion => {
                                 // Continue the loop to retry with a new suggestion
                                 continue;
                             }
-                            interaction::UserChoice::ManualFix => {
+                            interaction::FailureChoice::ManualFix => {
                                 println!("│");
                                 println!("│ {}", "You chose: Manually edit the code".bright_cyan());
                                 println!("│ {}", "Opening vim for manual fixes...".bright_blue());
@@ -471,7 +482,7 @@ fn handle_test_failure_interactive(
                                     }
                                 }
                             }
-                            interaction::UserChoice::Exit => {
+                            interaction::FailureChoice::Exit => {
                                 return Err(current_error).context("Tests failed and user chose to exit");
                             }
                         }
@@ -479,7 +490,7 @@ fn handle_test_failure_interactive(
                 }
             }
         }
-        interaction::UserChoice::ManualFix => {
+        interaction::FailureChoice::ManualFix => {
             println!("│");
             println!("│ {}", "You chose: Manual fix".bright_cyan());
             
@@ -504,14 +515,14 @@ fn handle_test_failure_interactive(
                                 // Ask if user wants to try again
                                 println!("│");
                                 println!("│ {}", "Tests still have errors. What would you like to do?".yellow());
-                                let retry_choice = interaction::prompt_user_choice("Tests still failing", true)?;
+                                let retry_choice = interaction::prompt_test_failure_choice()?;
                                 
                                 match retry_choice {
-                                    interaction::UserChoice::Continue | interaction::UserChoice::ManualFix => {
+                                    interaction::FailureChoice::AddSuggestion | interaction::FailureChoice::ManualFix => {
                                         // Continue the loop to retry without recursion
                                         continue;
                                     }
-                                    interaction::UserChoice::Exit => {
+                                    interaction::FailureChoice::Exit => {
                                         return Err(e).context("Tests failed after manual fix and user chose to exit");
                                     }
                                 }
@@ -526,7 +537,7 @@ fn handle_test_failure_interactive(
                 }
             }
         }
-        interaction::UserChoice::Exit => {
+        interaction::FailureChoice::Exit => {
             println!("│");
             println!("│ {}", "You chose: Exit".yellow());
             println!("│ {}", "Exiting due to test failures.".yellow());

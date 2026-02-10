@@ -5,6 +5,26 @@ use colored::Colorize;
 use std::io::{self, Write};
 use std::path::Path;
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Global auto-accept mode flag
+static AUTO_ACCEPT_MODE: AtomicBool = AtomicBool::new(false);
+
+/// Check if auto-accept mode is enabled
+pub fn is_auto_accept_mode() -> bool {
+    AUTO_ACCEPT_MODE.load(Ordering::Relaxed)
+}
+
+/// Enable auto-accept mode
+pub fn enable_auto_accept_mode() {
+    AUTO_ACCEPT_MODE.store(true, Ordering::Relaxed);
+    println!("│ {}", "✓ Auto-accept mode enabled. All future translations will be automatically accepted.".bright_green().bold());
+}
+
+/// Disable auto-accept mode
+pub fn disable_auto_accept_mode() {
+    AUTO_ACCEPT_MODE.store(false, Ordering::Relaxed);
+}
 
 /// User choice for handling failures
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -261,5 +281,19 @@ mod tests {
         assert_eq!(FailureChoice::ManualFix, FailureChoice::ManualFix);
         assert_eq!(FailureChoice::Exit, FailureChoice::Exit);
         assert_ne!(FailureChoice::AddSuggestion, FailureChoice::Exit);
+    }
+    
+    #[test]
+    fn test_auto_accept_mode() {
+        // Initially should be disabled
+        assert!(!is_auto_accept_mode());
+        
+        // Enable it
+        enable_auto_accept_mode();
+        assert!(is_auto_accept_mode());
+        
+        // Disable it
+        disable_auto_accept_mode();
+        assert!(!is_auto_accept_mode());
     }
 }

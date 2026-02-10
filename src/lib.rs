@@ -423,39 +423,49 @@ fn handle_max_fix_attempts_reached(
     println!("│ {}", "⚠ Maximum fix attempts reached!".red().bold());
     println!("│ {}", format!("File {} still has build errors after {} fix attempts.", file_name, max_fix_attempts).yellow());
     
-    // Display full C and Rust code for user reference
+    // Display code comparison and build error
     let c_file = rs_file.with_extension("c");
     
     // Show file locations
     interaction::display_file_paths(Some(&c_file), rs_file);
     
-    // Display full code (always show full for interactive mode)
-    println!("│ {}", "═══ C Source Code (Full) ═══".bright_cyan().bold());
-    translator::display_code(&c_file, "─ C Source ─", usize::MAX, true);
+    // Use diff display for better comparison
+    let error_message = format!("✗ Build Error:\n{}", build_error);
+    if let Err(e) = diff_display::display_code_comparison(
+        &c_file,
+        rs_file,
+        &error_message,
+        diff_display::ResultType::BuildFail,
+    ) {
+        // Fallback to old display if comparison fails
+        println!("│ {}", format!("Failed to display comparison: {}", e).yellow());
+        println!("│ {}", "═══ C Source Code (Full) ═══".bright_cyan().bold());
+        translator::display_code(&c_file, "─ C Source ─", usize::MAX, true);
+        
+        println!("│ {}", "═══ Rust Code (Full) ═══".bright_cyan().bold());
+        translator::display_code(rs_file, "─ Rust Code ─", usize::MAX, true);
+        
+        println!("│ {}", "═══ Build Error ═══".bright_red().bold());
+        println!("│ {}", build_error);
+    }
     
-    println!("│ {}", "═══ Rust Code (Full) ═══".bright_cyan().bold());
-    translator::display_code(rs_file, "─ Rust Code ─", usize::MAX, true);
-    
-    println!("│ {}", "═══ Build Error ═══".bright_red().bold());
-    println!("│ {}", build_error);
-    
-    // Get user choice
-    let choice = interaction::prompt_user_choice("Build failure", false)?;
+    // Get user choice using new prompt
+    let choice = interaction::prompt_compile_failure_choice()?;
     
     match choice {
-        interaction::UserChoice::Continue => {
+        interaction::FailureChoice::AddSuggestion => {
             println!("│");
-            println!("│ {}", "You chose: Continue trying with a new suggestion".bright_cyan());
+            println!("│ {}", "You chose: Add fix suggestion for AI to modify".bright_cyan());
             
             // Clear old suggestions BEFORE prompting for new one
-            // This prevents the bug where the new suggestion gets cleared on next retry
             suggestion::clear_suggestions()?;
             
-            // Get optional suggestion from user
-            if let Some(suggestion_text) = interaction::prompt_suggestion(false)? {
-                // Save suggestion to suggestions.txt
-                suggestion::append_suggestion(&suggestion_text)?;
-            }
+            // Get required suggestion from user
+            let suggestion_text = interaction::prompt_suggestion(true)?
+                .expect("Suggestion should be present when required");
+            
+            // Save suggestion to suggestions.txt
+            suggestion::append_suggestion(&suggestion_text)?;
             
             // If we can still retry translation, do so
             if !is_last_attempt {
@@ -463,7 +473,7 @@ fn handle_max_fix_attempts_reached(
                 println!("│ {}", format!("Retrying translation from scratch... ({} retries remaining)", remaining_retries).bright_cyan());
                 println!("│ {}", "Note: The translator will overwrite the existing file content.".bright_blue());
                 println!("│ {}", "✓ Retry scheduled".bright_green());
-                Ok(false)// Signal retry
+                Ok(false) // Signal retry
             } else {
                 // No more translation retries, but we can try fix again
                 println!("│ {}", "No translation retries remaining, attempting fix with new suggestion...".bright_yellow());
@@ -490,7 +500,7 @@ fn handle_max_fix_attempts_reached(
                 }
             }
         }
-        interaction::UserChoice::ManualFix => {
+        interaction::FailureChoice::ManualFix => {
             println!("│");
             println!("│ {}", "You chose: Manual fix".bright_cyan());
             
@@ -561,7 +571,7 @@ fn handle_max_fix_attempts_reached(
                 }
             }
         }
-        interaction::UserChoice::Exit => {
+        interaction::FailureChoice::Exit => {
             println!("│");
             println!("│ {}", "You chose: Exit".yellow());
             println!("│ {}", "Exiting due to build failures.".yellow());
