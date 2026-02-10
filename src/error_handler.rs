@@ -181,6 +181,9 @@ pub(crate) fn handle_startup_test_failure_with_files(
                         ));
                     }
                 }
+                println!("{}", "Updating code analysis...".bright_blue());
+                analyzer::update_code_analysis(feature)?;
+                println!("{}", "✓ Code analysis updated".bright_green());
             }
             interaction::UserChoice::ManualFix => {
                 println!("│");
@@ -283,6 +286,9 @@ pub(crate) fn handle_startup_test_failure_with_files(
                                     }
                                 }
                             }
+                            println!("{}", "Updating code analysis...".bright_blue());
+                            analyzer::update_code_analysis(feature)?;
+                            println!("{}", "✓ Code analysis updated".bright_green());
                         }
                     }
                     Err(e) => {
