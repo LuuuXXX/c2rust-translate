@@ -650,7 +650,7 @@ where
 
     // 继续之前检查 c2rust-config 是否可用
     let check_output = std::process::Command::new("c2rust-config")
-        .arg("--version")
+        .arg("--help")
         .output();
     
     match check_output {
