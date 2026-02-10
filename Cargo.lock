@@ -102,6 +102,7 @@ dependencies = [
  "chrono",
  "clap",
  "colored",
+ "lazy_static",
  "regex",
  "serial_test",
  "shell-words",

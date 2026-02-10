@@ -392,20 +392,19 @@ fn parse_error_for_files(error_msg: &str, feature: &str) -> Result<Vec<std::path
     use std::path::PathBuf;
     use std::collections::HashSet;
     
+    lazy_static::lazy_static! {
+        static ref ERROR_PATH_RE: regex::Regex = 
+            regex::Regex::new(r"(?:-->|at)\s+([^\s:]+\.rs)(?::\d+:\d+)?")
+                .expect("Failed to compile error path regex");
+    }
+    
     let project_root = util::find_project_root()?;
     let feature_path = project_root.join(".c2rust").join(feature);
     let rust_dir = feature_path.join("rust");
     
-    // Common Rust compiler error patterns:
-    // error[E0308]: ... --> path/to/file.rs:10:5
-    // warning: ... --> path/to/file.rs:20:1
-    // We'll look for paths ending with .rs followed by line:column
-    let re = regex::Regex::new(r"(?:-->|at)\s+([^\s:]+\.rs)(?::\d+:\d+)?")
-        .context("Failed to compile regex")?;
-    
     let mut file_paths = HashSet::new();
     
-    for cap in re.captures_iter(error_msg) {
+    for cap in ERROR_PATH_RE.captures_iter(error_msg) {
         if let Some(path_match) = cap.get(1) {
             let path_str = path_match.as_str();
             let path = PathBuf::from(path_str);
@@ -455,20 +454,19 @@ fn handle_startup_test_failure_with_files(
     // Process each file found in the error
     for (idx, file) in files.iter().enumerate() {
         println!("│");
+        let file_display_name = file.file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "<unknown>".to_string());
         println!("│ {}", format!("═══ Processing file {}/{}: {} ═══", 
-            idx + 1, files.len(), file.file_name().unwrap_or_default().to_string_lossy()).bright_cyan().bold());
+            idx + 1, files.len(), file_display_name).bright_cyan().bold());
         
-        // Extract file type (var_ or fun_)
-        let file_name = file.file_name()
-            .and_then(|n| n.to_str())
-            .context("Invalid file name")?;
-        
+        // Extract file type (var_ or fun_) from file stem
         let file_stem = file.file_stem()
             .and_then(|s| s.to_str())
             .context("Invalid file stem")?;
             
         let (file_type, _) = file_scanner::extract_file_type(file_stem)
-            .context(format!("Could not extract file type from filename: {}", file_name))?;
+            .context(format!("Could not extract file type from filename: {}", file_display_name))?;
         
         // Display the C and Rust code
         let c_file = file.with_extension("c");
@@ -919,40 +917,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-    use tempfile::tempdir;
-    
-    #[test]
-    fn test_parse_error_for_files_basic() {
-        // Create a temporary directory structure
-        let temp_dir = tempfile::tempdir().unwrap();
-        let project_root = temp_dir.path();
-        
-        // Create feature directory structure
-        let feature = "test_feature";
-        let c2rust_dir = project_root.join(".c2rust");
-        fs::create_dir_all(&c2rust_dir).unwrap();
-        
-        let feature_dir = c2rust_dir.join(feature);
-        let rust_dir = feature_dir.join("rust");
-        fs::create_dir_all(&rust_dir).unwrap();
-        
-        // Create test files
-        let test_file = rust_dir.join("var_test.rs");
-        fs::write(&test_file, "// test content").unwrap();
-        
-        // Set the project root environment (this is a bit tricky - we'll need to work around this)
-        // For now, just test the regex pattern
-        let _error_msg = "error[E0308]: mismatched types
-   --> var_test.rs:10:5
-    |
-10  |     let x: i32 = \"hello\";
-    |     ^^^^^^ expected `i32`, found `&str`";
-        
-        // The function will need the project root context
-        // Since we can't easily override that in tests, we'll test the regex logic separately
-    }
-    
     #[test]
     fn test_parse_error_pattern_extraction() {
         // Test that we can extract file paths from error messages
