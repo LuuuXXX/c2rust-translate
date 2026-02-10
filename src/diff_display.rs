@@ -5,8 +5,8 @@ use colored::Colorize;
 use std::path::Path;
 
 // 列宽常量
-const C_COLUMN_WIDTH: usize = 100;
-const RUST_COLUMN_WIDTH: usize = 100;
+const C_COLUMN_WIDTH: usize = 95;
+const RUST_COLUMN_WIDTH: usize = 95;
 const LINE_NUM_WIDTH: usize = 3;
 const CONTINUATION_MARKER: &str = "   ";
 
