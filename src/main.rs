@@ -19,21 +19,21 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Translate C code to Rust for a specific feature
+    /// 为特定功能将 C 代码翻译为 Rust
     Translate {
-        /// Feature name (defaults to "default" if not specified)
+        /// 功能名称（如未指定则默认为 "default"）
         #[arg(long, default_value = "default")]
         feature: String,
         
-        /// Allow processing all unprocessed files without prompting for selection
+        /// 允许处理所有未处理的文件，无需提示选择
         #[arg(long)]
         allow_all: bool,
         
-        /// Maximum number of fix attempts for build errors (must be > 0, defaults to 10)
+        /// 构建错误的最大修复尝试次数（必须 > 0，默认为 10）
         #[arg(long, default_value = "10", value_parser = parse_positive_usize)]
         max_fix_attempts: usize,
         
-        /// Show full output for code and errors without truncation
+        /// 显示代码和错误的完整输出，不进行截断
         #[arg(long)]
         show_full_output: bool,
     },
@@ -42,7 +42,7 @@ enum Commands {
 fn main() {
     let cli = Cli::parse();
 
-    // Initialize logging before running the command
+    // 在运行命令前初始化日志记录
     if matches!(cli.command, Commands::Translate { .. }) {
         if let Err(e) = c2rust_translate::logger::init_logger() {
             eprintln!("Warning: Failed to initialize logger: {:#}", e);

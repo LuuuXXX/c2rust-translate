@@ -1,13 +1,13 @@
 #[derive(Debug, Default)]
 pub struct ProgressState {
-    /// Total number of files processed (includes files from previous runs and current session)
+    /// 已处理文件的总数（包括之前运行和当前会话的文件）
     pub processed_count: usize,
-    /// Total number of files to process (for display purposes)
+    /// 要处理的文件总数（用于显示目的）
     pub total_count: usize,
 }
 
 impl ProgressState {
-    /// Create a new progress state with total count
+    /// 创建具有总计数的新进度状态
     pub fn new(total_count: usize) -> Self {
         Self {
             processed_count: 0,
@@ -15,8 +15,8 @@ impl ProgressState {
         }
     }
 
-    /// Create a new progress state with both total and already-processed counts.
-    /// The `already_processed` value is clamped to not exceed `total_count`.
+    /// 创建具有总计数和已处理计数的新进度状态。
+    /// `already_processed` 值被限制为不超过 `total_count`。
     pub fn with_initial_progress(total_count: usize, already_processed: usize) -> Self {
         Self {
             processed_count: already_processed.min(total_count),
@@ -24,17 +24,17 @@ impl ProgressState {
         }
     }
 
-    /// Mark a file as processed (increment counter)
+    /// 将文件标记为已处理（递增计数器）
     pub fn mark_processed(&mut self) {
         self.processed_count += 1;
     }
 
-    /// Get the current progress position (1-indexed for display)
+    /// 获取当前进度位置（从 1 开始索引用于显示）
     pub fn get_current_position(&self) -> usize {
         self.processed_count + 1
     }
 
-    /// Get the total count of files to process
+    /// 获取要处理的文件总数
     pub fn get_total_count(&self) -> usize {
         self.total_count
     }
@@ -90,24 +90,24 @@ mod tests {
 
     #[test]
     fn test_with_initial_progress() {
-        // Test creating progress state with already-processed files
+        // 测试使用已处理文件创建进度状态
         let state = ProgressState::with_initial_progress(10, 3);
         assert_eq!(state.processed_count, 3);
         assert_eq!(state.total_count, 10);
         
-        // Current position should be 4 (3 processed + 1)
+        // 当前位置应该是 4（3 个已处理 + 1）
         assert_eq!(state.get_current_position(), 4);
     }
 
     #[test]
     fn test_with_initial_progress_continuation() {
-        // Simulate a scenario where 5 out of 10 files are already processed
+        // 模拟 10 个文件中已处理 5 个的场景
         let mut state = ProgressState::with_initial_progress(10, 5);
         
-        // Next file to process should show as [6/10]
+        // 下一个要处理的文件应显示为 [6/10]
         assert_eq!(state.get_current_position(), 6);
         
-        // After processing one more file, should show as [7/10]
+        // 处理一个文件后，应显示为 [7/10]
         state.mark_processed();
         assert_eq!(state.get_current_position(), 7);
         assert_eq!(state.processed_count, 6);
@@ -115,13 +115,13 @@ mod tests {
 
     #[test]
     fn test_with_initial_progress_clamping() {
-        // Test that already_processed is clamped to total_count
+        // 测试 already_processed 被限制为 total_count
         let state = ProgressState::with_initial_progress(10, 15);
-        assert_eq!(state.processed_count, 10); // Should be clamped to 10
+        assert_eq!(state.processed_count, 10); // 应该被限制为 10
         assert_eq!(state.total_count, 10);
         assert_eq!(state.get_current_position(), 11); // 10 + 1
         
-        // Test edge case: already_processed equals total_count
+        // 测试边界情况：already_processed 等于 total_count
         let state2 = ProgressState::with_initial_progress(10, 10);
         assert_eq!(state2.processed_count, 10);
         assert_eq!(state2.get_current_position(), 11);

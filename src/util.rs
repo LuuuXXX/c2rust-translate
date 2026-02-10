@@ -1,26 +1,26 @@
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
-/// Find the project root by searching upward for .c2rust directory from a starting path
+/// 从起始路径向上搜索 .c2rust 目录以查找项目根目录
 fn find_project_root_from(start_path: &Path) -> Result<PathBuf> {
     let mut current = start_path.to_path_buf();
     
     loop {
         let c2rust_dir = current.join(".c2rust");
         
-        // Use metadata to properly handle IO errors
+        // 使用 metadata 正确处理 IO 错误
         match std::fs::metadata(&c2rust_dir) {
             Ok(metadata) if metadata.is_dir() => {
                 return Ok(current);
             }
             Ok(_) => {
-                // .c2rust exists but is not a directory, continue searching
+                // .c2rust 存在但不是目录，继续搜索
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                // .c2rust doesn't exist, continue searching
+                // .c2rust 不存在，继续搜索
             }
             Err(e) => {
-                // Other IO error (permissions, etc.)
+                // 其他 IO 错误（权限等）
                 return Err(e).with_context(|| {
                     format!("Failed to access .c2rust directory at {}", c2rust_dir.display())
                 });
@@ -34,14 +34,14 @@ fn find_project_root_from(start_path: &Path) -> Result<PathBuf> {
     }
 }
 
-/// Find the project root by searching upward for .c2rust directory from current directory
+/// 从当前目录向上搜索 .c2rust 目录以查找项目根目录
 pub fn find_project_root() -> Result<PathBuf> {
     let current = std::env::current_dir()
         .context("Failed to get current directory")?;
     find_project_root_from(&current)
 }
 
-/// Validate feature name to prevent path traversal attacks
+/// 验证功能名称以防止路径遍历攻击
 pub fn validate_feature_name(feature: &str) -> Result<()> {
     if feature.contains('/') || feature.contains('\\') || feature.contains("..") || feature.is_empty() {
         anyhow::bail!(
@@ -60,7 +60,7 @@ mod tests {
 
     #[test]
     fn test_find_project_root_from_nested_dir() {
-        // Create a temporary directory structure:
+        // 创建临时目录结构：
         // temp/
         //   .c2rust/
         //   subdir1/
@@ -73,7 +73,7 @@ mod tests {
         let subdir2 = subdir1.join("subdir2");
         fs::create_dir_all(&subdir2).unwrap();
         
-        // Should find the .c2rust directory from nested subdirectory
+        // 应该从嵌套子目录找到 .c2rust 目录
         let result = find_project_root_from(&subdir2);
         
         assert!(result.is_ok());
@@ -82,12 +82,12 @@ mod tests {
 
     #[test]
     fn test_find_project_root_not_found() {
-        // Create a temporary directory without .c2rust
+        // 创建没有 .c2rust 的临时目录
         let temp_dir = tempdir().unwrap();
         let subdir = temp_dir.path().join("subdir");
         fs::create_dir(&subdir).unwrap();
         
-        // Should fail to find .c2rust directory
+        // 应该无法找到 .c2rust 目录
         let result = find_project_root_from(&subdir);
         
         assert!(result.is_err());
@@ -97,12 +97,12 @@ mod tests {
 
     #[test]
     fn test_find_project_root_from_root_dir() {
-        // Create a temporary directory with .c2rust at the root
+        // 创建根目录带有 .c2rust 的临时目录
         let temp_dir = tempdir().unwrap();
         let c2rust_dir = temp_dir.path().join(".c2rust");
         fs::create_dir(&c2rust_dir).unwrap();
         
-        // Should find .c2rust in the starting directory
+        // 应该在起始目录中找到 .c2rust
         let result = find_project_root_from(temp_dir.path());
         
         assert!(result.is_ok());
@@ -118,16 +118,16 @@ mod tests {
     
     #[test]
     fn test_validate_feature_name_invalid() {
-        // Test path separator
+        // 测试路径分隔符
         assert!(validate_feature_name("feature/path").is_err());
         assert!(validate_feature_name("feature\\path").is_err());
         
-        // Test path traversal
+        // 测试路径遍历
         assert!(validate_feature_name("..").is_err());
         assert!(validate_feature_name("../feature").is_err());
         assert!(validate_feature_name("feature/../other").is_err());
         
-        // Test empty
+        // 测试空字符串
         assert!(validate_feature_name("").is_err());
     }
 }
