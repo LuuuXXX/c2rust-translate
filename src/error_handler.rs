@@ -204,7 +204,13 @@ pub(crate) fn handle_startup_test_failure_with_files(
                                 Ok(_) => {
                                     println!("│ {}", "✓ Build successful!".bright_green().bold());
                                     
+                                    println!("│ {}", "Updating code analysis...".bright_blue());
+                                    crate::analyzer::update_code_analysis(feature)?;
+                                    println!("│ {}", "✓ Code analysis updated".bright_green());
+                                    
                                     // 现在尝试完整的混合构建测试
+                                    println!("│");
+                                    println!("│ {}", "Running hybrid build tests...".bright_blue().bold());
                                     match builder::run_hybrid_build(feature) {
                                         Ok(_) => {
                                             println!("│ {}", "✓ Hybrid build tests passed after manual fix!".bright_green().bold());
