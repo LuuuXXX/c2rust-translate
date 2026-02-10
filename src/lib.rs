@@ -679,7 +679,17 @@ where
     
     // 使用自定义处理运行测试以检测成功/失败
     builder::c2rust_clean(feature)?;
-    builder::c2rust_build(feature)?;
+    
+    match builder::c2rust_build(feature) {
+        Ok(_) => {
+            println!("│ {}", "✓ Build successful".bright_green().bold());
+        }
+        Err(build_error) => {
+            println!("│ {}", "✗ Build failed".red().bold());
+            // Enter interactive build failure handling
+            builder::handle_build_failure_interactive(feature, file_type, rs_file, build_error)?;
+        }
+    }
     
     let test_result = builder::c2rust_test(feature);
     
