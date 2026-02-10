@@ -257,6 +257,7 @@ pub fn prompt_compile_failure_choice() -> Result<FailureChoice> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
     fn test_user_choice_variants() {
@@ -284,7 +285,11 @@ mod tests {
     }
     
     #[test]
+    #[serial]
     fn test_auto_accept_mode() {
+        // Ensure clean state before test
+        disable_auto_accept_mode();
+        
         // Initially should be disabled
         assert!(!is_auto_accept_mode());
         
@@ -295,5 +300,8 @@ mod tests {
         // Disable it
         disable_auto_accept_mode();
         assert!(!is_auto_accept_mode());
+        
+        // Clean up - ensure disabled for next test
+        disable_auto_accept_mode();
     }
 }

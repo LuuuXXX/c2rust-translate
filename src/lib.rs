@@ -462,7 +462,10 @@ fn handle_max_fix_attempts_reached(
             
             // Get required suggestion from user
             let suggestion_text = interaction::prompt_suggestion(true)?
-                .expect("Suggestion should be present when required");
+                .ok_or_else(|| anyhow::anyhow!(
+                    "Suggestion is required for compilation failure but none was provided. \
+                     This may indicate an issue with the prompt_suggestion function when require_input=true."
+                ))?;
             
             // Save suggestion to suggestions.txt
             suggestion::append_suggestion(&suggestion_text)?;
