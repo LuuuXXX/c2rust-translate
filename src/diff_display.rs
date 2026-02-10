@@ -4,6 +4,12 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use std::path::Path;
 
+// 列宽常量
+const C_COLUMN_WIDTH: usize = 90;
+const RUST_COLUMN_WIDTH: usize = 110;
+const LINE_NUM_WIDTH: usize = 3;
+const CONTINUATION_MARKER: &str = "   ";
+
 /// 并排显示 C 和 Rust 代码及测试/构建结果
 pub fn display_code_comparison(
     c_file: &Path,
@@ -29,7 +35,9 @@ pub fn display_code_comparison(
     // 行格式："│ {:3} {:<90}│ {:3} {:<110}│"
     // C 侧：空格(1) + 行号(3) + 空格(1) + 内容(90) = 95 字符
     // Rust 侧：空格(1) + 行号(3) + 空格(1) + 内容(110) = 115 字符
-    println!("┌{:─<95}┬{:─<115}┐", "─ C Source Code ", "─ Rust Code ─");
+    let c_total_width = LINE_NUM_WIDTH + 1 + C_COLUMN_WIDTH + 1;
+    let rust_total_width = LINE_NUM_WIDTH + 1 + RUST_COLUMN_WIDTH + 1;
+    println!("┌{:─<width1$}┬{:─<width2$}┐", "─ C Source Code ", "─ Rust Code ─", width1 = c_total_width, width2 = rust_total_width);
     
     // 并排显示行
     let max_lines = std::cmp::max(c_lines.len(), rust_lines.len());
@@ -38,9 +46,8 @@ pub fn display_code_comparison(
         let rust_line = rust_lines.get(i).unwrap_or(&"");
         
         // 如果行太长而无法放入列中，则换行显示
-        // 列宽：C=90 字符，Rust=110 字符
-        let c_wrapped = wrap_line(c_line, 90);
-        let rust_wrapped = wrap_line(rust_line, 110);
+        let c_wrapped = wrap_line(c_line, C_COLUMN_WIDTH);
+        let rust_wrapped = wrap_line(rust_line, RUST_COLUMN_WIDTH);
         
         let max_wrapped_lines = std::cmp::max(c_wrapped.len(), rust_wrapped.len());
         
@@ -49,34 +56,45 @@ pub fn display_code_comparison(
             let rust_display = rust_wrapped.get(j).map(|s| s.as_str()).unwrap_or("");
             
             // 第一行显示行号，后续换行不显示行号
-            let c_line_num = if j == 0 {
-                format!("{}", i + 1).dimmed().to_string()
-            } else {
-                "   ".to_string()
-            };
-            
-            let rust_line_num = if j == 0 {
-                format!("{}", i + 1).dimmed().to_string()
-            } else {
-                "   ".to_string()
-            };
+            let c_line_num = format_line_number(j, i + 1);
+            let rust_line_num = format_line_number(j, i + 1);
             
             println!(
-                "│ {} {:<90}│ {} {:<110}│",
+                "│ {} {:<c_width$}│ {} {:<r_width$}│",
                 c_line_num,
                 c_display,
                 rust_line_num,
-                rust_display
+                rust_display,
+                c_width = C_COLUMN_WIDTH,
+                r_width = RUST_COLUMN_WIDTH
             );
         }
     }
     
-    println!("└{:─<95}┴{:─<115}┘", "", "");
+    let c_total_width = LINE_NUM_WIDTH + 1 + C_COLUMN_WIDTH + 1;
+    let rust_total_width = LINE_NUM_WIDTH + 1 + RUST_COLUMN_WIDTH + 1;
+    println!("└{:─<width1$}┴{:─<width2$}┘", "", "", width1 = c_total_width, width2 = rust_total_width);
     
     // 显示结果部分
     display_result_section(result_message, result_type);
     
     Ok(())
+}
+
+/// 格式化行号显示
+/// 
+/// # Arguments
+/// * `wrap_index` - 当前行的换行索引（0 表示第一行）
+/// * `line_number` - 源代码的行号
+/// 
+/// # Returns
+/// 格式化后的行号字符串，第一行显示行号，后续行显示空格
+fn format_line_number(wrap_index: usize, line_number: usize) -> String {
+    if wrap_index == 0 {
+        format!("{:>width$}", line_number, width = LINE_NUM_WIDTH).dimmed().to_string()
+    } else {
+        CONTINUATION_MARKER.to_string()
+    }
 }
 
 /// 将长行按指定宽度换行
