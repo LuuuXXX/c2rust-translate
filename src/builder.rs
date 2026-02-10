@@ -402,17 +402,20 @@ pub fn handle_test_failure_interactive(
     match choice {
         interaction::FailureChoice::AddSuggestion => {
             println!("│");
-            println!("│ {}", "You chose: Continue trying with a new suggestion".bright_cyan());
+            println!("│ {}", "You chose: Add fix suggestion for AI to modify".bright_cyan());
             
             // Track the most recent test error across retries to avoid recursion
             let mut current_error = test_error;
             
             loop {
+                // Clear old suggestions before prompting for new one
+                suggestion::clear_suggestions()?;
+                
                 // For test failures, suggestion is REQUIRED
                 let suggestion_text = interaction::prompt_suggestion(true)?
                     .expect("Suggestion should be present when required");
                 
-                // Save suggestion to c2rust.md
+                // Save suggestion to suggestions.txt
                 suggestion::append_suggestion(&suggestion_text)?;
                 
                 // Apply fix with the suggestion

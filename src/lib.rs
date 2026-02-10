@@ -8,7 +8,7 @@ pub mod progress;
 pub mod logger;
 pub mod constants;
 pub mod target_selector;
-pub mod diff_display;
+pub(crate) mod diff_display;
 pub(crate) mod interaction;
 pub(crate) mod suggestion;
 pub(crate) mod error_handler;
@@ -638,6 +638,25 @@ where
     println!("│");
     println!("│ {}", format_progress("Hybrid Build Tests").bright_magenta().bold());
     println!("│ {}", "Running hybrid build tests...".bright_blue());
+    
+    // Preflight checks (same as in run_hybrid_build_interactive)
+    let project_root = util::find_project_root()?;
+    let config_path = project_root.join(".c2rust/config.toml");
+    
+    if !config_path.exists() {
+        eprintln!("{}", format!("Error: Config file not found at {}", config_path.display()).red());
+        anyhow::bail!("Config file not found, cannot run hybrid build tests");
+    }
+
+    // Check if c2rust-config is available before proceeding
+    let check_output = std::process::Command::new("c2rust-config")
+        .arg("--version")
+        .output();
+    
+    if check_output.is_err() {
+        eprintln!("{}", "Error: c2rust-config not found".red());
+        anyhow::bail!("c2rust-config not found, cannot run hybrid build tests");
+    }
     
     // Run tests with custom handling to detect success/failure
     builder::c2rust_clean(feature)?;

@@ -34,15 +34,19 @@ pub fn display_code_comparison(
         let c_line = c_lines.get(i).unwrap_or(&"");
         let rust_line = rust_lines.get(i).unwrap_or(&"");
         
-        // Truncate lines if too long to fit in the column
-        let c_display = if c_line.len() > 28 {
-            format!("{}...", &c_line[..25])
+        // Truncate lines if too long to fit in the column (using character count for UTF-8 safety)
+        // Column widths: C=26 chars, Rust=31 chars
+        // Reserve 3 chars for "..." suffix
+        let c_display = if c_line.chars().count() > 26 {
+            let truncated: String = c_line.chars().take(23).collect();
+            format!("{}...", truncated)
         } else {
             c_line.to_string()
         };
         
-        let rust_display = if rust_line.len() > 33 {
-            format!("{}...", &rust_line[..30])
+        let rust_display = if rust_line.chars().count() > 31 {
+            let truncated: String = rust_line.chars().take(28).collect();
+            format!("{}...", truncated)
         } else {
             rust_line.to_string()
         };
