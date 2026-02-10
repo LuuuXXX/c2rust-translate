@@ -420,6 +420,19 @@ fn handle_test_failure_interactive(
                 match c2rust_test(feature) {
                     Ok(_) => {
                         println!("│ {}", "✓ Tests passed after applying fix!".bright_green().bold());
+                        
+                        // Commit the fix
+                        println!("│");
+                        println!("│ {}", "Committing test fix...".bright_blue());
+                        let file_name = rs_file.file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("unknown");
+                        crate::git::git_commit(
+                            &format!("Fix tests for {} (feature: {})", file_name, feature),
+                            feature
+                        )?;
+                        println!("│ {}", "✓ Test fix committed".bright_green());
+                        
                         return Ok(());
                     }
                     Err(e) => {
@@ -454,6 +467,19 @@ fn handle_test_failure_interactive(
                                         match c2rust_test(feature) {
                                             Ok(_) => {
                                                 println!("│ {}", "✓ Tests passed after manual fix!".bright_green().bold());
+                                                
+                                                // Commit the manual fix
+                                                println!("│");
+                                                println!("│ {}", "Committing manual test fix...".bright_blue());
+                                                let file_name = rs_file.file_stem()
+                                                    .and_then(|s| s.to_str())
+                                                    .unwrap_or("unknown");
+                                                crate::git::git_commit(
+                                                    &format!("Manually fix tests for {} (feature: {})", file_name, feature),
+                                                    feature
+                                                )?;
+                                                println!("│ {}", "✓ Manual test fix committed".bright_green());
+                                                
                                                 return Ok(());
                                             }
                                             Err(e) => {
@@ -496,6 +522,19 @@ fn handle_test_failure_interactive(
                         match c2rust_test(feature) {
                             Ok(_) => {
                                 println!("│ {}", "✓ Tests passed after manual fix!".bright_green().bold());
+                                
+                                // Commit the manual fix
+                                println!("│");
+                                println!("│ {}", "Committing manual test fix...".bright_blue());
+                                let file_name = rs_file.file_stem()
+                                    .and_then(|s| s.to_str())
+                                    .unwrap_or("unknown");
+                                crate::git::git_commit(
+                                    &format!("Manually fix tests for {} (feature: {})", file_name, feature),
+                                    feature
+                                )?;
+                                println!("│ {}", "✓ Manual test fix committed".bright_green());
+                                
                                 return Ok(());
                             }
                             Err(e) => {

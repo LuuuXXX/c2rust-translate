@@ -214,6 +214,19 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
 }
 
 /// Process a single .rs file through the translation workflow
+/// 
+/// This function implements the complete retry mechanism:
+/// 1. Translates C to Rust (with suggestions from c2rust.md if available during fix phase)
+/// 2. Builds and fixes errors iteratively
+/// 3. On successful build, executes the full workflow:
+///    - Commits changes
+///    - Updates code analysis  
+///    - Runs hybrid build tests (clean -> build -> test)
+/// 
+/// If max fix attempts are reached, user can choose to:
+/// - Continue: Provide optional suggestion and retry translation from scratch
+/// - Manual Fix: Edit file in vim and rebuild
+/// - Exit: Abort the translation process
 fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, current_position: usize, total_count: usize, max_fix_attempts: usize, show_full_output: bool) -> Result<()> {
     use constants::MAX_TRANSLATION_ATTEMPTS;
     
@@ -415,11 +428,14 @@ fn handle_max_fix_attempts_reached(
             
             // Get optional suggestion from user
             if let Some(suggestion_text) = interaction::prompt_suggestion(false)? {
-                // Save suggestion to c2rust.md
+                // Save suggestion to c2rust.md for use in subsequent fix attempts
+                // The suggestion will be automatically picked up by fix_translation_error
                 suggestion::append_suggestion(&suggestion_text)?;
             }
             
-            // If we can still retry translation, do so
+            // Retry logic:
+            // - If not last attempt: retry translation from scratch (suggestion will be used during fix phase)
+            // - If last attempt: apply fix with suggestion and try to build
             if !is_last_attempt {
                 let remaining_retries = MAX_TRANSLATION_ATTEMPTS - attempt_number;
                 println!("│ {}", format!("Retrying translation from scratch... ({} retries remaining)", remaining_retries).bright_cyan());
