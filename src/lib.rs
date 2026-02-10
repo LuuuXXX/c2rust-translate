@@ -498,6 +498,9 @@ fn handle_max_fix_attempts_reached(
                         ))
                     }
                 }
+                println!("{}", "Updating code analysis...".bright_blue());
+                analyzer::update_code_analysis(feature)?;
+                println!("{}", "✓ Code analysis updated".bright_green());
             }
         }
         interaction::FailureChoice::ManualFix => {
@@ -558,6 +561,9 @@ fn handle_max_fix_attempts_reached(
                                 }
                             }
                         }
+                        println!("{}", "Updating code analysis...".bright_blue());
+                        analyzer::update_code_analysis(feature)?;
+                        println!("{}", "✓ Code analysis updated".bright_green());
                     }
                 }
                 Err(e) => {
