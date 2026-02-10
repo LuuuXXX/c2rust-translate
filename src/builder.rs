@@ -185,7 +185,11 @@ fn execute_command_in_dir(
     // 一次性获取 build.target 用于环境设置和打印
     // 区分"未设置"（检查为空的 Ok）和实际错误
     let build_target = match get_config_value("build.target", feature) {
-        Ok(target) if !target.is_empty() => Some(target),
+        Ok(target) if !target.is_empty() => {
+            // 将 build.target 转换为基于 build.dir 的绝对路径
+            let absolute_target = exec_dir.join(&target);
+            Some(absolute_target.display().to_string())
+        },
         Ok(_) => None, // 空值表示未设置
         Err(e) => {
             // 检查这是否只是"未找到键"错误还是真正的失败
