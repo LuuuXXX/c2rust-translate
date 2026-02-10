@@ -10,6 +10,7 @@ pub mod constants;
 pub mod target_selector;
 pub(crate) mod interaction;
 pub(crate) mod suggestion;
+pub(crate) mod error_handler;
 
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -140,22 +141,48 @@ pub fn translate_feature(feature: &str, allow_all: bool, max_fix_attempts: usize
             }
             Err(e) => {
                 println!("{}", "✗ Initial hybrid build tests failed!".red().bold());
-                println!("{}", "This may indicate issues with the test environment or previous translations.".yellow());
                 
-                // Offer interactive handling for startup test failure
-                let choice = interaction::prompt_user_choice("Initial test failure", false)?;
-                
-                match choice {
-                    interaction::UserChoice::Continue => {
-                        println!("│ {}", "Continuing despite test failure. You can fix issues during file processing.".yellow());
-                        // Continue with the workflow
+                // Try to parse error and locate files
+                match error_handler::parse_error_for_files(&e.to_string(), feature) {
+                    Ok(files) if !files.is_empty() => {
+                        // Found files, enter repair flow
+                        println!("{}", "Attempting to automatically locate and fix files from error...".yellow());
+                        error_handler::handle_startup_test_failure_with_files(feature, e, files)?;
                     }
-                    interaction::UserChoice::ManualFix => {
-                        println!("│ {}", "Please manually fix the test issues and run the tool again.".yellow());
-                        return Err(e).context("Initial tests failed and user chose manual fix");
+                    Ok(_) => {
+                        // No files found in error message
+                        println!("{}", "Unable to automatically locate files from error.".yellow());
+                        println!("{}", "This may indicate issues with the test environment or previous translations.".yellow());
+                        
+                        let choice = interaction::prompt_user_choice("Initial test failure", false)?;
+                        
+                        match choice {
+                            interaction::UserChoice::Continue => {
+                                println!("│ {}", "Continuing despite test failure. You can fix issues during file processing.".yellow());
+                                // Continue with the workflow
+                            }
+                            interaction::UserChoice::ManualFix | interaction::UserChoice::Exit => {
+                                return Err(e).context("Initial tests failed");
+                            }
+                        }
                     }
-                    interaction::UserChoice::Exit => {
-                        return Err(e).context("Initial tests failed and user chose to exit");
+                    Err(parse_err) => {
+                        // Failed to parse error message (e.g., find_project_root failure)
+                        println!("{}", format!("Error parsing failure message: {}", parse_err).yellow());
+                        println!("{}", "Unable to automatically locate files from error.".yellow());
+                        println!("{}", "This may indicate issues with the test environment or previous translations.".yellow());
+                        
+                        let choice = interaction::prompt_user_choice("Initial test failure", false)?;
+                        
+                        match choice {
+                            interaction::UserChoice::Continue => {
+                                println!("│ {}", "Continuing despite test failure. You can fix issues during file processing.".yellow());
+                                // Continue with the workflow
+                            }
+                            interaction::UserChoice::ManualFix | interaction::UserChoice::Exit => {
+                                return Err(e).context("Initial tests failed");
+                            }
+                        }
                     }
                 }
             }

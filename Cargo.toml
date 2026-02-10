@@ -11,6 +11,8 @@ tempfile = "3.8"
 shell-words = "1.1"
 colored = "2.1"
 chrono = "0.4"
+regex = "1.10"
+lazy_static = "1.5"
 
 [dev-dependencies]
 serial_test = "3.0"
