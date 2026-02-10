@@ -488,19 +488,16 @@ fn handle_max_fix_attempts_reached(
                 match builder::cargo_build(feature, true) {
                     Ok(_) => {
                         println!("│ {}", "✓ Build successful after applying suggestion!".bright_green().bold());
-                        Ok(true)
+                        return Ok(true);
                     }
                     Err(e) => {
                         println!("│ {}", "✗ Build still failing after fix attempt".red());
-                        Err(e).context(format!(
+                        return Err(e).context(format!(
                             "Build failed after fix with suggestion for file {}",
                             rs_file.display()
-                        ))
+                        ));
                     }
                 }
-                println!("{}", "Updating code analysis...".bright_blue());
-                analyzer::update_code_analysis(feature)?;
-                println!("{}", "✓ Code analysis updated".bright_green());
             }
         }
         interaction::FailureChoice::ManualFix => {
@@ -561,9 +558,6 @@ fn handle_max_fix_attempts_reached(
                                 }
                             }
                         }
-                        println!("{}", "Updating code analysis...".bright_blue());
-                        analyzer::update_code_analysis(feature)?;
-                        println!("{}", "✓ Code analysis updated".bright_green());
                     }
                 }
                 Err(e) => {
