@@ -37,30 +37,38 @@ pub fn display_code_comparison(
         let c_line = c_lines.get(i).unwrap_or(&"");
         let rust_line = rust_lines.get(i).unwrap_or(&"");
         
-        // 如果行太长而无法放入列中，则截断（使用字符计数以确保 UTF-8 安全）
+        // 如果行太长而无法放入列中，则换行显示
         // 列宽：C=90 字符，Rust=110 字符
-        // 为 "..." 后缀保留 3 个字符
-        let c_display = if c_line.chars().count() > 90 {
-            let truncated: String = c_line.chars().take(87).collect();
-            format!("{}...", truncated)
-        } else {
-            c_line.to_string()
-        };
+        let c_wrapped = wrap_line(c_line, 90);
+        let rust_wrapped = wrap_line(rust_line, 110);
         
-        let rust_display = if rust_line.chars().count() > 110 {
-            let truncated: String = rust_line.chars().take(107).collect();
-            format!("{}...", truncated)
-        } else {
-            rust_line.to_string()
-        };
+        let max_wrapped_lines = std::cmp::max(c_wrapped.len(), rust_wrapped.len());
         
-        println!(
-            "│ {:3} {:<90}│ {:3} {:<110}│",
-            format!("{}", i + 1).dimmed(),
-            c_display,
-            format!("{}", i + 1).dimmed(),
-            rust_display
-        );
+        for j in 0..max_wrapped_lines {
+            let c_display = c_wrapped.get(j).map(|s| s.as_str()).unwrap_or("");
+            let rust_display = rust_wrapped.get(j).map(|s| s.as_str()).unwrap_or("");
+            
+            // 第一行显示行号，后续换行不显示行号
+            let c_line_num = if j == 0 {
+                format!("{}", i + 1).dimmed().to_string()
+            } else {
+                "   ".to_string()
+            };
+            
+            let rust_line_num = if j == 0 {
+                format!("{}", i + 1).dimmed().to_string()
+            } else {
+                "   ".to_string()
+            };
+            
+            println!(
+                "│ {} {:<90}│ {} {:<110}│",
+                c_line_num,
+                c_display,
+                rust_line_num,
+                rust_display
+            );
+        }
     }
     
     println!("└{:─<95}┴{:─<115}┘", "", "");
@@ -69,6 +77,35 @@ pub fn display_code_comparison(
     display_result_section(result_message, result_type);
     
     Ok(())
+}
+
+/// 将长行按指定宽度换行
+/// 
+/// # Arguments
+/// * `line` - 要换行的文本行
+/// * `width` - 每行的最大字符宽度
+/// 
+/// # Returns
+/// 换行后的字符串向量
+fn wrap_line(line: &str, width: usize) -> Vec<String> {
+    let char_count = line.chars().count();
+    
+    if char_count <= width {
+        return vec![line.to_string()];
+    }
+    
+    let mut wrapped_lines = Vec::new();
+    let chars: Vec<char> = line.chars().collect();
+    let mut start = 0;
+    
+    while start < char_count {
+        let end = std::cmp::min(start + width, char_count);
+        let segment: String = chars[start..end].iter().collect();
+        wrapped_lines.push(segment);
+        start = end;
+    }
+    
+    wrapped_lines
 }
 
 /// 显示测试或构建结果部分
@@ -147,5 +184,42 @@ mod tests {
         let _ = ResultType::TestFail;
         let _ = ResultType::BuildSuccess;
         let _ = ResultType::BuildFail;
+    }
+    
+    #[test]
+    fn test_wrap_line_short() {
+        let line = "short line";
+        let wrapped = wrap_line(line, 20);
+        assert_eq!(wrapped.len(), 1);
+        assert_eq!(wrapped[0], "short line");
+    }
+    
+    #[test]
+    fn test_wrap_line_exact_width() {
+        let line = "exactly twenty chars";
+        let wrapped = wrap_line(line, 20);
+        assert_eq!(wrapped.len(), 1);
+        assert_eq!(wrapped[0], "exactly twenty chars");
+    }
+    
+    #[test]
+    fn test_wrap_line_long() {
+        let line = "This is a very long line that needs to be wrapped into multiple lines";
+        let wrapped = wrap_line(line, 20);
+        assert!(wrapped.len() > 1);
+        // 验证每行不超过指定宽度
+        for segment in &wrapped {
+            assert!(segment.chars().count() <= 20);
+        }
+    }
+    
+    #[test]
+    fn test_wrap_line_utf8() {
+        let line = "这是一个很长的中文字符串需要换行显示";
+        let wrapped = wrap_line(line, 10);
+        assert!(wrapped.len() > 1);
+        for segment in &wrapped {
+            assert!(segment.chars().count() <= 10);
+        }
     }
 }
