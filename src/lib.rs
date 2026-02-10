@@ -488,6 +488,11 @@ fn handle_max_fix_attempts_reached(
                 match builder::cargo_build(feature, true) {
                     Ok(_) => {
                         println!("│ {}", "✓ Build successful after applying suggestion!".bright_green().bold());
+                        
+                        println!("{}", "Updating code analysis...".bright_blue());
+                        analyzer::update_code_analysis(feature)?;
+                        println!("{}", "✓ Code analysis updated".bright_green());
+                        
                         Ok(true)
                     }
                     Err(e) => {
@@ -517,6 +522,11 @@ fn handle_max_fix_attempts_reached(
                         match builder::cargo_build(feature, true) {
                             Ok(_) => {
                                 println!("│ {}", "✓ Build successful after manual fix!".bright_green().bold());
+                                
+                                println!("{}", "Updating code analysis...".bright_blue());
+                                analyzer::update_code_analysis(feature)?;
+                                println!("{}", "✓ Code analysis updated".bright_green());
+                                
                                 return Ok(true);
                             }
                             Err(e) => {
