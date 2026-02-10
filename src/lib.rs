@@ -8,6 +8,7 @@ pub mod progress;
 pub mod logger;
 pub mod constants;
 pub mod target_selector;
+pub(crate) mod diff_display;
 pub(crate) mod interaction;
 pub(crate) mod suggestion;
 pub(crate) mod error_handler;
@@ -422,39 +423,52 @@ fn handle_max_fix_attempts_reached(
     println!("│ {}", "⚠ Maximum fix attempts reached!".red().bold());
     println!("│ {}", format!("File {} still has build errors after {} fix attempts.", file_name, max_fix_attempts).yellow());
     
-    // Display full C and Rust code for user reference
+    // Display code comparison and build error
     let c_file = rs_file.with_extension("c");
     
     // Show file locations
     interaction::display_file_paths(Some(&c_file), rs_file);
     
-    // Display full code (always show full for interactive mode)
-    println!("│ {}", "═══ C Source Code (Full) ═══".bright_cyan().bold());
-    translator::display_code(&c_file, "─ C Source ─", usize::MAX, true);
+    // Use diff display for better comparison
+    let error_message = format!("✗ Build Error:\n{}", build_error);
+    if let Err(e) = diff_display::display_code_comparison(
+        &c_file,
+        rs_file,
+        &error_message,
+        diff_display::ResultType::BuildFail,
+    ) {
+        // Fallback to old display if comparison fails
+        println!("│ {}", format!("Failed to display comparison: {}", e).yellow());
+        println!("│ {}", "═══ C Source Code (Full) ═══".bright_cyan().bold());
+        translator::display_code(&c_file, "─ C Source ─", usize::MAX, true);
+        
+        println!("│ {}", "═══ Rust Code (Full) ═══".bright_cyan().bold());
+        translator::display_code(rs_file, "─ Rust Code ─", usize::MAX, true);
+        
+        println!("│ {}", "═══ Build Error ═══".bright_red().bold());
+        println!("│ {}", build_error);
+    }
     
-    println!("│ {}", "═══ Rust Code (Full) ═══".bright_cyan().bold());
-    translator::display_code(rs_file, "─ Rust Code ─", usize::MAX, true);
-    
-    println!("│ {}", "═══ Build Error ═══".bright_red().bold());
-    println!("│ {}", build_error);
-    
-    // Get user choice
-    let choice = interaction::prompt_user_choice("Build failure", false)?;
+    // Get user choice using new prompt
+    let choice = interaction::prompt_compile_failure_choice()?;
     
     match choice {
-        interaction::UserChoice::Continue => {
+        interaction::FailureChoice::AddSuggestion => {
             println!("│");
-            println!("│ {}", "You chose: Continue trying with a new suggestion".bright_cyan());
+            println!("│ {}", "You chose: Add fix suggestion for AI to modify".bright_cyan());
             
             // Clear old suggestions BEFORE prompting for new one
-            // This prevents the bug where the new suggestion gets cleared on next retry
             suggestion::clear_suggestions()?;
             
-            // Get optional suggestion from user
-            if let Some(suggestion_text) = interaction::prompt_suggestion(false)? {
-                // Save suggestion to suggestions.txt
-                suggestion::append_suggestion(&suggestion_text)?;
-            }
+            // Get required suggestion from user
+            let suggestion_text = interaction::prompt_suggestion(true)?
+                .ok_or_else(|| anyhow::anyhow!(
+                    "Suggestion is required for compilation failure but none was provided. \
+                     This may indicate an issue with the prompt_suggestion function when require_input=true."
+                ))?;
+            
+            // Save suggestion to suggestions.txt
+            suggestion::append_suggestion(&suggestion_text)?;
             
             // If we can still retry translation, do so
             if !is_last_attempt {
@@ -462,7 +476,7 @@ fn handle_max_fix_attempts_reached(
                 println!("│ {}", format!("Retrying translation from scratch... ({} retries remaining)", remaining_retries).bright_cyan());
                 println!("│ {}", "Note: The translator will overwrite the existing file content.".bright_blue());
                 println!("│ {}", "✓ Retry scheduled".bright_green());
-                Ok(false)// Signal retry
+                Ok(false) // Signal retry
             } else {
                 // No more translation retries, but we can try fix again
                 println!("│ {}", "No translation retries remaining, attempting fix with new suggestion...".bright_yellow());
@@ -489,7 +503,7 @@ fn handle_max_fix_attempts_reached(
                 }
             }
         }
-        interaction::UserChoice::ManualFix => {
+        interaction::FailureChoice::ManualFix => {
             println!("│");
             println!("│ {}", "You chose: Manual fix".bright_cyan());
             
@@ -560,7 +574,7 @@ fn handle_max_fix_attempts_reached(
                 }
             }
         }
-        interaction::UserChoice::Exit => {
+        interaction::FailureChoice::Exit => {
             println!("│");
             println!("│ {}", "You chose: Exit".yellow());
             println!("│ {}", "Exiting due to build failures.".yellow());
@@ -620,26 +634,143 @@ fn complete_file_processing<F>(
 where
     F: Fn(&str) -> String
 {
+    // Run hybrid build tests first before committing
+    println!("│");
+    println!("│ {}", format_progress("Hybrid Build Tests").bright_magenta().bold());
+    println!("│ {}", "Running hybrid build tests...".bright_blue());
+    
+    // Preflight checks (same as in run_hybrid_build_interactive)
+    let project_root = util::find_project_root()?;
+    let config_path = project_root.join(".c2rust/config.toml");
+    
+    if !config_path.exists() {
+        eprintln!("{}", format!("Error: Config file not found at {}", config_path.display()).red());
+        anyhow::bail!("Config file not found, cannot run hybrid build tests");
+    }
+
+    // Check if c2rust-config is available before proceeding
+    let check_output = std::process::Command::new("c2rust-config")
+        .arg("--version")
+        .output();
+    
+    match check_output {
+        Ok(output) => {
+            if !output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                eprintln!(
+                    "{}",
+                    format!(
+                        "Error: c2rust-config --version failed.\nstdout:\n{}\nstderr:\n{}",
+                        stdout, stderr
+                    )
+                    .red()
+                );
+                anyhow::bail!(
+                    "c2rust-config is present but failed to run successfully, cannot run hybrid build tests"
+                );
+            }
+        }
+        Err(_) => {
+            eprintln!("{}", "Error: c2rust-config not found".red());
+            anyhow::bail!("c2rust-config not found, cannot run hybrid build tests");
+        }
+    }
+    
+    // Run tests with custom handling to detect success/failure
+    builder::c2rust_clean(feature)?;
+    builder::c2rust_build(feature)?;
+    
+    let test_result = builder::c2rust_test(feature);
+    
+    match test_result {
+        Ok(_) => {
+            println!("│ {}", "✓ Hybrid build tests passed".bright_green().bold());
+            
+            // Show code comparison and success prompt if not in auto-accept mode
+            if !interaction::is_auto_accept_mode() {
+                let c_file = rs_file.with_extension("c");
+                
+                // Show file locations
+                interaction::display_file_paths(Some(&c_file), rs_file);
+                
+                // Use diff display for better comparison
+                let success_message = "✓ All tests passed";
+                if let Err(e) = diff_display::display_code_comparison(
+                    &c_file,
+                    rs_file,
+                    success_message,
+                    diff_display::ResultType::TestPass,
+                ) {
+                    // Fallback to simple message if comparison fails
+                    println!("│ {}", format!("Failed to display comparison: {}", e).yellow());
+                    println!("│ {}", success_message.bright_green().bold());
+                }
+                
+                // Get user choice
+                let choice = interaction::prompt_compile_success_choice()?;
+                
+                match choice {
+                    interaction::CompileSuccessChoice::Accept => {
+                        println!("│ {}", "You chose: Accept this code".bright_cyan());
+                        // Continue with commit
+                    }
+                    interaction::CompileSuccessChoice::AutoAccept => {
+                        println!("│ {}", "You chose: Auto-accept all subsequent translations".bright_cyan());
+                        interaction::enable_auto_accept_mode();
+                        // Continue with commit
+                    }
+                    interaction::CompileSuccessChoice::ManualFix => {
+                        println!("│ {}", "You chose: Manual fix".bright_cyan());
+                        
+                        // Open vim for manual editing
+                        match interaction::open_in_vim(rs_file) {
+                            Ok(_) => {
+                                // After editing, rebuild and test again
+                                println!("│ {}", "Rebuilding and retesting after manual changes...".bright_blue());
+                                builder::c2rust_build(feature)?;
+                                builder::c2rust_test(feature)?;
+                                println!("│ {}", "✓ Tests still pass after manual changes".bright_green());
+                                // Continue with commit
+                            }
+                            Err(e) => {
+                                return Err(e).context("Failed to open vim for manual editing");
+                            }
+                        }
+                    }
+                    interaction::CompileSuccessChoice::Exit => {
+                        println!("│ {}", "You chose: Exit".yellow());
+                        anyhow::bail!("User chose to exit after successful tests");
+                    }
+                }
+            } else {
+                println!("│ {}", "Auto-accept mode: automatically accepting translation".bright_green());
+            }
+        }
+        Err(test_error) => {
+            // Tests failed - use interactive handler
+            builder::handle_test_failure_interactive(feature, file_type, rs_file, test_error)?;
+        }
+    }
+    
+    // Commit the changes
     println!("│");
     println!("│ {}", format_progress("Commit").bright_magenta().bold());
     println!("│ {}", "Committing changes...".bright_blue());
     git::git_commit(&format!("Translate {} from C to Rust (feature: {})", file_name, feature), feature)?;
     println!("│ {}", "✓ Changes committed".bright_green());
 
+    // Update code analysis
     println!("│");
     println!("│ {}", format_progress("Update Analysis").bright_magenta().bold());
     println!("│ {}", "Updating code analysis...".bright_blue());
     analyzer::update_code_analysis(feature)?;
     println!("│ {}", "✓ Code analysis updated".bright_green());
 
+    // Commit analysis
     println!("│");
     println!("│ {}", format_progress("Commit Analysis").bright_magenta().bold());
     git::git_commit(&format!("Update code analysis for {}", feature), feature)?;
-
-    println!("│");
-    println!("│ {}", format_progress("Hybrid Build Tests").bright_magenta().bold());
-    println!("│ {}", "Running hybrid build tests...".bright_blue());
-    builder::run_hybrid_build_interactive(feature, Some(file_type), Some(rs_file))?;
     
     println!("{}", "└─ File processing complete".bright_white().bold());
     
