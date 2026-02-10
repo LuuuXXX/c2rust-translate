@@ -132,10 +132,6 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
     // Display C code preview
     display_code(c_file, "─ C Source Preview ─", constants::CODE_PREVIEW_LINES, show_full_output);
     
-    // Check if suggestion file exists
-    let suggestion_path = crate::suggestion::get_suggestion_file_path()?;
-    let suggestion_exists = suggestion_path.exists();
-    
     let script_path = get_translate_script_full_path()?;
     let script_str = script_path.to_str()
         .with_context(|| format!("Non-UTF8 path: {}", script_path.display()))?;
@@ -147,55 +143,28 @@ pub fn translate_c_to_rust(feature: &str, file_type: &str, c_file: &Path, rs_fil
     let rs_file_str = rs_file.to_str()
         .with_context(|| format!("Non-UTF8 path: {}", rs_file.display()))?;
     
-    let suggestion_str = if suggestion_exists {
-        Some(suggestion_path.to_str()
-            .with_context(|| format!("Non-UTF8 path: {}", suggestion_path.display()))?)
-    } else {
-        None
-    };
-    
     println!("│ {}", "Executing translation command:".bright_blue());
-    if suggestion_exists {
-        println!("│ {} python {} --config {} --type {} --c_code {} --output {} --suggestion {}", 
-            "→".bright_blue(),
-            script_str.dimmed(), 
-            config_str.dimmed(), 
-            file_type.bright_yellow(), 
-            c_file_str.bright_yellow(), 
-            rs_file_str.bright_yellow(),
-            suggestion_str.unwrap().bright_cyan());
-        println!("│ {}", "Note: Using suggestions from c2rust.md file".bright_cyan());
-    } else {
-        println!("│ {} python {} --config {} --type {} --c_code {} --output {}", 
-            "→".bright_blue(),
-            script_str.dimmed(), 
-            config_str.dimmed(), 
-            file_type.bright_yellow(), 
-            c_file_str.bright_yellow(), 
-            rs_file_str.bright_yellow());
-    }
+    println!("│ {} python {} --config {} --type {} --c_code {} --output {}", 
+        "→".bright_blue(),
+        script_str.dimmed(), 
+        config_str.dimmed(), 
+        file_type.bright_yellow(), 
+        c_file_str.bright_yellow(), 
+        rs_file_str.bright_yellow());
     println!("│");
     
-    // Build command with optional suggestion parameter
-    let mut command = Command::new("python");
-    command.args([
-        script_str,
-        "--config",
-        config_str,
-        "--type",
-        file_type,
-        "--c_code",
-        c_file_str,
-        "--output",
-        rs_file_str,
-    ]);
-    
-    // Add suggestion if it exists
-    if let Some(sugg_str) = suggestion_str {
-        command.args(["--suggestion", sugg_str]);
-    }
-    
-    let status = command
+    let status = Command::new("python")
+        .args([
+            script_str,
+            "--config",
+            config_str,
+            "--type",
+            file_type,
+            "--c_code",
+            c_file_str,
+            "--output",
+            rs_file_str,
+        ])
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .status()
