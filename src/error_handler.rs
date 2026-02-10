@@ -150,11 +150,6 @@ pub(crate) fn handle_startup_test_failure_with_files(
                         match builder::run_hybrid_build(feature) {
                             Ok(_) => {
                                 println!("│ {}", "✓ Hybrid build tests passed!".bright_green().bold());
-                                
-                                println!("{}", "Updating code analysis...".bright_blue());
-                                crate::analyzer::update_code_analysis(feature)?;
-                                println!("{}", "✓ Code analysis updated".bright_green());
-                                
                                 // 混合构建现在通过；停止进一步的错误处理
                                 return Ok(());
                             }
