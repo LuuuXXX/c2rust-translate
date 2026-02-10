@@ -222,6 +222,13 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, cu
         
         print_attempt_header(attempt_number, rs_file);
         
+        // Clear suggestions before retry to start fresh
+        // This prevents suggestion accumulation from previous failed attempts
+        if attempt_number > 1 {
+            println!("│ {}", "Clearing previous suggestions for fresh retry...".bright_yellow());
+            suggestion::clear_suggestions()?;
+        }
+        
         let (file_type, _name) = extract_and_validate_file_info(rs_file)?;
         check_c_file_exists(rs_file)?;
         

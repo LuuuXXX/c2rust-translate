@@ -63,6 +63,20 @@ pub fn get_suggestions_for_translation() -> Result<Option<String>> {
     read_suggestions()
 }
 
+/// Clear all suggestions from the c2rust.md file
+/// This is useful when starting a fresh retry to avoid suggestion accumulation
+pub fn clear_suggestions() -> Result<()> {
+    let suggestion_file = get_suggestion_file_path()?;
+    
+    if suggestion_file.exists() {
+        fs::remove_file(&suggestion_file)
+            .with_context(|| format!("Failed to remove suggestion file: {}", suggestion_file.display()))?;
+        println!("│ {}", "✓ Cleared previous suggestions for fresh retry".bright_yellow());
+    }
+    
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -149,6 +163,80 @@ mod tests {
         
         // Should have two timestamp headers
         assert_eq!(content2.matches("## Suggestion added at").count(), 2);
+
+        // Restore original working directory before temp_dir is dropped
+        env::set_current_dir(&old_dir).unwrap();
+    }
+    
+    #[test]
+    #[serial]
+    fn test_clear_suggestions() {
+        // Create a temp directory to act as the project root
+        let temp_dir = TempDir::new().unwrap();
+        let old_dir = env::current_dir().unwrap();
+
+        // Create .c2rust directory inside the temp project root
+        fs::create_dir(temp_dir.path().join(".c2rust")).unwrap();
+        env::set_current_dir(temp_dir.path()).unwrap();
+
+        // First, create a suggestion file with some content
+        let suggestion_text = "Test suggestion";
+        let result = append_suggestion(suggestion_text);
+        assert!(result.is_ok());
+        
+        let suggestion_file = get_suggestion_file_path().unwrap();
+        assert!(suggestion_file.exists());
+
+        // Now clear the suggestions
+        let clear_result = clear_suggestions();
+        assert!(clear_result.is_ok());
+
+        // Verify the file no longer exists
+        assert!(!suggestion_file.exists());
+
+        // Clearing again should be a no-op and not error
+        let clear_again = clear_suggestions();
+        assert!(clear_again.is_ok());
+
+        // Restore original working directory before temp_dir is dropped
+        env::set_current_dir(&old_dir).unwrap();
+    }
+    
+    #[test]
+    #[serial]
+    fn test_suggestion_workflow_with_retry() {
+        // Simulate the retry workflow: add suggestion -> clear -> add new suggestion
+        let temp_dir = TempDir::new().unwrap();
+        let old_dir = env::current_dir().unwrap();
+
+        fs::create_dir(temp_dir.path().join(".c2rust")).unwrap();
+        env::set_current_dir(temp_dir.path()).unwrap();
+
+        // First attempt - add a suggestion
+        let first_suggestion = "First attempt: Use smart pointers";
+        append_suggestion(first_suggestion).unwrap();
+        
+        let content1 = read_suggestions().unwrap();
+        assert!(content1.is_some());
+        assert!(content1.unwrap().contains(first_suggestion));
+
+        // Retry - clear suggestions before retry
+        clear_suggestions().unwrap();
+        
+        let content_after_clear = read_suggestions().unwrap();
+        assert!(content_after_clear.is_none());
+
+        // Second attempt - add a different suggestion
+        let second_suggestion = "Second attempt: Use Option<T> for nullable values";
+        append_suggestion(second_suggestion).unwrap();
+        
+        let content2 = read_suggestions().unwrap();
+        assert!(content2.is_some());
+        let final_content = content2.unwrap();
+        
+        // Should only contain second suggestion, not first
+        assert!(final_content.contains(second_suggestion));
+        assert!(!final_content.contains(first_suggestion));
 
         // Restore original working directory before temp_dir is dropped
         env::set_current_dir(&old_dir).unwrap();
