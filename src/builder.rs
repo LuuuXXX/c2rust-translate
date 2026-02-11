@@ -497,11 +497,11 @@ pub(crate) fn handle_build_failure_interactive(
                                                 return Ok(());
                                             }
                                             Err(e) => {
-                                                println!("│ {}", "✗ Build still failing after manual fix".red());
+                                                println!("│ {}", "✗ Build or tests still failing after manual fix".red());
                                                 
                                                 // 询问用户是否想再试一次
                                                 println!("│");
-                                                println!("│ {}", "Build still has errors. What would you like to do?".yellow());
+                                                println!("│ {}", "Build or tests still have errors. What would you like to do?".yellow());
                                                 let nested_retry_choice = interaction::prompt_build_failure_choice()?;
                                                 
                                                 match nested_retry_choice {

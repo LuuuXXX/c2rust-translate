@@ -524,7 +524,7 @@ fn handle_max_fix_attempts_reached(
                                 // 询问用户是否想再试一次
                                 println!("│");
                                 println!("│ {}", "Build or tests still have errors. What would you like to do?".yellow());
-                                let retry_choice = interaction::prompt_user_choice("Build still failing", false)?;
+                                let retry_choice = interaction::prompt_user_choice("Build/tests still failing", false)?;
                                 
                                 match retry_choice {
                                     interaction::UserChoice::Continue => {
