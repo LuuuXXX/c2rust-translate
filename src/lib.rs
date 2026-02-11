@@ -511,12 +511,12 @@ fn handle_max_fix_attempts_reached(
                     // 决定是重试还是退出，使用循环来避免递归
                     loop {
                         println!("│");
-                        println!("│ {}", "Vim editing completed. Attempting to build...".bright_blue());
+                        println!("│ {}", "Vim editing completed. Running full build and test...".bright_blue());
                         
-                        // 手动编辑后尝试构建
-                        match builder::cargo_build(feature, true) {
+                        // 手动编辑后执行完整构建流程
+                        match builder::run_full_build_and_test_interactive(feature, file_type, rs_file) {
                             Ok(_) => {
-                                println!("│ {}", "✓ Build successful after manual fix!".bright_green().bold());
+                                println!("│ {}", "✓ All builds and tests passed after manual fix!".bright_green().bold());
                                 return Ok(true);
                             }
                             Err(e) => {
@@ -733,11 +733,10 @@ where
                         // 打开 vim 进行手动编辑
                         match interaction::open_in_vim(rs_file) {
                             Ok(_) => {
-                                // 编辑后，重新构建并再次测试
-                                println!("│ {}", "Rebuilding and retesting after manual changes...".bright_blue());
-                                builder::c2rust_build(feature)?;
-                                builder::c2rust_test(feature)?;
-                                println!("│ {}", "✓ Tests still pass after manual changes".bright_green());
+                                // 编辑后，执行完整构建和测试
+                                println!("│ {}", "Running full build and test after manual changes...".bright_blue());
+                                builder::run_full_build_and_test_interactive(feature, file_type, rs_file)?;
+                                println!("│ {}", "✓ All builds and tests pass after manual changes".bright_green());
                                 // 继续提交
                             }
                             Err(e) => {
