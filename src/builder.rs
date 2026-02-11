@@ -724,8 +724,12 @@ fn retranslate_before_retry(
         })
         .context("Re-translation failed during retry")?;
     
-    let metadata = fs::metadata(rs_file)?;
-    println!("│ {}", format!("✓ Re-translation complete ({} bytes)", metadata.len()).bright_green());
+    // 显示文件大小（如果可用）；如果获取元数据失败，只显示成功消息
+    if let Ok(metadata) = fs::metadata(rs_file) {
+        println!("│ {}", format!("✓ Re-translation complete ({} bytes)", metadata.len()).bright_green());
+    } else {
+        println!("│ {}", "✓ Re-translation complete".bright_green());
+    }
     
     Ok(())
 }
