@@ -272,8 +272,14 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, cu
         )?;
         
         if build_successful {
-            complete_file_processing(feature, file_name, file_type, rs_file, &format_progress)?;
-            return Ok(());
+            let processing_successful = complete_file_processing(feature, file_name, file_type, rs_file, &format_progress)?;
+            if processing_successful {
+                // Processing completed successfully
+                return Ok(());
+            } else {
+                // Retranslation requested - continue to next iteration of the loop
+                continue;
+            }
         }
     }
     
@@ -639,13 +645,16 @@ where
 }
 
 /// 完成文件处理（提交、分析、混合构建）
+/// 
+/// 返回 Ok(true) 如果处理成功完成
+/// 返回 Ok(false) 如果需要重新翻译
 fn complete_file_processing<F>(
     feature: &str, 
     file_name: &str, 
     file_type: &str,
     rs_file: &std::path::Path,
     format_progress: &F
-) -> Result<()>
+) -> Result<bool>
 where
     F: Fn(&str) -> String
 {
@@ -702,7 +711,11 @@ where
         Err(build_error) => {
             println!("│ {}", "✗ Build failed".red().bold());
             // Enter interactive build failure handling
-            builder::handle_build_failure_interactive(feature, file_type, rs_file, build_error)?;
+            let should_continue = builder::handle_build_failure_interactive(feature, file_type, rs_file, build_error)?;
+            if !should_continue {
+                // Return false to signal retranslation is needed
+                return Ok(false);
+            }
         }
     }
     
@@ -773,7 +786,11 @@ where
         }
         Err(test_error) => {
             // 测试失败 - 使用交互式处理器
-            builder::handle_test_failure_interactive(feature, file_type, rs_file, test_error)?;
+            let should_continue = builder::handle_test_failure_interactive(feature, file_type, rs_file, test_error)?;
+            if !should_continue {
+                // Return false to signal retranslation is needed
+                return Ok(false);
+            }
         }
     }
     
@@ -798,5 +815,5 @@ where
     
     println!("{}", "└─ File processing complete".bright_white().bold());
     
-    Ok(())
+    Ok(true)
 }
