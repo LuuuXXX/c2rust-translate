@@ -199,11 +199,11 @@ fn display_result_section(message: &str, result_type: ResultType, total_width: u
     
     let title = match result_type {
         ResultType::TestPass | ResultType::TestFail => "Test Result",
-        ResultType::BuildSuccess | ResultType::BuildFail => "Build Result",
+        ResultType::BuildFail => "Build Result",
     };
     
     let color = match result_type {
-        ResultType::TestPass | ResultType::BuildSuccess => title.bright_green().bold(),
+        ResultType::TestPass => title.bright_green().bold(),
         ResultType::TestFail | ResultType::BuildFail => title.bright_red().bold(),
     };
     
@@ -214,7 +214,7 @@ fn display_result_section(message: &str, result_type: ResultType, total_width: u
     
     // 用适当的颜色格式化消息
     let formatted_message = match result_type {
-        ResultType::TestPass | ResultType::BuildSuccess => message.bright_green(),
+        ResultType::TestPass => message.bright_green(),
         ResultType::TestFail | ResultType::BuildFail => message.bright_red(),
     };
     
@@ -224,11 +224,9 @@ fn display_result_section(message: &str, result_type: ResultType, total_width: u
 
 /// 显示的结果类型
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
 pub enum ResultType {
     TestPass,
     TestFail,
-    BuildSuccess,
     BuildFail,
 }
 
@@ -271,7 +269,6 @@ mod tests {
         // 仅验证枚举变体是否存在
         let _ = ResultType::TestPass;
         let _ = ResultType::TestFail;
-        let _ = ResultType::BuildSuccess;
         let _ = ResultType::BuildFail;
     }
     

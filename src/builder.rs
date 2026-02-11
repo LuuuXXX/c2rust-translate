@@ -436,7 +436,7 @@ pub(crate) fn handle_build_failure_interactive(
             suggestion::clear_suggestions()?;
             
             // 跟踪重试中最新的构建错误
-            let mut current_error = build_error;
+            let mut current_error;
             
             loop {
                 println!("│");
@@ -484,10 +484,10 @@ pub(crate) fn handle_build_failure_interactive(
                                             Ok(_) => {
                                                 return Ok(());
                                             }
-                                            Err(e) => {
+                                            Err(_) => {
                                                 println!("│ {}", "✗ Build or tests still failing after manual fix".red());
-                                                current_error = e;
                                                 // 继续循环以重新提示
+                                                // current_error 将在下次迭代时更新
                                                 continue;
                                             }
                                         }
@@ -753,7 +753,7 @@ pub(crate) fn handle_test_failure_interactive(
             suggestion::clear_suggestions()?;
             
             // 跟踪重试中最新的测试错误
-            let mut current_error = test_error;
+            let mut current_error;
             
             loop {
                 println!("│");
@@ -801,10 +801,10 @@ pub(crate) fn handle_test_failure_interactive(
                                             Ok(_) => {
                                                 return Ok(());
                                             }
-                                            Err(e) => {
+                                            Err(_) => {
                                                 println!("│ {}", "✗ Tests still failing after manual fix".red());
-                                                current_error = e;
                                                 // 继续循环以重新提示
+                                                // current_error 将在下次迭代时更新
                                                 continue;
                                             }
                                         }
