@@ -3,12 +3,55 @@
 use anyhow::{Context, Result};
 use colored::Colorize;
 use std::path::Path;
+use terminal_size::{Width, terminal_size};
 
-// 列宽常量
-const C_COLUMN_WIDTH: usize = 95;
-const RUST_COLUMN_WIDTH: usize = 95;
+// 默认列宽常量（当无法检测终端大小时使用）
+const DEFAULT_C_COLUMN_WIDTH: usize = 95;
+const DEFAULT_RUST_COLUMN_WIDTH: usize = 95;
 const LINE_NUM_WIDTH: usize = 3;
 const CONTINUATION_MARKER: &str = "   ";
+// 终端宽度的最小要求
+const MIN_TERMINAL_WIDTH: usize = 80;
+// 分隔符和边框占用的字符数
+const SEPARATOR_WIDTH: usize = 5; // "│", "│", "│" plus spaces
+
+/// 获取适配终端大小的列宽
+/// 
+/// 根据当前终端宽度动态计算 C 和 Rust 代码列的宽度
+/// 
+/// # Returns
+/// 返回 (c_column_width, rust_column_width) 元组
+fn get_adaptive_column_widths() -> (usize, usize) {
+    if let Some((Width(terminal_width), _)) = terminal_size() {
+        let term_width = terminal_width as usize;
+        
+        // 如果终端太小，使用默认值
+        if term_width < MIN_TERMINAL_WIDTH {
+            return (DEFAULT_C_COLUMN_WIDTH, DEFAULT_RUST_COLUMN_WIDTH);
+        }
+        
+        // 计算可用于代码显示的宽度
+        // 格式："│ num code │ num code │"
+        // 需要减去：行号列(2个，各4个字符) + 分隔符(3个) + 边框(2个)
+        let line_num_space = (LINE_NUM_WIDTH + 1) * 2; // 两侧的行号和空格
+        let borders_and_separators = SEPARATOR_WIDTH;
+        let available_width = term_width.saturating_sub(line_num_space + borders_and_separators);
+        
+        // 将可用宽度平均分配给两列
+        let column_width = available_width / 2;
+        
+        // 确保列宽不会太小
+        let min_column_width = 40;
+        if column_width < min_column_width {
+            return (DEFAULT_C_COLUMN_WIDTH, DEFAULT_RUST_COLUMN_WIDTH);
+        }
+        
+        (column_width, column_width)
+    } else {
+        // 无法检测终端大小，使用默认值
+        (DEFAULT_C_COLUMN_WIDTH, DEFAULT_RUST_COLUMN_WIDTH)
+    }
+}
 
 /// 并排显示 C 和 Rust 代码及测试/构建结果
 pub fn display_code_comparison(
@@ -17,10 +60,20 @@ pub fn display_code_comparison(
     result_message: &str,
     result_type: ResultType,
 ) -> Result<()> {
+    // 获取适配终端大小的列宽
+    let (c_column_width, rust_column_width) = get_adaptive_column_widths();
+    
     println!("│");
-    println!("{}", "═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════".bright_cyan());
-    println!("{}", "                                                                                    C vs Rust Code Comparison                                                                                                      ".bright_cyan().bold());
-    println!("{}", "═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════".bright_cyan());
+    
+    // 根据计算出的列宽动态生成分隔线
+    let total_width = (LINE_NUM_WIDTH + 1 + c_column_width + 1) + (LINE_NUM_WIDTH + 1 + rust_column_width + 1) + 3;
+    println!("{}", "═".repeat(total_width).bright_cyan());
+    
+    // 居中显示标题
+    let title = "C vs Rust Code Comparison";
+    let padding = (total_width.saturating_sub(title.len())) / 2;
+    println!("{}{}{}", " ".repeat(padding), title.bright_cyan().bold(), " ".repeat(total_width - padding - title.len()));
+    println!("{}", "═".repeat(total_width).bright_cyan());
     
     // 读取文件内容
     let c_content = std::fs::read_to_string(c_file)
@@ -32,11 +85,8 @@ pub fn display_code_comparison(
     let rust_lines: Vec<&str> = rust_content.lines().collect();
     
     // 显示表头
-    // 行格式："│ {:3} {:<90}│ {:3} {:<110}│"
-    // C 侧：空格(1) + 行号(3) + 空格(1) + 内容(90) = 95 字符
-    // Rust 侧：空格(1) + 行号(3) + 空格(1) + 内容(110) = 115 字符
-    let c_total_width = LINE_NUM_WIDTH + 1 + C_COLUMN_WIDTH + 1;
-    let rust_total_width = LINE_NUM_WIDTH + 1 + RUST_COLUMN_WIDTH + 1;
+    let c_total_width = LINE_NUM_WIDTH + 1 + c_column_width + 1;
+    let rust_total_width = LINE_NUM_WIDTH + 1 + rust_column_width + 1;
     println!("┌{:─<width1$}┬{:─<width2$}┐", "─ C Source Code ", "─ Rust Code ─", width1 = c_total_width, width2 = rust_total_width);
     
     // 并排显示行
@@ -46,8 +96,8 @@ pub fn display_code_comparison(
         let rust_line = rust_lines.get(i).unwrap_or(&"");
         
         // 如果行太长而无法放入列中，则换行显示
-        let c_wrapped = wrap_line(c_line, C_COLUMN_WIDTH);
-        let rust_wrapped = wrap_line(rust_line, RUST_COLUMN_WIDTH);
+        let c_wrapped = wrap_line(c_line, c_column_width);
+        let rust_wrapped = wrap_line(rust_line, rust_column_width);
         
         let max_wrapped_lines = std::cmp::max(c_wrapped.len(), rust_wrapped.len());
         
@@ -65,18 +115,18 @@ pub fn display_code_comparison(
                 c_display,
                 rust_line_num,
                 rust_display,
-                c_width = C_COLUMN_WIDTH,
-                r_width = RUST_COLUMN_WIDTH
+                c_width = c_column_width,
+                r_width = rust_column_width
             );
         }
     }
     
-    let c_total_width = LINE_NUM_WIDTH + 1 + C_COLUMN_WIDTH + 1;
-    let rust_total_width = LINE_NUM_WIDTH + 1 + RUST_COLUMN_WIDTH + 1;
+    let c_total_width = LINE_NUM_WIDTH + 1 + c_column_width + 1;
+    let rust_total_width = LINE_NUM_WIDTH + 1 + rust_column_width + 1;
     println!("└{:─<width1$}┴{:─<width2$}┘", "", "", width1 = c_total_width, width2 = rust_total_width);
     
     // 显示结果部分
-    display_result_section(result_message, result_type);
+    display_result_section(result_message, result_type, total_width);
     
     Ok(())
 }
@@ -127,19 +177,24 @@ fn wrap_line(line: &str, width: usize) -> Vec<String> {
 }
 
 /// 显示测试或构建结果部分
-fn display_result_section(message: &str, result_type: ResultType) {
+fn display_result_section(message: &str, result_type: ResultType, total_width: usize) {
     println!();
-    println!("{}", "═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════".bright_cyan());
+    println!("{}", "═".repeat(total_width).bright_cyan());
     
-    let header = match result_type {
-        ResultType::TestPass => "                                                                                      Test Result                                                                                                        ".bright_green().bold(),
-        ResultType::TestFail => "                                                                                      Test Result                                                                                                        ".bright_red().bold(),
-        ResultType::BuildSuccess => "                                                                                     Build Result                                                                                                       ".bright_green().bold(),
-        ResultType::BuildFail => "                                                                                     Build Result                                                                                                       ".bright_red().bold(),
+    let title = match result_type {
+        ResultType::TestPass | ResultType::TestFail => "Test Result",
+        ResultType::BuildSuccess | ResultType::BuildFail => "Build Result",
     };
     
-    println!("{}", header);
-    println!("{}", "═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════".bright_cyan());
+    let color = match result_type {
+        ResultType::TestPass | ResultType::BuildSuccess => title.bright_green().bold(),
+        ResultType::TestFail | ResultType::BuildFail => title.bright_red().bold(),
+    };
+    
+    // 居中显示标题
+    let padding = (total_width.saturating_sub(title.len())) / 2;
+    println!("{}{}{}", " ".repeat(padding), color, " ".repeat(total_width - padding - title.len()));
+    println!("{}", "═".repeat(total_width).bright_cyan());
     
     // 用适当的颜色格式化消息
     let formatted_message = match result_type {
@@ -239,5 +294,18 @@ mod tests {
         for segment in &wrapped {
             assert!(segment.chars().count() <= 10);
         }
+    }
+    
+    #[test]
+    fn test_get_adaptive_column_widths() {
+        // 测试获取自适应列宽不会 panic
+        let (c_width, rust_width) = get_adaptive_column_widths();
+        
+        // 列宽应该是合理的值
+        assert!(c_width >= 40 || c_width == DEFAULT_C_COLUMN_WIDTH);
+        assert!(rust_width >= 40 || rust_width == DEFAULT_RUST_COLUMN_WIDTH);
+        
+        // 两列宽度应该相同（平均分配）
+        assert_eq!(c_width, rust_width);
     }
 }
