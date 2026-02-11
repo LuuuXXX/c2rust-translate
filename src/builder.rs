@@ -435,8 +435,76 @@ pub(crate) fn handle_build_failure_interactive(
             // 清除旧建议
             suggestion::clear_suggestions()?;
             
-            println!("│ {}", "Note: This will return the error to trigger a full retry".bright_blue());
-            Err(build_error)
+            // 跟踪重试中最新的构建错误
+            let mut current_error = build_error;
+            
+            loop {
+                println!("│");
+                println!("│ {}", "Retrying build and test without suggestions...".bright_blue());
+                
+                // 尝试构建和测试
+                match run_full_build_and_test_interactive(feature, file_type, rs_file) {
+                    Ok(_) => {
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        println!("│ {}", "✗ Build or tests still failing".red());
+                        
+                        // 使用最新失败更新 current_error
+                        current_error = e;
+                        
+                        // 询问用户是否想再试一次
+                        println!("│");
+                        println!("│ {}", "Build or tests still have errors. What would you like to do?".yellow());
+                        let retry_choice = interaction::prompt_build_failure_choice()?;
+                        
+                        match retry_choice {
+                            interaction::FailureChoice::RetryDirectly => {
+                                println!("│ {}", "Retrying again without suggestion...".bright_cyan());
+                                suggestion::clear_suggestions()?;
+                                // 继续循环以重试
+                                continue;
+                            }
+                            interaction::FailureChoice::AddSuggestion => {
+                                println!("│ {}", "Switching to suggestion-based fix flow.".yellow());
+                                // 递归调用以进入 AddSuggestion 流程
+                                return handle_build_failure_interactive(feature, file_type, rs_file, current_error);
+                            }
+                            interaction::FailureChoice::ManualFix => {
+                                println!("│");
+                                println!("│ {}", "You chose: Manually edit the code".bright_cyan());
+                                println!("│ {}", "Opening vim for manual fixes...".bright_blue());
+                                
+                                match interaction::open_in_vim(rs_file) {
+                                    Ok(_) => {
+                                        println!("│");
+                                        println!("│ {}", "Running full build and test after manual fix...".bright_blue().bold());
+                                        
+                                        match run_full_build_and_test_interactive(feature, file_type, rs_file) {
+                                            Ok(_) => {
+                                                return Ok(());
+                                            }
+                                            Err(e) => {
+                                                println!("│ {}", "✗ Build or tests still failing after manual fix".red());
+                                                current_error = e;
+                                                // 继续循环以重新提示
+                                                continue;
+                                            }
+                                        }
+                                    }
+                                    Err(open_err) => {
+                                        println!("│ {}", format!("Failed to open vim: {}", open_err).red());
+                                        return Err(open_err).context("Build failed and could not open vim for manual fix");
+                                    }
+                                }
+                            }
+                            interaction::FailureChoice::Exit => {
+                                return Err(current_error).context("Build failed and user chose to exit");
+                            }
+                        }
+                    }
+                }
+            }
         }
         interaction::FailureChoice::AddSuggestion => {
             println!("│");
@@ -489,7 +557,8 @@ pub(crate) fn handle_build_failure_interactive(
                             interaction::FailureChoice::RetryDirectly => {
                                 println!("│ {}", "Retrying without new suggestion...".bright_cyan());
                                 suggestion::clear_suggestions()?;
-                                return Err(current_error);
+                                // 继续外层循环以重新运行完整构建和测试
+                                continue;
                             }
                             interaction::FailureChoice::AddSuggestion => {
                                 // 继续循环以使用新建议重试
@@ -523,7 +592,9 @@ pub(crate) fn handle_build_failure_interactive(
                                                     interaction::FailureChoice::RetryDirectly => {
                                                         println!("│ {}", "Retrying without suggestion after manual fix...".bright_cyan());
                                                         suggestion::clear_suggestions()?;
-                                                        return Err(e);
+                                                        // 清除建议后，更新当前错误并重新进入外部循环以进行无建议的重试
+                                                        current_error = e;
+                                                        continue;
                                                     }
                                                     interaction::FailureChoice::AddSuggestion => {
                                                         // 更新 current_error 并继续外部循环以使用新建议重试
@@ -589,7 +660,8 @@ pub(crate) fn handle_build_failure_interactive(
                                     interaction::FailureChoice::RetryDirectly => {
                                         println!("│ {}", "Retrying without suggestion after manual fix...".bright_cyan());
                                         suggestion::clear_suggestions()?;
-                                        return Err(e);
+                                        // 继续外层循环以重新运行完整构建和测试
+                                        continue;
                                     }
                                     interaction::FailureChoice::ManualFix => {
                                         println!("│ {}", "Reopening Vim for another manual fix attempt...".bright_blue());
@@ -680,8 +752,76 @@ pub(crate) fn handle_test_failure_interactive(
             // 清除旧建议
             suggestion::clear_suggestions()?;
             
-            println!("│ {}", "Note: This will return the error to trigger a full retry".bright_blue());
-            Err(test_error)
+            // 跟踪重试中最新的测试错误
+            let mut current_error = test_error;
+            
+            loop {
+                println!("│");
+                println!("│ {}", "Retrying build and test without suggestions...".bright_blue());
+                
+                // 尝试构建和测试
+                match run_full_build_and_test_interactive(feature, file_type, rs_file) {
+                    Ok(_) => {
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        println!("│ {}", "✗ Tests still failing".red());
+                        
+                        // 使用最新失败更新 current_error
+                        current_error = e;
+                        
+                        // 询问用户是否想再试一次
+                        println!("│");
+                        println!("│ {}", "Tests still have errors. What would you like to do?".yellow());
+                        let retry_choice = interaction::prompt_test_failure_choice()?;
+                        
+                        match retry_choice {
+                            interaction::FailureChoice::RetryDirectly => {
+                                println!("│ {}", "Retrying again without suggestion...".bright_cyan());
+                                suggestion::clear_suggestions()?;
+                                // 继续循环以重试
+                                continue;
+                            }
+                            interaction::FailureChoice::AddSuggestion => {
+                                println!("│ {}", "Switching to suggestion-based fix flow.".yellow());
+                                // 递归调用以进入 AddSuggestion 流程
+                                return handle_test_failure_interactive(feature, file_type, rs_file, current_error);
+                            }
+                            interaction::FailureChoice::ManualFix => {
+                                println!("│");
+                                println!("│ {}", "You chose: Manually edit the code".bright_cyan());
+                                println!("│ {}", "Opening vim for manual fixes...".bright_blue());
+                                
+                                match interaction::open_in_vim(rs_file) {
+                                    Ok(_) => {
+                                        println!("│");
+                                        println!("│ {}", "Running full build and test after manual fix...".bright_blue().bold());
+                                        
+                                        match run_full_build_and_test_interactive(feature, file_type, rs_file) {
+                                            Ok(_) => {
+                                                return Ok(());
+                                            }
+                                            Err(e) => {
+                                                println!("│ {}", "✗ Tests still failing after manual fix".red());
+                                                current_error = e;
+                                                // 继续循环以重新提示
+                                                continue;
+                                            }
+                                        }
+                                    }
+                                    Err(open_err) => {
+                                        println!("│ {}", format!("Failed to open vim: {}", open_err).red());
+                                        return Err(open_err).context("Tests failed and could not open vim for manual fix");
+                                    }
+                                }
+                            }
+                            interaction::FailureChoice::Exit => {
+                                return Err(current_error).context("Tests failed and user chose to exit");
+                            }
+                        }
+                    }
+                }
+            }
         }
         interaction::FailureChoice::AddSuggestion => {
             println!("│");
@@ -734,7 +874,8 @@ pub(crate) fn handle_test_failure_interactive(
                             interaction::FailureChoice::RetryDirectly => {
                                 println!("│ {}", "Retrying without new suggestion...".bright_cyan());
                                 suggestion::clear_suggestions()?;
-                                return Err(current_error);
+                                // 继续外层循环以重新运行完整构建和测试
+                                continue;
                             }
                             interaction::FailureChoice::AddSuggestion => {
                                 // 继续循环以使用新建议重试
@@ -806,7 +947,8 @@ pub(crate) fn handle_test_failure_interactive(
                                     interaction::FailureChoice::RetryDirectly => {
                                         println!("│ {}", "Retrying without suggestion after manual fix...".bright_cyan());
                                         suggestion::clear_suggestions()?;
-                                        return Err(e);
+                                        // 继续外层循环以重新运行完整构建和测试
+                                        continue;
                                     }
                                     interaction::FailureChoice::ManualFix => {
                                         println!("│ {}", "Reopening Vim for another manual fix attempt...".bright_blue());
