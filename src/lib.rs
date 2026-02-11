@@ -272,11 +272,11 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, cu
         )?;
         
         if build_successful {
-            let should_continue = complete_file_processing(feature, file_name, file_type, rs_file, &format_progress)?;
-            if should_continue {
+            let processing_complete = complete_file_processing(feature, file_name, file_type, rs_file, &format_progress)?;
+            if processing_complete {
                 return Ok(());
             }
-            // If should_continue is false, retry translation (loop continues)
+            // If processing_complete is false, retry translation (loop continues)
         }
     }
     
@@ -711,8 +711,8 @@ where
         Err(build_error) => {
             println!("│ {}", "✗ Build failed".red().bold());
             // Enter interactive build failure handling
-            let should_continue = builder::handle_build_failure_interactive(feature, file_type, rs_file, build_error)?;
-            if !should_continue {
+            let processing_complete = builder::handle_build_failure_interactive(feature, file_type, rs_file, build_error)?;
+            if !processing_complete {
                 // User chose to retry translation
                 return Ok(false);
             }
@@ -786,8 +786,8 @@ where
         }
         Err(test_error) => {
             // 测试失败 - 使用交互式处理器
-            let should_continue = builder::handle_test_failure_interactive(feature, file_type, rs_file, test_error)?;
-            if !should_continue {
+            let processing_complete = builder::handle_test_failure_interactive(feature, file_type, rs_file, test_error)?;
+            if !processing_complete {
                 // User chose to retry translation
                 return Ok(false);
             }

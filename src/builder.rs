@@ -358,9 +358,12 @@ pub fn run_hybrid_build_interactive(
             if let (Some(ftype), Some(rfile)) = (file_type, rs_file) {
                 let should_continue = handle_build_failure_interactive(feature, ftype, rfile, build_error)?;
                 if !should_continue {
-                    // User chose to retry translation - this shouldn't happen in this context
-                    // but we'll treat it as a success since the caller can't retry translation
+                    // User chose to retry translation - not supported in this context
+                    // so treat it as a failure and return early
                     println!("│ {}", "Note: Retry translation requested but not supported in this context".yellow());
+                    return Err(anyhow::anyhow!(
+                        "Hybrid build failed and retry translation is not supported in this context"
+                    ));
                 }
             } else {
                 // 没有文件上下文，只返回错误
@@ -380,9 +383,12 @@ pub fn run_hybrid_build_interactive(
             if let (Some(ftype), Some(rfile)) = (file_type, rs_file) {
                 let should_continue = handle_test_failure_interactive(feature, ftype, rfile, test_error)?;
                 if !should_continue {
-                    // User chose to retry translation - this shouldn't happen in this context
-                    // but we'll treat it as a success since the caller can't retry translation
+                    // User chose to retry translation - not supported in this context
+                    // so treat it as a failure and return early
                     println!("│ {}", "Note: Retry translation requested but not supported in this context".yellow());
+                    return Err(anyhow::anyhow!(
+                        "Hybrid build tests failed and retry translation is not supported in this context"
+                    ));
                 }
                 Ok(())
             } else {
