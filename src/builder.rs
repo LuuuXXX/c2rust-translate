@@ -436,7 +436,7 @@ pub(crate) fn handle_build_failure_interactive(
             suggestion::clear_suggestions()?;
             
             println!("│ {}", "Note: This will return the error to trigger a full retry".bright_blue());
-            return Err(build_error);
+            Err(build_error)
         }
         interaction::FailureChoice::AddSuggestion => {
             println!("│");
@@ -681,7 +681,7 @@ pub(crate) fn handle_test_failure_interactive(
             suggestion::clear_suggestions()?;
             
             println!("│ {}", "Note: This will return the error to trigger a full retry".bright_blue());
-            return Err(test_error);
+            Err(test_error)
         }
         interaction::FailureChoice::AddSuggestion => {
             println!("│");
