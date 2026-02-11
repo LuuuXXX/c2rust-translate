@@ -10,14 +10,46 @@ const DEFAULT_C_COLUMN_WIDTH: usize = 95;
 const DEFAULT_RUST_COLUMN_WIDTH: usize = 95;
 const LINE_NUM_WIDTH: usize = 3;
 const CONTINUATION_MARKER: &str = "   ";
-// 终端宽度的最小要求
-const MIN_TERMINAL_WIDTH: usize = 80;
 // 列宽度的最小要求（保证代码可读性）
 const MIN_COLUMN_WIDTH: usize = 40;
 // 分隔符和边框占用的字符数：3个竖线（│ 中间分隔符 + 左右边框）
 const SEPARATOR_CHAR_COUNT: usize = 3;
 // 分隔符周围的空格数
 const SEPARATOR_SPACING: usize = 2;
+// 终端宽度的最小要求：保证每列至少有 MIN_COLUMN_WIDTH 字符宽度
+const MIN_TERMINAL_WIDTH: usize =
+    (MIN_COLUMN_WIDTH * 2)
+    + ((LINE_NUM_WIDTH + 1) * 2)
+    + SEPARATOR_CHAR_COUNT
+    + SEPARATOR_SPACING;
+
+/// 根据给定的终端宽度计算列宽
+/// 
+/// # Arguments
+/// * `term_width` - 终端宽度（列数）
+/// 
+/// # Returns
+/// 返回 (c_column_width, rust_column_width) 元组
+fn compute_column_widths(term_width: usize) -> (usize, usize) {
+    // 如果终端太小，使用默认值
+    if term_width < MIN_TERMINAL_WIDTH {
+        return (DEFAULT_C_COLUMN_WIDTH, DEFAULT_RUST_COLUMN_WIDTH);
+    }
+    
+    // 计算可用于代码显示的宽度
+    // 格式："│ num code │ num code │"
+    // 需要减去：行号列(2个，各4个字符) + 分隔符(3个竖线) + 分隔符周围空格
+    let line_num_space = (LINE_NUM_WIDTH + 1) * 2; // 两侧的行号和空格
+    let separators = SEPARATOR_CHAR_COUNT + SEPARATOR_SPACING;
+    let available_width = term_width.saturating_sub(line_num_space + separators);
+    
+    // 将可用宽度平均分配给两列
+    let column_width = available_width / 2;
+    
+    // 即使列宽小于 MIN_COLUMN_WIDTH，也优先保证不溢出终端宽度，
+    // 因此直接使用计算得到的列宽。
+    (column_width, column_width)
+}
 
 /// 获取适配终端大小的列宽
 /// 
@@ -27,29 +59,7 @@ const SEPARATOR_SPACING: usize = 2;
 /// 返回 (c_column_width, rust_column_width) 元组
 fn get_adaptive_column_widths() -> (usize, usize) {
     if let Some((Width(terminal_width), _)) = terminal_size() {
-        let term_width = terminal_width as usize;
-        
-        // 如果终端太小，使用默认值
-        if term_width < MIN_TERMINAL_WIDTH {
-            return (DEFAULT_C_COLUMN_WIDTH, DEFAULT_RUST_COLUMN_WIDTH);
-        }
-        
-        // 计算可用于代码显示的宽度
-        // 格式："│ num code │ num code │"
-        // 需要减去：行号列(2个，各4个字符) + 分隔符(3个竖线) + 分隔符周围空格
-        let line_num_space = (LINE_NUM_WIDTH + 1) * 2; // 两侧的行号和空格
-        let separators = SEPARATOR_CHAR_COUNT + SEPARATOR_SPACING;
-        let available_width = term_width.saturating_sub(line_num_space + separators);
-        
-        // 将可用宽度平均分配给两列
-        let column_width = available_width / 2;
-        
-        // 确保列宽不会太小（保证可读性）
-        if column_width < MIN_COLUMN_WIDTH {
-            return (DEFAULT_C_COLUMN_WIDTH, DEFAULT_RUST_COLUMN_WIDTH);
-        }
-        
-        (column_width, column_width)
+        compute_column_widths(terminal_width as usize)
     } else {
         // 无法检测终端大小，使用默认值
         (DEFAULT_C_COLUMN_WIDTH, DEFAULT_RUST_COLUMN_WIDTH)
@@ -303,13 +313,43 @@ mod tests {
     }
     
     #[test]
+    fn test_compute_column_widths() {
+        // 测试终端宽度小于最小要求时使用默认值
+        let (c_width, rust_width) = compute_column_widths(70);
+        assert_eq!(c_width, DEFAULT_C_COLUMN_WIDTH);
+        assert_eq!(rust_width, DEFAULT_RUST_COLUMN_WIDTH);
+        
+        // 测试终端宽度等于最小要求时
+        // MIN_TERMINAL_WIDTH = 93 (40*2 + 8 + 5)
+        let (c_width, rust_width) = compute_column_widths(93);
+        // 可用宽度 = 93 - 8 - 5 = 80，每列 = 40
+        assert_eq!(c_width, 40);
+        assert_eq!(rust_width, 40);
+        
+        // 测试正常终端宽度 120 列
+        let (c_width, rust_width) = compute_column_widths(120);
+        // 可用宽度 = 120 - 8 - 5 = 107，每列 = 53
+        assert_eq!(c_width, 53);
+        assert_eq!(rust_width, 53);
+        
+        // 测试略大于最小要求的终端宽度 100 列
+        let (c_width, rust_width) = compute_column_widths(100);
+        // 可用宽度 = 100 - 8 - 5 = 87，每列 = 43
+        assert_eq!(c_width, 43);
+        assert_eq!(rust_width, 43);
+        
+        // 两列宽度应该相同（平均分配）
+        assert_eq!(c_width, rust_width);
+    }
+    
+    #[test]
     fn test_get_adaptive_column_widths() {
-        // 测试获取自适应列宽不会 panic
+        // 测试获取自适应列宽不会 panic（环境相关测试）
         let (c_width, rust_width) = get_adaptive_column_widths();
         
-        // 列宽应该是合理的值
-        assert!(c_width >= MIN_COLUMN_WIDTH || c_width == DEFAULT_C_COLUMN_WIDTH);
-        assert!(rust_width >= MIN_COLUMN_WIDTH || rust_width == DEFAULT_RUST_COLUMN_WIDTH);
+        // 列宽应该是合理的值（大于0）
+        assert!(c_width > 0);
+        assert!(rust_width > 0);
         
         // 两列宽度应该相同（平均分配）
         assert_eq!(c_width, rust_width);
