@@ -141,44 +141,29 @@ pub(crate) fn handle_startup_test_failure_with_files(
                 
                 // 再次尝试构建和测试
                 println!("│");
-                println!("│ {}", "Rebuilding and retesting...".bright_blue().bold());
-                match builder::cargo_build(feature, true) {
+                println!("│ {}", "Running full build and test flow...".bright_blue().bold());
+                match builder::run_full_build_and_test(feature) {
                     Ok(_) => {
-                        println!("│ {}", "✓ Build successful!".bright_green().bold());
-                        
-                        // 现在尝试完整的混合构建测试
-                        match builder::run_hybrid_build(feature) {
-                            Ok(_) => {
-                                println!("│ {}", "✓ Hybrid build tests passed!".bright_green().bold());
-                                // 混合构建现在通过；停止进一步的错误处理
-                                return Ok(());
-                            }
-                            Err(e) => {
-                                println!("│ {}", "✗ Hybrid build tests still failing".red());
-                                
-                                // 尝试解析新错误并查看是否有更多文件
-                                match parse_error_for_files(&e.to_string(), feature) {
-                                    Ok(new_files) if !new_files.is_empty() => {
-                                        println!("│ {}", "Found additional files in new error, will process them...".yellow());
-                                        // 更新文件和错误以进行下一次迭代
-                                        files = new_files;
-                                        current_error = e;
-                                        continue 'outer; // 重新开始外部循环以处理新文件
-                                    }
-                                    _ => {
-                                        // 没有更多文件需要处理，返回错误
-                                        return Err(e).context("Hybrid build tests failed after fix attempt");
-                                    }
-                                }
-                            }
-                        }
+                        // 全部通过，停止进一步的错误处理
+                        return Ok(());
                     }
                     Err(e) => {
-                        println!("│ {}", "✗ Build still failing after fix attempt".red());
-                        return Err(e).context(format!(
-                            "Build failed after fix for file {}",
-                            file.display()
-                        ));
+                        println!("│ {}", "✗ Build or tests still failing after fix attempt".red());
+                        
+                        // 尝试解析新错误并查看是否有更多文件
+                        match parse_error_for_files(&e.to_string(), feature) {
+                            Ok(new_files) if !new_files.is_empty() => {
+                                println!("│ {}", "Found additional files in new error, will process them...".yellow());
+                                // 更新文件和错误以进行下一次迭代
+                                files = new_files;
+                                current_error = e;
+                                continue 'outer; // 重新开始外部循环以处理新文件
+                            }
+                            _ => {
+                                // 没有更多文件需要处理，返回错误
+                                return Err(e).context("Build or tests failed after fix attempt");
+                            }
+                        }
                     }
                 }
             }
@@ -192,27 +177,31 @@ pub(crate) fn handle_startup_test_failure_with_files(
                         // Vim 编辑后，重复尝试构建和测试
                         loop {
                             println!("│");
-                            println!("│ {}", "Vim editing completed. Rebuilding and retesting...".bright_blue());
+                            println!("│ {}", "Vim editing completed. Running full build and test flow...".bright_blue());
                             
-                            // 手动编辑后尝试构建
-                            match builder::cargo_build(feature, true) {
+                            // 手动编辑后执行完整构建流程
+                            match builder::run_full_build_and_test_interactive(feature, file_type, file) {
                                 Ok(_) => {
-                                    println!("│ {}", "✓ Build successful!".bright_green().bold());
+                                    // 全部通过，成功退出
+                                    return Ok(());
+                                }
+                                Err(e) => {
+                                    println!("│ {}", "✗ Build or tests still failing after manual fix".red());
                                     
-                                    // 现在尝试完整的混合构建测试
-                                    match builder::run_hybrid_build(feature) {
-                                        Ok(_) => {
-                                            println!("│ {}", "✓ Hybrid build tests passed after manual fix!".bright_green().bold());
-                                            // 所有测试都通过；成功退出处理器
-                                            return Ok(());
+                                    // 尝试解析新错误并查看是否有更多文件
+                                    match parse_error_for_files(&e.to_string(), feature) {
+                                        Ok(new_files) if !new_files.is_empty() => {
+                                            println!("│ {}", "Found additional files in new error, will process them...".yellow());
+                                            // 更新文件和错误以进行下一次迭代
+                                            files = new_files;
+                                            current_error = e;
+                                            continue 'outer; // 重新开始外部循环以处理新文件
                                         }
-                                        Err(e) => {
-                                            println!("│ {}", "✗ Hybrid build tests still failing".red());
-                                            
-                                            // 询问用户是否想再试一次
+                                        _ => {
+                                            // 没有更多文件需要处理，询问用户是否想再试一次
                                             println!("│");
-                                            println!("│ {}", "Tests still have errors. What would you like to do?".yellow());
-                                            let retry_choice = interaction::prompt_user_choice("Tests still failing", false)?;
+                                            println!("│ {}", "Build or tests still have errors. What would you like to do?".yellow());
+                                            let retry_choice = interaction::prompt_user_choice("Build/tests still failing", false)?;
                                             
                                             match retry_choice {
                                                 interaction::UserChoice::Continue => {
@@ -229,7 +218,7 @@ pub(crate) fn handle_startup_test_failure_with_files(
                                                         Err(open_err) => {
                                                             println!("│ {}", format!("Failed to reopen vim: {}", open_err).red());
                                                             return Err(open_err).context(format!(
-                                                                "Tests still failing and could not reopen vim for file {}",
+                                                                "Build/tests still failing and could not reopen vim for file {}",
                                                                 file.display()
                                                             ));
                                                         }
@@ -237,48 +226,11 @@ pub(crate) fn handle_startup_test_failure_with_files(
                                                 }
                                                 interaction::UserChoice::Exit => {
                                                     return Err(e).context(format!(
-                                                        "Tests failed after manual fix for file {}",
+                                                        "Build/tests failed after manual fix for file {}",
                                                         file.display()
                                                     ));
                                                 }
                                             }
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    println!("│ {}", "✗ Build still failing after manual fix".red());
-                                    
-                                    // 询问用户是否想再试一次
-                                    println!("│");
-                                    println!("│ {}", "Build still has errors. What would you like to do?".yellow());
-                                    let retry_choice = interaction::prompt_user_choice("Build still failing", false)?;
-                                    
-                                    match retry_choice {
-                                        interaction::UserChoice::Continue => {
-                                            // 继续：只需使用现有更改重试构建
-                                            continue;
-                                        }
-                                        interaction::UserChoice::ManualFix => {
-                                            println!("│ {}", "Reopening file in Vim for additional manual fixes...".bright_blue());
-                                            match interaction::open_in_vim(file) {
-                                                Ok(_) => {
-                                                    // 在额外的手动修复后，循环将重试构建
-                                                    continue;
-                                                }
-                                                Err(open_err) => {
-                                                    println!("│ {}", format!("Failed to reopen vim: {}", open_err).red());
-                                                    return Err(open_err).context(format!(
-                                                        "Build still failing and could not reopen vim for file {}",
-                                                        file.display()
-                                                    ));
-                                                }
-                                            }
-                                        }
-                                        interaction::UserChoice::Exit => {
-                                            return Err(e).context(format!(
-                                                "Build failed after manual fix for file {}",
-                                                file.display()
-                                            ));
                                         }
                                     }
                                 }
