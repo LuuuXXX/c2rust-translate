@@ -196,9 +196,9 @@ pub fn prompt_test_failure_choice() -> Result<FailureChoice> {
     println!("│ {}", "⚠ Tests failed - What would you like to do?".yellow().bold());
     println!("│");
     println!("│ {}", "Available options:".bright_cyan());
-    println!("│   {} Add fix suggestion for AI to modify", "1.".bright_white());
-    println!("│   {} Manual fix (edit the file with VIM)", "2.".bright_white());
-    println!("│   {} Retry translation without suggestion", "3.".bright_white());
+    println!("│   {} Retry translation without suggestion", "1.".bright_white());
+    println!("│   {} Add fix suggestion for AI to modify", "2.".bright_white());
+    println!("│   {} Manual fix (edit the file with VIM)", "3.".bright_white());
     println!("│   {} Exit (abort the translation process)", "4.".bright_white());
     println!("│");
     
@@ -210,9 +210,9 @@ pub fn prompt_test_failure_choice() -> Result<FailureChoice> {
         io::stdin().read_line(&mut input)?;
         
         match input.trim() {
-            "1" => return Ok(FailureChoice::AddSuggestion),
-            "2" => return Ok(FailureChoice::ManualFix),
-            "3" => return Ok(FailureChoice::RetryWithoutSuggestion),
+            "1" => return Ok(FailureChoice::RetryWithoutSuggestion),
+            "2" => return Ok(FailureChoice::AddSuggestion),
+            "3" => return Ok(FailureChoice::ManualFix),
             "4" => return Ok(FailureChoice::Exit),
             _ => {
                 println!("│ {}", format!("Invalid choice '{}'. Please enter 1, 2, 3, or 4.", input.trim()).yellow());
@@ -227,9 +227,9 @@ pub fn prompt_compile_failure_choice() -> Result<FailureChoice> {
     println!("│ {}", "⚠ Compilation failed - What would you like to do?".red().bold());
     println!("│");
     println!("│ {}", "Available options:".bright_cyan());
-    println!("│   {} Add fix suggestion for AI to modify", "1.".bright_white());
-    println!("│   {} Manual fix (edit the file with VIM)", "2.".bright_white());
-    println!("│   {} Retry translation without suggestion", "3.".bright_white());
+    println!("│   {} Retry translation without suggestion", "1.".bright_white());
+    println!("│   {} Add fix suggestion for AI to modify", "2.".bright_white());
+    println!("│   {} Manual fix (edit the file with VIM)", "3.".bright_white());
     println!("│   {} Exit (abort the translation process)", "4.".bright_white());
     println!("│");
     
@@ -241,9 +241,9 @@ pub fn prompt_compile_failure_choice() -> Result<FailureChoice> {
         io::stdin().read_line(&mut input)?;
         
         match input.trim() {
-            "1" => return Ok(FailureChoice::AddSuggestion),
-            "2" => return Ok(FailureChoice::ManualFix),
-            "3" => return Ok(FailureChoice::RetryWithoutSuggestion),
+            "1" => return Ok(FailureChoice::RetryWithoutSuggestion),
+            "2" => return Ok(FailureChoice::AddSuggestion),
+            "3" => return Ok(FailureChoice::ManualFix),
             "4" => return Ok(FailureChoice::Exit),
             _ => {
                 println!("│ {}", format!("Invalid choice '{}'. Please enter 1, 2, 3, or 4.", input.trim()).yellow());
@@ -258,9 +258,9 @@ pub fn prompt_build_failure_choice() -> Result<FailureChoice> {
     println!("│ {}", "⚠ Build failed - What would you like to do?".red().bold());
     println!("│");
     println!("│ {}", "Available options:".bright_cyan());
-    println!("│   {} Add fix suggestion for AI to modify", "1.".bright_white());
-    println!("│   {} Manual fix (edit the file with VIM)", "2.".bright_white());
-    println!("│   {} Retry translation without suggestion", "3.".bright_white());
+    println!("│   {} Retry translation without suggestion", "1.".bright_white());
+    println!("│   {} Add fix suggestion for AI to modify", "2.".bright_white());
+    println!("│   {} Manual fix (edit the file with VIM)", "3.".bright_white());
     println!("│   {} Exit (abort the translation process)", "4.".bright_white());
     println!("│");
     
@@ -272,9 +272,9 @@ pub fn prompt_build_failure_choice() -> Result<FailureChoice> {
         io::stdin().read_line(&mut input)?;
         
         match input.trim() {
-            "1" => return Ok(FailureChoice::AddSuggestion),
-            "2" => return Ok(FailureChoice::ManualFix),
-            "3" => return Ok(FailureChoice::RetryWithoutSuggestion),
+            "1" => return Ok(FailureChoice::RetryWithoutSuggestion),
+            "2" => return Ok(FailureChoice::AddSuggestion),
+            "3" => return Ok(FailureChoice::ManualFix),
             "4" => return Ok(FailureChoice::Exit),
             _ => {
                 println!("│ {}", format!("Invalid choice '{}'. Please enter 1, 2, 3, or 4.", input.trim()).yellow());
