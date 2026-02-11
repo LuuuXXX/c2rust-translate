@@ -818,7 +818,7 @@ pub(crate) fn handle_test_failure_interactive(
                                 println!("│ {}", "Retrying again without suggestion...".bright_cyan());
                                 suggestion::clear_suggestions()?;
                                 
-                                // Re-translate before retrying
+                                // 在重试之前重新翻译
                                 retranslate_before_retry(feature, file_type, rs_file)?;
                                 
                                 // 继续循环以重试
