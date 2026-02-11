@@ -707,7 +707,7 @@ where
             // Enter interactive build failure handling
             let should_continue = builder::handle_build_failure_interactive(feature, file_type, rs_file, build_error)?;
             if !should_continue {
-                // 返回 false 信号重新翻译
+                // Return false to signal re-translation
                 return Ok(false);
             }
         }
@@ -779,10 +779,10 @@ where
             }
         }
         Err(test_error) => {
-            // 测试失败 - 使用交互式处理器
+            // Test failed - use interactive handler
             let should_continue = builder::handle_test_failure_interactive(feature, file_type, rs_file, test_error)?;
             if !should_continue {
-                // 返回 false 信号重新翻译
+                // Return false to signal re-translation
                 return Ok(false);
             }
         }

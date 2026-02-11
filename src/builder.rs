@@ -354,16 +354,16 @@ pub fn run_hybrid_build_interactive(
             // 构建成功，继续测试
         }
         Err(build_error) => {
-            // 仅当我们有文件上下文时才显示交互菜单
+            // Only show interactive menu when we have file context
             if let (Some(ftype), Some(rfile)) = (file_type, rs_file) {
-                // handle_build_failure_interactive 返回 bool
-                // 但此函数无法处理重新翻译信号，因此将其转换为错误
+                // handle_build_failure_interactive returns bool
+                // But this function cannot handle re-translation signal, so convert it to an error
                 match handle_build_failure_interactive(feature, ftype, rfile, build_error) {
                     Ok(true) => {
-                        // 构建成功，继续测试
+                        // Build successful, continue to tests
                     }
                     Ok(false) => {
-                        // 用户选择重新翻译，但此上下文无法处理
+                        // User chose re-translation, but this context cannot handle it
                         return Err(anyhow::anyhow!("User requested re-translation, but this context cannot handle it"));
                     }
                     Err(e) => {
@@ -371,21 +371,21 @@ pub fn run_hybrid_build_interactive(
                     }
                 }
             } else {
-                // 没有文件上下文，只返回错误
+                // No file context, just return error
                 return Err(build_error);
             }
         }
     }
     
-    // 通过交互式错误处理进行测试
+    // Test with interactive error handling
     match c2rust_test(feature) {
         Ok(_) => {
             println!("│ {}", "✓ Hybrid build tests passed".bright_green().bold());
             Ok(())
         }
         Err(test_error) => {
-            // 返回错误 - 调用者应该处理交互式失败处理
-            // 不在这里调用 handle_test_failure_interactive，因为这会创建嵌套的交互流
+            // Return error - caller should handle interactive failure handling
+            // Don't call handle_test_failure_interactive here as it would create nested interactive flows
             Err(test_error)
         }
     }
@@ -441,16 +441,16 @@ pub(crate) fn handle_build_failure_interactive(
             println!("│");
             println!("│ {}", "You chose: Retry directly without suggestion".bright_cyan());
             
-            // 清除旧建议
+            // Clear old suggestions
             suggestion::clear_suggestions()?;
             println!("│ {}", "✓ Cleared previous suggestions for fresh retry".bright_green());
             
-            // 重新翻译（与编译失败阶段和测试失败阶段一致）
+            // Re-translate (consistent with compilation failure phase and test failure phase)
             println!("│ {}", "Retrying translation from scratch...".bright_cyan());
             println!("│ {}", "Note: The translator will overwrite the existing file content.".bright_blue());
             println!("│ {}", "✓ Retry scheduled".bright_green());
             
-            return Ok(false); // 发出重新翻译信号
+            return Ok(false); // Signal re-translation
         }
         interaction::FailureChoice::AddSuggestion => {
             println!("│");
@@ -695,16 +695,16 @@ pub(crate) fn handle_test_failure_interactive(
             println!("│");
             println!("│ {}", "You chose: Retry directly without suggestion".bright_cyan());
             
-            // 清除旧建议
+            // Clear old suggestions
             suggestion::clear_suggestions()?;
             println!("│ {}", "✓ Cleared previous suggestions for fresh retry".bright_green());
             
-            // 重新翻译（与编译失败阶段一致）
+            // Re-translate (consistent with compilation failure phase)
             println!("│ {}", "Retrying translation from scratch...".bright_cyan());
             println!("│ {}", "Note: The translator will overwrite the existing file content.".bright_blue());
             println!("│ {}", "✓ Retry scheduled".bright_green());
             
-            return Ok(false); // 发出重新翻译信号
+            return Ok(false); // Signal re-translation
         }
         interaction::FailureChoice::AddSuggestion => {
             println!("│");
