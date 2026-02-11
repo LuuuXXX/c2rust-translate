@@ -359,7 +359,7 @@ pub fn run_hybrid_build_interactive(
                 let should_continue = handle_build_failure_interactive(feature, ftype, rfile, build_error)?;
                 if !should_continue {
                     // Retranslation requested, but this function is not in a retranslation context
-                    anyhow::bail!("Build failed and retranslation was requested");
+                    anyhow::bail!("Retranslation cannot be performed in this build context - please use the main translation workflow");
                 }
                 // Build handled successfully, continue to tests
             } else {
@@ -381,7 +381,7 @@ pub fn run_hybrid_build_interactive(
                 let should_continue = handle_test_failure_interactive(feature, ftype, rfile, test_error)?;
                 if !should_continue {
                     // Retranslation requested, but this function is not in a retranslation context
-                    anyhow::bail!("Tests failed and retranslation was requested");
+                    anyhow::bail!("Retranslation cannot be performed in this test context - please use the main translation workflow");
                 }
                 Ok(())
             } else {
