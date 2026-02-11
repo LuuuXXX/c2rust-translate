@@ -458,26 +458,11 @@ pub(crate) fn handle_build_failure_interactive(
                 
                 // 再次尝试构建和测试
                 println!("│");
-                println!("│ {}", "Rebuilding...".bright_blue().bold());
+                println!("│ {}", "Running full build and test...".bright_blue().bold());
                 
-                match c2rust_build(feature) {
+                match run_full_build_and_test_interactive(feature, file_type, rs_file) {
                     Ok(_) => {
-                        // 构建成功，现在尝试测试
-                        println!("│ {}", "✓ Build passed after applying fix!".bright_green().bold());
-                        println!("│");
-                        println!("│ {}", "Running tests...".bright_blue().bold());
-                        
-                        match c2rust_test(feature) {
-                            Ok(_) => {
-                                println!("│ {}", "✓ Tests passed!".bright_green().bold());
-                                return Ok(());
-                            }
-                            Err(test_error) => {
-                                // 构建成功但测试失败，切换到测试失败处理
-                                println!("│ {}", "✗ Build succeeded but tests failed".yellow());
-                                return handle_test_failure_interactive(feature, file_type, rs_file, test_error);
-                            }
-                        }
+                        return Ok(());
                     }
                     Err(e) => {
                         println!("│ {}", "✗ Build still failing".red());
@@ -693,13 +678,10 @@ pub(crate) fn handle_test_failure_interactive(
                 
                 // 再次尝试构建和测试
                 println!("│");
-                println!("│ {}", "Rebuilding and retesting...".bright_blue().bold());
+                println!("│ {}", "Running full build and test...".bright_blue().bold());
                 
-                c2rust_build(feature)?;
-                
-                match c2rust_test(feature) {
+                match run_full_build_and_test_interactive(feature, file_type, rs_file) {
                     Ok(_) => {
-                        println!("│ {}", "✓ Tests passed after applying fix!".bright_green().bold());
                         return Ok(());
                     }
                     Err(e) => {

@@ -141,44 +141,29 @@ pub(crate) fn handle_startup_test_failure_with_files(
                 
                 // 再次尝试构建和测试
                 println!("│");
-                println!("│ {}", "Rebuilding and retesting...".bright_blue().bold());
-                match builder::cargo_build(feature, true) {
+                println!("│ {}", "Running full build and test flow...".bright_blue().bold());
+                match builder::run_full_build_and_test(feature) {
                     Ok(_) => {
-                        println!("│ {}", "✓ Build successful!".bright_green().bold());
-                        
-                        // 现在尝试完整的混合构建测试
-                        match builder::run_hybrid_build(feature) {
-                            Ok(_) => {
-                                println!("│ {}", "✓ Hybrid build tests passed!".bright_green().bold());
-                                // 混合构建现在通过；停止进一步的错误处理
-                                return Ok(());
-                            }
-                            Err(e) => {
-                                println!("│ {}", "✗ Hybrid build tests still failing".red());
-                                
-                                // 尝试解析新错误并查看是否有更多文件
-                                match parse_error_for_files(&e.to_string(), feature) {
-                                    Ok(new_files) if !new_files.is_empty() => {
-                                        println!("│ {}", "Found additional files in new error, will process them...".yellow());
-                                        // 更新文件和错误以进行下一次迭代
-                                        files = new_files;
-                                        current_error = e;
-                                        continue 'outer; // 重新开始外部循环以处理新文件
-                                    }
-                                    _ => {
-                                        // 没有更多文件需要处理，返回错误
-                                        return Err(e).context("Hybrid build tests failed after fix attempt");
-                                    }
-                                }
-                            }
-                        }
+                        // 全部通过，停止进一步的错误处理
+                        return Ok(());
                     }
                     Err(e) => {
-                        println!("│ {}", "✗ Build still failing after fix attempt".red());
-                        return Err(e).context(format!(
-                            "Build failed after fix for file {}",
-                            file.display()
-                        ));
+                        println!("│ {}", "✗ Build or tests still failing after fix attempt".red());
+                        
+                        // 尝试解析新错误并查看是否有更多文件
+                        match parse_error_for_files(&e.to_string(), feature) {
+                            Ok(new_files) if !new_files.is_empty() => {
+                                println!("│ {}", "Found additional files in new error, will process them...".yellow());
+                                // 更新文件和错误以进行下一次迭代
+                                files = new_files;
+                                current_error = e;
+                                continue 'outer; // 重新开始外部循环以处理新文件
+                            }
+                            _ => {
+                                // 没有更多文件需要处理，返回错误
+                                return Err(e).context("Build or tests failed after fix attempt");
+                            }
+                        }
                     }
                 }
             }

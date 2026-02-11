@@ -482,18 +482,17 @@ fn handle_max_fix_attempts_reached(
                 let format_progress = |op: &str| format!("Fix with suggestion - {}", op);
                 apply_error_fix(feature, file_type, rs_file, &build_error, &format_progress, true)?;
                 
-                // 再试一次构建
+                // 再试一次构建和测试
                 println!("│");
-                println!("│ {}", "Building with applied fix...".bright_blue().bold());
-                match builder::cargo_build(feature, true) {
+                println!("│ {}", "Running full build and test after applying fix...".bright_blue().bold());
+                match builder::run_full_build_and_test_interactive(feature, file_type, rs_file) {
                     Ok(_) => {
-                        println!("│ {}", "✓ Build successful after applying suggestion!".bright_green().bold());
                         return Ok(true);
                     }
                     Err(e) => {
-                        println!("│ {}", "✗ Build still failing after fix attempt".red());
+                        println!("│ {}", "✗ Build or tests still failing after fix attempt".red());
                         return Err(e).context(format!(
-                            "Build failed after fix with suggestion for file {}",
+                            "Build or tests failed after fix with suggestion for file {}",
                             rs_file.display()
                         ));
                     }
