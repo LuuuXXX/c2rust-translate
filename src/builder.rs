@@ -699,6 +699,36 @@ pub(crate) fn handle_build_failure_interactive(
     }
 }
 
+/// 重新翻译 C 源文件到 Rust
+/// 
+/// 这个辅助函数在重试失败时重新翻译代码。
+/// 它会显示进度消息并处理翻译错误。
+fn retranslate_before_retry(
+    feature: &str,
+    file_type: &str,
+    rs_file: &std::path::Path,
+) -> Result<()> {
+    use crate::translator;
+    use std::fs;
+    
+    println!("│");
+    println!("│ {}", "Re-translating from C source before retrying...".bright_blue());
+    
+    let c_file = rs_file.with_extension("c");
+    
+    translator::translate_c_to_rust(feature, file_type, &c_file, rs_file, true)
+        .map_err(|e| {
+            println!("│ {}", format!("✗ Re-translation failed: {}", e).red());
+            e
+        })
+        .context("Re-translation failed during retry")?;
+    
+    let metadata = fs::metadata(rs_file)?;
+    println!("│ {}", format!("✓ Re-translation complete ({} bytes)", metadata.len()).bright_green());
+    
+    Ok(())
+}
+
 /// 交互式处理测试失败
 pub(crate) fn handle_test_failure_interactive(
     feature: &str,
@@ -756,24 +786,8 @@ pub(crate) fn handle_test_failure_interactive(
             let mut current_error;
             
             loop {
-                println!("│");
-                println!("│ {}", "Re-translating from C source before retrying...".bright_blue());
-                
                 // 首先重新翻译
-                use crate::translator;
-                use std::fs;
-                let c_file = rs_file.with_extension("c");
-                
-                match translator::translate_c_to_rust(feature, file_type, &c_file, rs_file, true) {
-                    Ok(_) => {
-                        let metadata = fs::metadata(rs_file)?;
-                        println!("│ {}", format!("✓ Re-translation complete ({} bytes)", metadata.len()).bright_green());
-                    }
-                    Err(e) => {
-                        println!("│ {}", format!("✗ Re-translation failed: {}", e).red());
-                        return Err(e).context("Re-translation failed during retry");
-                    }
-                }
+                retranslate_before_retry(feature, file_type, rs_file)?;
                 
                 println!("│");
                 println!("│ {}", "Retrying build and test without suggestions...".bright_blue());
@@ -800,23 +814,7 @@ pub(crate) fn handle_test_failure_interactive(
                                 suggestion::clear_suggestions()?;
                                 
                                 // Re-translate before retrying
-                                println!("│");
-                                println!("│ {}", "Re-translating from C source before retrying...".bright_blue());
-                                
-                                use crate::translator;
-                                use std::fs;
-                                let c_file = rs_file.with_extension("c");
-                                
-                                match translator::translate_c_to_rust(feature, file_type, &c_file, rs_file, true) {
-                                    Ok(_) => {
-                                        let metadata = fs::metadata(rs_file)?;
-                                        println!("│ {}", format!("✓ Re-translation complete ({} bytes)", metadata.len()).bright_green());
-                                    }
-                                    Err(e) => {
-                                        println!("│ {}", format!("✗ Re-translation failed: {}", e).red());
-                                        return Err(e).context("Re-translation failed during retry");
-                                    }
-                                }
+                                retranslate_before_retry(feature, file_type, rs_file)?;
                                 
                                 // 继续循环以重试
                                 continue;
