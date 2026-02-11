@@ -47,9 +47,10 @@ pub enum CompileSuccessChoice {
 /// 编译或测试失败时的用户选择
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FailureChoice {
-    AddSuggestion,
-    ManualFix,
-    Exit,
+    RetryDirectly,   // 直接重试不输入建议
+    AddSuggestion,   // 添加建议后重试
+    ManualFix,       // 手动修复
+    Exit,            // 退出
 }
 
 /// 当达到最大尝试次数时提示用户选择
@@ -195,24 +196,26 @@ pub fn prompt_test_failure_choice() -> Result<FailureChoice> {
     println!("│ {}", "⚠ Tests failed - What would you like to do?".yellow().bold());
     println!("│");
     println!("│ {}", "Available options:".bright_cyan());
-    println!("│   {} Add fix suggestion for AI to modify", "1.".bright_white());
-    println!("│   {} Manual fix (edit the file with VIM)", "2.".bright_white());
-    println!("│   {} Exit (abort the translation process)", "3.".bright_white());
+    println!("│   {} Retry directly (without adding suggestion)", "1.".bright_white());
+    println!("│   {} Add fix suggestion for AI to modify", "2.".bright_white());
+    println!("│   {} Manual fix (edit the file with VIM)", "3.".bright_white());
+    println!("│   {} Exit (abort the translation process)", "4.".bright_white());
     println!("│");
     
     loop {
-        print!("│ {} ", "Enter your choice (1/2/3):".bright_yellow());
+        print!("│ {} ", "Enter your choice (1/2/3/4):".bright_yellow());
         io::stdout().flush()?;
         
         let mut input = String::new();
         io::stdin().read_line(&mut input)?;
         
         match input.trim() {
-            "1" => return Ok(FailureChoice::AddSuggestion),
-            "2" => return Ok(FailureChoice::ManualFix),
-            "3" => return Ok(FailureChoice::Exit),
+            "1" => return Ok(FailureChoice::RetryDirectly),
+            "2" => return Ok(FailureChoice::AddSuggestion),
+            "3" => return Ok(FailureChoice::ManualFix),
+            "4" => return Ok(FailureChoice::Exit),
             _ => {
-                println!("│ {}", format!("Invalid choice '{}'. Please enter 1, 2, or 3.", input.trim()).yellow());
+                println!("│ {}", format!("Invalid choice '{}'. Please enter 1, 2, 3, or 4.", input.trim()).yellow());
             }
         }
     }
@@ -224,24 +227,26 @@ pub fn prompt_compile_failure_choice() -> Result<FailureChoice> {
     println!("│ {}", "⚠ Compilation failed - What would you like to do?".red().bold());
     println!("│");
     println!("│ {}", "Available options:".bright_cyan());
-    println!("│   {} Add fix suggestion for AI to modify", "1.".bright_white());
-    println!("│   {} Manual fix (edit the file with VIM)", "2.".bright_white());
-    println!("│   {} Exit (abort the translation process)", "3.".bright_white());
+    println!("│   {} Retry directly (without adding suggestion)", "1.".bright_white());
+    println!("│   {} Add fix suggestion for AI to modify", "2.".bright_white());
+    println!("│   {} Manual fix (edit the file with VIM)", "3.".bright_white());
+    println!("│   {} Exit (abort the translation process)", "4.".bright_white());
     println!("│");
     
     loop {
-        print!("│ {} ", "Enter your choice (1/2/3):".bright_yellow());
+        print!("│ {} ", "Enter your choice (1/2/3/4):".bright_yellow());
         io::stdout().flush()?;
         
         let mut input = String::new();
         io::stdin().read_line(&mut input)?;
         
         match input.trim() {
-            "1" => return Ok(FailureChoice::AddSuggestion),
-            "2" => return Ok(FailureChoice::ManualFix),
-            "3" => return Ok(FailureChoice::Exit),
+            "1" => return Ok(FailureChoice::RetryDirectly),
+            "2" => return Ok(FailureChoice::AddSuggestion),
+            "3" => return Ok(FailureChoice::ManualFix),
+            "4" => return Ok(FailureChoice::Exit),
             _ => {
-                println!("│ {}", format!("Invalid choice '{}'. Please enter 1, 2, or 3.", input.trim()).yellow());
+                println!("│ {}", format!("Invalid choice '{}'. Please enter 1, 2, 3, or 4.", input.trim()).yellow());
             }
         }
     }
@@ -253,24 +258,26 @@ pub fn prompt_build_failure_choice() -> Result<FailureChoice> {
     println!("│ {}", "⚠ Build failed - What would you like to do?".red().bold());
     println!("│");
     println!("│ {}", "Available options:".bright_cyan());
-    println!("│   {} Add fix suggestion for AI to modify", "1.".bright_white());
-    println!("│   {} Manual fix (edit the file with VIM)", "2.".bright_white());
-    println!("│   {} Exit (abort the translation process)", "3.".bright_white());
+    println!("│   {} Retry directly (without adding suggestion)", "1.".bright_white());
+    println!("│   {} Add fix suggestion for AI to modify", "2.".bright_white());
+    println!("│   {} Manual fix (edit the file with VIM)", "3.".bright_white());
+    println!("│   {} Exit (abort the translation process)", "4.".bright_white());
     println!("│");
     
     loop {
-        print!("│ {} ", "Enter your choice (1/2/3):".bright_yellow());
+        print!("│ {} ", "Enter your choice (1/2/3/4):".bright_yellow());
         io::stdout().flush()?;
         
         let mut input = String::new();
         io::stdin().read_line(&mut input)?;
         
         match input.trim() {
-            "1" => return Ok(FailureChoice::AddSuggestion),
-            "2" => return Ok(FailureChoice::ManualFix),
-            "3" => return Ok(FailureChoice::Exit),
+            "1" => return Ok(FailureChoice::RetryDirectly),
+            "2" => return Ok(FailureChoice::AddSuggestion),
+            "3" => return Ok(FailureChoice::ManualFix),
+            "4" => return Ok(FailureChoice::Exit),
             _ => {
-                println!("│ {}", format!("Invalid choice '{}'. Please enter 1, 2, or 3.", input.trim()).yellow());
+                println!("│ {}", format!("Invalid choice '{}'. Please enter 1, 2, 3, or 4.", input.trim()).yellow());
             }
         }
     }
@@ -300,9 +307,11 @@ mod tests {
     
     #[test]
     fn test_failure_choice_variants() {
+        assert_eq!(FailureChoice::RetryDirectly, FailureChoice::RetryDirectly);
         assert_eq!(FailureChoice::AddSuggestion, FailureChoice::AddSuggestion);
         assert_eq!(FailureChoice::ManualFix, FailureChoice::ManualFix);
         assert_eq!(FailureChoice::Exit, FailureChoice::Exit);
+        assert_ne!(FailureChoice::RetryDirectly, FailureChoice::Exit);
         assert_ne!(FailureChoice::AddSuggestion, FailureChoice::Exit);
     }
     
