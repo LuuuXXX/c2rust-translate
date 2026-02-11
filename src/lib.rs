@@ -465,9 +465,30 @@ fn handle_max_fix_attempts_reached(
                 println!("│ {}", "✓ Retry scheduled".bright_green());
                 return Ok(false); // 发出重试信号
             } else {
-                // 没有更多翻译重试
-                println!("│ {}", "No translation retries remaining".bright_yellow());
-                return Err(anyhow::anyhow!("Maximum translation retries reached without successful compilation"));
+                // 没有更多翻译重试，但我们可以再次尝试修复（不添加建议）
+                println!("│ ⚠️  {}", "This is your last automatic retry attempt.".yellow());
+                println!("│ {}", "Attempting fix without suggestions...".bright_yellow());
+                
+                // 应用修复（不带建议）
+                let format_progress = |op: &str| format!("Fix (last attempt) - {}", op);
+                apply_error_fix(feature, file_type, rs_file, &build_error, &format_progress, true)?;
+                
+                // 再试一次构建和测试
+                println!("│");
+                println!("│ {}", "Running full build and test after fix attempt...".bright_blue().bold());
+                match builder::run_full_build_and_test_interactive(feature, file_type, rs_file) {
+                    Ok(_) => {
+                        return Ok(true);
+                    }
+                    Err(e) => {
+                        println!("│");
+                        println!("│ ❌ {}", "Fix attempt failed. All automatic retries exhausted.".red());
+                        println!("│ 💡 {}", "Suggestions:".bright_cyan());
+                        println!("│    {}", "- Review the error and try 'Add Suggestion' for better results".cyan());
+                        println!("│    {}", "- Or use 'Manual Fix' to edit the code directly".cyan());
+                        return Err(e).context("Maximum translation retries reached without successful compilation");
+                    }
+                }
             }
         }
         interaction::FailureChoice::AddSuggestion => {
