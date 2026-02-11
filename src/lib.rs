@@ -571,6 +571,29 @@ fn handle_max_fix_attempts_reached(
                 }
             }
         }
+        interaction::FailureChoice::RetryWithoutSuggestion => {
+            println!("│");
+            println!("│ {}", "You chose: Retry translation without suggestion".bright_cyan());
+            
+            // 清除现有建议
+            suggestion::clear_suggestions()?;
+            
+            // 如果还有重试机会，重新尝试翻译
+            if !is_last_attempt {
+                let remaining_retries = MAX_TRANSLATION_ATTEMPTS - attempt_number;
+                println!("│ {}", format!("Retrying translation from scratch... ({} retries remaining)", remaining_retries).bright_cyan());
+                println!("│ {}", "Note: The translator will overwrite the existing file content.".bright_blue());
+                println!("│ {}", "✓ Retry scheduled".bright_green());
+                Ok(false) // 发出重试信号
+            } else {
+                println!("│ {}", "No translation retries remaining.".bright_yellow());
+                Err(build_error).context(format!(
+                    "Build failed after {} fix attempts for file {} and no translation retries remaining.",
+                    max_fix_attempts,
+                    rs_file.display()
+                ))
+            }
+        }
         interaction::FailureChoice::Exit => {
             println!("│");
             println!("│ {}", "You chose: Exit".yellow());

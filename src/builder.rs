@@ -548,6 +548,10 @@ pub(crate) fn handle_build_failure_interactive(
                                                         current_error = e;
                                                         continue;
                                                     }
+                                                    interaction::FailureChoice::RetryWithoutSuggestion => {
+                                                        println!("│ {}", "User requested full translation retry".yellow());
+                                                        return Err(e).context("Build failed and user requested full translation retry without suggestion");
+                                                    }
                                                     interaction::FailureChoice::Exit => {
                                                         return Err(e).context("Build failed after manual fix and user chose to exit");
                                                     }
@@ -561,6 +565,10 @@ pub(crate) fn handle_build_failure_interactive(
                                         return Err(open_err).context("Build failed and could not open vim for manual fix");
                                     }
                                 }
+                            }
+                            interaction::FailureChoice::RetryWithoutSuggestion => {
+                                println!("│ {}", "User requested full translation retry".yellow());
+                                return Err(current_error).context("Build failed and user requested full translation retry without suggestion");
                             }
                             interaction::FailureChoice::Exit => {
                                 return Err(current_error).context("Build failed and user chose to exit");
@@ -622,6 +630,10 @@ pub(crate) fn handle_build_failure_interactive(
                                         // 递归调用以进入基于建议的交互式修复流程
                                         return handle_build_failure_interactive(feature, file_type, rs_file, e);
                                     }
+                                    interaction::FailureChoice::RetryWithoutSuggestion => {
+                                        println!("│ {}", "User requested full translation retry".yellow());
+                                        return Err(e).context("Build failed and user requested full translation retry without suggestion");
+                                    }
                                     interaction::FailureChoice::Exit => {
                                         return Err(e).context("Build failed after manual fix and user chose to exit");
                                     }
@@ -642,6 +654,11 @@ pub(crate) fn handle_build_failure_interactive(
             println!("│ {}", "You chose: Exit".yellow());
             println!("│ {}", "Exiting due to build failures.".yellow());
             Err(build_error).context("Build failed and user chose to exit")
+        }
+        interaction::FailureChoice::RetryWithoutSuggestion => {
+            println!("│");
+            println!("│ {}", "User requested full translation retry".yellow());
+            Err(build_error).context("Build failed and user requested full translation retry without suggestion")
         }
     }
 }
@@ -780,6 +797,10 @@ pub(crate) fn handle_test_failure_interactive(
                                     }
                                 }
                             }
+                            interaction::FailureChoice::RetryWithoutSuggestion => {
+                                println!("│ {}", "User requested full translation retry".yellow());
+                                return Err(current_error).context("Tests failed and user requested full translation retry without suggestion");
+                            }
                             interaction::FailureChoice::Exit => {
                                 return Err(current_error).context("Tests failed and user chose to exit");
                             }
@@ -827,6 +848,10 @@ pub(crate) fn handle_test_failure_interactive(
                                         println!("│ {}", "Switching to suggestion-based fix flow.".yellow());
                                         return Err(e).context("Tests still failing after manual fix; user chose to add a suggestion");
                                     }
+                                    interaction::FailureChoice::RetryWithoutSuggestion => {
+                                        println!("│ {}", "User requested full translation retry".yellow());
+                                        return Err(e).context("Tests failed and user requested full translation retry without suggestion");
+                                    }
                                     interaction::FailureChoice::Exit => {
                                         return Err(e).context("Tests failed after manual fix and user chose to exit");
                                     }
@@ -847,6 +872,11 @@ pub(crate) fn handle_test_failure_interactive(
             println!("│ {}", "You chose: Exit".yellow());
             println!("│ {}", "Exiting due to test failures.".yellow());
             Err(test_error).context("Tests failed and user chose to exit")
+        }
+        interaction::FailureChoice::RetryWithoutSuggestion => {
+            println!("│");
+            println!("│ {}", "User requested full translation retry".yellow());
+            Err(test_error).context("Tests failed and user requested full translation retry without suggestion")
         }
     }
 }
