@@ -450,6 +450,26 @@ fn handle_max_fix_attempts_reached(
     let choice = interaction::prompt_compile_failure_choice()?;
     
     match choice {
+        interaction::FailureChoice::RetryDirectly => {
+            println!("│");
+            println!("│ {}", "You chose: Retry directly without suggestion".bright_cyan());
+            
+            // 清除旧建议
+            suggestion::clear_suggestions()?;
+            
+            // 如果我们仍然可以重试翻译，则执行
+            if !is_last_attempt {
+                let remaining_retries = MAX_TRANSLATION_ATTEMPTS - attempt_number;
+                println!("│ {}", format!("Retrying translation from scratch... ({} retries remaining)", remaining_retries).bright_cyan());
+                println!("│ {}", "Note: The translator will overwrite the existing file content.".bright_blue());
+                println!("│ {}", "✓ Retry scheduled".bright_green());
+                return Ok(false); // 发出重试信号
+            } else {
+                // 没有更多翻译重试
+                println!("│ {}", "No translation retries remaining".bright_yellow());
+                return Err(anyhow::anyhow!("Maximum translation retries reached without successful compilation"));
+            }
+        }
         interaction::FailureChoice::AddSuggestion => {
             println!("│");
             println!("│ {}", "You chose: Add fix suggestion for AI to modify".bright_cyan());

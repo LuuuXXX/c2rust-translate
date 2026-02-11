@@ -428,6 +428,16 @@ pub(crate) fn handle_build_failure_interactive(
     let choice = interaction::prompt_build_failure_choice()?;
     
     match choice {
+        interaction::FailureChoice::RetryDirectly => {
+            println!("│");
+            println!("│ {}", "You chose: Retry directly without suggestion".bright_cyan());
+            
+            // 清除旧建议
+            suggestion::clear_suggestions()?;
+            
+            println!("│ {}", "Note: This will return the error to trigger a full retry".bright_blue());
+            return Err(build_error);
+        }
         interaction::FailureChoice::AddSuggestion => {
             println!("│");
             println!("│ {}", "You chose: Add fix suggestion for AI to modify".bright_cyan());
@@ -476,6 +486,11 @@ pub(crate) fn handle_build_failure_interactive(
                         let retry_choice = interaction::prompt_build_failure_choice()?;
                         
                         match retry_choice {
+                            interaction::FailureChoice::RetryDirectly => {
+                                println!("│ {}", "Retrying without new suggestion...".bright_cyan());
+                                suggestion::clear_suggestions()?;
+                                return Err(current_error);
+                            }
                             interaction::FailureChoice::AddSuggestion => {
                                 // 继续循环以使用新建议重试
                                 continue;
@@ -505,6 +520,11 @@ pub(crate) fn handle_build_failure_interactive(
                                                 let nested_retry_choice = interaction::prompt_build_failure_choice()?;
                                                 
                                                 match nested_retry_choice {
+                                                    interaction::FailureChoice::RetryDirectly => {
+                                                        println!("│ {}", "Retrying without suggestion after manual fix...".bright_cyan());
+                                                        suggestion::clear_suggestions()?;
+                                                        return Err(e);
+                                                    }
                                                     interaction::FailureChoice::AddSuggestion => {
                                                         // 更新 current_error 并继续外部循环以使用新建议重试
                                                         current_error = e;
@@ -566,6 +586,11 @@ pub(crate) fn handle_build_failure_interactive(
                                 let retry_choice = interaction::prompt_build_failure_choice()?;
                                 
                                 match retry_choice {
+                                    interaction::FailureChoice::RetryDirectly => {
+                                        println!("│ {}", "Retrying without suggestion after manual fix...".bright_cyan());
+                                        suggestion::clear_suggestions()?;
+                                        return Err(e);
+                                    }
                                     interaction::FailureChoice::ManualFix => {
                                         println!("│ {}", "Reopening Vim for another manual fix attempt...".bright_blue());
                                         interaction::open_in_vim(rs_file)
@@ -648,6 +673,16 @@ pub(crate) fn handle_test_failure_interactive(
     let choice = interaction::prompt_test_failure_choice()?;
     
     match choice {
+        interaction::FailureChoice::RetryDirectly => {
+            println!("│");
+            println!("│ {}", "You chose: Retry directly without suggestion".bright_cyan());
+            
+            // 清除旧建议
+            suggestion::clear_suggestions()?;
+            
+            println!("│ {}", "Note: This will return the error to trigger a full retry".bright_blue());
+            return Err(test_error);
+        }
         interaction::FailureChoice::AddSuggestion => {
             println!("│");
             println!("│ {}", "You chose: Add fix suggestion for AI to modify".bright_cyan());
@@ -696,6 +731,11 @@ pub(crate) fn handle_test_failure_interactive(
                         let retry_choice = interaction::prompt_test_failure_choice()?;
                         
                         match retry_choice {
+                            interaction::FailureChoice::RetryDirectly => {
+                                println!("│ {}", "Retrying without new suggestion...".bright_cyan());
+                                suggestion::clear_suggestions()?;
+                                return Err(current_error);
+                            }
                             interaction::FailureChoice::AddSuggestion => {
                                 // 继续循环以使用新建议重试
                                 continue;
@@ -763,6 +803,11 @@ pub(crate) fn handle_test_failure_interactive(
                                 let retry_choice = interaction::prompt_test_failure_choice()?;
                                 
                                 match retry_choice {
+                                    interaction::FailureChoice::RetryDirectly => {
+                                        println!("│ {}", "Retrying without suggestion after manual fix...".bright_cyan());
+                                        suggestion::clear_suggestions()?;
+                                        return Err(e);
+                                    }
                                     interaction::FailureChoice::ManualFix => {
                                         println!("│ {}", "Reopening Vim for another manual fix attempt...".bright_blue());
                                         interaction::open_in_vim(rs_file)
