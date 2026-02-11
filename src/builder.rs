@@ -465,14 +465,14 @@ pub(crate) fn handle_build_failure_interactive(
                         return Ok(());
                     }
                     Err(e) => {
-                        println!("│ {}", "✗ Build still failing".red());
+                        println!("│ {}", "✗ Build or tests still failing".red());
                         
                         // 使用最新失败更新 current_error
                         current_error = e;
                         
                         // 询问用户是否想再试一次
                         println!("│");
-                        println!("│ {}", "Build still has errors. What would you like to do?".yellow());
+                        println!("│ {}", "Build or tests still have errors. What would you like to do?".yellow());
                         let retry_choice = interaction::prompt_build_failure_choice()?;
                         
                         match retry_choice {
@@ -558,11 +558,11 @@ pub(crate) fn handle_build_failure_interactive(
                                 return Ok(());
                             }
                             Err(e) => {
-                                println!("│ {}", "✗ Build still failing after manual fix".red());
+                                println!("│ {}", "✗ Build or tests still failing after manual fix".red());
                                 
                                 // 询问用户是否想再试一次
                                 println!("│");
-                                println!("│ {}", "Build still has errors. What would you like to do?".yellow());
+                                println!("│ {}", "Build or tests still have errors. What would you like to do?".yellow());
                                 let retry_choice = interaction::prompt_build_failure_choice()?;
                                 
                                 match retry_choice {
@@ -801,6 +801,9 @@ pub(crate) fn handle_test_failure_interactive(
 /// 执行完整的构建和测试流程
 /// 顺序：cargo_build → c2rust_clean → c2rust_build → c2rust_test
 /// 这是主流程中的标准验证流程
+/// 
+/// 注意：此函数会多次调用 `update_code_analysis`（在 clean、build、test 步骤中各一次），
+/// 这会略微降低性能。未来可以优化为只更新一次分析。
 pub fn run_full_build_and_test(feature: &str) -> Result<()> {
     println!("│");
     println!("│ {}", "Running full build and test flow...".bright_blue().bold());
@@ -834,6 +837,9 @@ pub fn run_full_build_and_test(feature: &str) -> Result<()> {
 /// 调用方负责处理错误并提供交互式修复选项（如需要）。
 /// 
 /// 参数 `_file_type` 和 `_rs_file` 保留用于 API 兼容性，当前未使用。
+/// 
+/// 性能提示：此函数会多次调用 `update_code_analysis`（在 clean、build、test 步骤中各一次），
+/// 这会略微降低性能。未来可以优化为只更新一次分析。
 pub fn run_full_build_and_test_interactive(
     feature: &str,
     _file_type: &str,
