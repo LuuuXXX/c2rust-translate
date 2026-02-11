@@ -272,8 +272,11 @@ fn process_rs_file(feature: &str, rs_file: &std::path::Path, file_name: &str, cu
         )?;
         
         if build_successful {
-            complete_file_processing(feature, file_name, file_type, rs_file, &format_progress)?;
-            return Ok(());
+            let processing_complete = complete_file_processing(feature, file_name, file_type, rs_file, &format_progress)?;
+            if processing_complete {
+                return Ok(());
+            }
+            // If processing_complete is false, retry translation (loop continues)
         }
     }
     
@@ -639,13 +642,19 @@ where
 }
 
 /// 完成文件处理（提交、分析、混合构建）
+/// Completes file processing by running hybrid build tests and committing changes
+/// 
+/// Returns:
+/// - Ok(true) if file processing completed successfully (continue to next file)
+/// - Ok(false) if translation should be retried from scratch
+/// - Err if an unrecoverable error occurred
 fn complete_file_processing<F>(
     feature: &str, 
     file_name: &str, 
     file_type: &str,
     rs_file: &std::path::Path,
     format_progress: &F
-) -> Result<()>
+) -> Result<bool>
 where
     F: Fn(&str) -> String
 {
@@ -702,7 +711,11 @@ where
         Err(build_error) => {
             println!("│ {}", "✗ Build failed".red().bold());
             // Enter interactive build failure handling
-            builder::handle_build_failure_interactive(feature, file_type, rs_file, build_error)?;
+            let processing_complete = builder::handle_build_failure_interactive(feature, file_type, rs_file, build_error)?;
+            if !processing_complete {
+                // User chose to retry translation
+                return Ok(false);
+            }
         }
     }
     
@@ -773,7 +786,11 @@ where
         }
         Err(test_error) => {
             // 测试失败 - 使用交互式处理器
-            builder::handle_test_failure_interactive(feature, file_type, rs_file, test_error)?;
+            let processing_complete = builder::handle_test_failure_interactive(feature, file_type, rs_file, test_error)?;
+            if !processing_complete {
+                // User chose to retry translation
+                return Ok(false);
+            }
         }
     }
     
@@ -798,5 +815,5 @@ where
     
     println!("{}", "└─ File processing complete".bright_white().bold());
     
-    Ok(())
+    Ok(true)
 }
