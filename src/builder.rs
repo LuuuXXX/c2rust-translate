@@ -716,7 +716,8 @@ fn retranslate_before_retry(
     
     let c_file = rs_file.with_extension("c");
     
-    translator::translate_c_to_rust(feature, file_type, &c_file, rs_file, true)
+    // 在重试期间显示完整输出以便用户了解翻译过程
+    translator::translate_c_to_rust(feature, file_type, &c_file, rs_file, true /* show_full_output */)
         .map_err(|e| {
             println!("│ {}", format!("✗ Re-translation failed: {}", e).red());
             e
