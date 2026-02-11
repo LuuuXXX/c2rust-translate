@@ -377,7 +377,7 @@ Suggestion: Please use std::ffi::CStr instead of raw pointer manipulation
 
 - **统一性** - 所有验证场景使用相同的流程，避免遗漏步骤
 - **完整性** - 包含从 Rust 编译到混合构建测试的全部验证
-- **交互式错误处理** - 每个步骤失败时都提供交互式修复选项
+- **交互式错误处理** - c2rust_build 和 c2rust_test 步骤失败时，由调用方提供交互式修复选项
 - **进度可见** - 显示每个步骤的执行状态和结果
 
 ## 许可证

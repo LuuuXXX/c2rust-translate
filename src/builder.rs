@@ -829,11 +829,12 @@ pub fn run_full_build_and_test(feature: &str) -> Result<()> {
 
 /// 执行完整的构建和测试流程（交互式错误处理版本）
 /// 顺序：cargo_build → c2rust_clean → c2rust_build → c2rust_test
-/// 在任何步骤失败时提供交互式修复选项
+/// 在 c2rust_build 和 c2rust_test 步骤失败时提供交互式修复选项
+/// 注意：cargo_build 失败时直接返回错误，不提供交互式处理
 pub fn run_full_build_and_test_interactive(
     feature: &str,
-    file_type: &str,
-    rs_file: &std::path::Path,
+    _file_type: &str,
+    _rs_file: &std::path::Path,
 ) -> Result<()> {
     println!("│");
     println!("│ {}", "Running full build and test flow...".bright_blue().bold());
@@ -856,29 +857,15 @@ pub fn run_full_build_and_test_interactive(
     println!("│ {}", "→ Step 2/4: Cleaning hybrid build...".bright_blue());
     c2rust_clean(feature)?;
     
-    // 3. 混合构建（带交互式错误处理）
+    // 3. 混合构建（不调用交互式处理器以避免递归）
     println!("│ {}", "→ Step 3/4: Running hybrid build (C + Rust)...".bright_blue());
-    match c2rust_build(feature) {
-        Ok(_) => {
-            println!("│ {}", "  ✓ Hybrid build successful".bright_green());
-        }
-        Err(build_error) => {
-            println!("│ {}", "  ✗ Hybrid build failed".red());
-            return handle_build_failure_interactive(feature, file_type, rs_file, build_error);
-        }
-    }
+    c2rust_build(feature)?;
+    println!("│ {}", "  ✓ Hybrid build successful".bright_green());
     
-    // 4. 运行测试（带交互式错误处理）
+    // 4. 运行测试（不调用交互式处理器以避免递归）
     println!("│ {}", "→ Step 4/4: Running tests...".bright_blue());
-    match c2rust_test(feature) {
-        Ok(_) => {
-            println!("│ {}", "  ✓ All tests passed".bright_green().bold());
-        }
-        Err(test_error) => {
-            println!("│ {}", "  ✗ Tests failed".red());
-            return handle_test_failure_interactive(feature, file_type, rs_file, test_error);
-        }
-    }
+    c2rust_test(feature)?;
+    println!("│ {}", "  ✓ All tests passed".bright_green().bold());
     
     Ok(())
 }

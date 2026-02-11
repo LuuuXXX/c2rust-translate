@@ -179,15 +179,15 @@ pub(crate) fn handle_startup_test_failure_with_files(
                         println!("│ {}", "Vim editing completed. Running full build and test flow...".bright_blue());
                         
                         // 手动编辑后执行完整构建流程
-                        // run_full_build_and_test_interactive 已经内部处理了所有交互式错误
-                        // 如果返回 Ok，表示全部通过；如果返回 Err，表示用户选择退出或不可恢复错误
+                        // run_full_build_and_test_interactive 会执行 4 步验证，但不再提供递归式交互处理
+                        // 如果返回 Err，说明某个步骤失败，需要调用方处理
                         match builder::run_full_build_and_test_interactive(feature, file_type, file) {
                             Ok(_) => {
                                 // 全部通过，成功退出
                                 return Ok(());
                             }
                             Err(e) => {
-                                // 用户已在交互式处理中选择退出，或遇到不可恢复错误
+                                // 构建或测试失败，返回错误由调用方处理
                                 return Err(e);
                             }
                         }
