@@ -457,18 +457,17 @@ fn handle_max_fix_attempts_reached(
             // 清除旧建议
             suggestion::clear_suggestions()?;
             
-            // 如果我们仍然可以重试翻译，则执行
-            if !is_last_attempt {
-                let remaining_retries = MAX_TRANSLATION_ATTEMPTS - attempt_number;
-                println!("│ {}", format!("Retrying translation from scratch... ({} retries remaining)", remaining_retries).bright_cyan());
-                println!("│ {}", "Note: The translator will overwrite the existing file content.".bright_blue());
-                println!("│ {}", "✓ Retry scheduled".bright_green());
-                return Ok(false); // 发出重试信号
+            // 重新翻译（清空并重新生成 rs 文件）
+            let remaining_retries = MAX_TRANSLATION_ATTEMPTS - attempt_number;
+            if is_last_attempt {
+                println!("│ {}", "This is the last automatic retry attempt.".bright_yellow());
+                println!("│ {}", "Retrying translation from scratch one final time...".bright_cyan());
             } else {
-                // 没有更多翻译重试
-                println!("│ {}", "No translation retries remaining".bright_yellow());
-                return Err(anyhow::anyhow!("Maximum translation retries reached without successful compilation"));
+                println!("│ {}", format!("Retrying translation from scratch... ({} retries remaining)", remaining_retries).bright_cyan());
             }
+            println!("│ {}", "Note: The translator will overwrite the existing file content.".bright_blue());
+            println!("│ {}", "✓ Retry scheduled".bright_green());
+            return Ok(false); // 发出重试信号
         }
         interaction::FailureChoice::AddSuggestion => {
             println!("│");
