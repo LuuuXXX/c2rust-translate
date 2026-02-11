@@ -62,7 +62,6 @@ pub(crate) fn parse_error_for_files(error_msg: &str, feature: &str) -> Result<Ve
 }
 
 /// 当可以定位文件时处理启动测试失败
-#[allow(unused_assignments)]
 pub(crate) fn handle_startup_test_failure_with_files(
     feature: &str,
     test_error: anyhow::Error,
