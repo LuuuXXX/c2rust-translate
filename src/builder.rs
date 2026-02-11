@@ -356,8 +356,8 @@ pub fn run_hybrid_build_interactive(
         Err(build_error) => {
             // 仅当我们有文件上下文时才显示交互菜单
             if let (Some(ftype), Some(rfile)) = (file_type, rs_file) {
-                let should_continue = handle_build_failure_interactive(feature, ftype, rfile, build_error)?;
-                if !should_continue {
+                let processing_complete = handle_build_failure_interactive(feature, ftype, rfile, build_error)?;
+                if !processing_complete {
                     // User chose to retry translation - not supported in this context
                     // so treat it as a failure and return early
                     println!("│ {}", "Note: Retry translation requested but not supported in this context".yellow());
@@ -381,8 +381,8 @@ pub fn run_hybrid_build_interactive(
         Err(test_error) => {
             // 仅当我们有文件上下文时才显示交互菜单
             if let (Some(ftype), Some(rfile)) = (file_type, rs_file) {
-                let should_continue = handle_test_failure_interactive(feature, ftype, rfile, test_error)?;
-                if !should_continue {
+                let processing_complete = handle_test_failure_interactive(feature, ftype, rfile, test_error)?;
+                if !processing_complete {
                     // User chose to retry translation - not supported in this context
                     // so treat it as a failure and return early
                     println!("│ {}", "Note: Retry translation requested but not supported in this context".yellow());
