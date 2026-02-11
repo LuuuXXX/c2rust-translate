@@ -314,15 +314,15 @@ pub fn c2rust_test(feature: &str) -> Result<()> {
 /// 运行混合构建测试套件
 /// 如果 c2rust-config 不可用，则报告错误并退出
 pub fn run_hybrid_build(feature: &str) -> Result<()> {   
-    run_hybrid_build_interactive(feature, None, None)
+    run_hybrid_build_interactive(feature)
 }
 
-/// 通过交互式错误处理运行混合构建测试套件
-/// 交互式错误处理需要 file_type 和 rs_file
+/// 运行混合构建测试套件
+/// 
+/// 注意：此函数不提供交互式错误处理。对于需要交互式处理和重新翻译支持的场景，
+/// 应使用主翻译工作流（complete_file_processing）。
 pub fn run_hybrid_build_interactive(
-    feature: &str, 
-    file_type: Option<&str>,
-    rs_file: Option<&std::path::Path>
+    feature: &str
 ) -> Result<()> {
     
     // 从配置获取构建命令
@@ -348,46 +348,28 @@ pub fn run_hybrid_build_interactive(
     println!("│ {}", "Running hybrid build tests...".bright_blue().bold());
     c2rust_clean(feature)?;
     
-    // 通过交互式错误处理进行构建
+    // 执行构建（非交互式 - 这个函数不在重新翻译上下文中）
     match c2rust_build(feature) {
         Ok(_) => {
             // 构建成功，继续测试
         }
         Err(build_error) => {
-            // 仅当我们有文件上下文时才显示交互菜单
-            if let (Some(ftype), Some(rfile)) = (file_type, rs_file) {
-                let should_continue = handle_build_failure_interactive(feature, ftype, rfile, build_error)?;
-                if !should_continue {
-                    // Retranslation requested, but this function is not in a retranslation context
-                    anyhow::bail!("Retranslation cannot be performed in this build context - please use the main translation workflow");
-                }
-                // Build handled successfully, continue to tests
-            } else {
-                // 没有文件上下文，只返回错误
-                return Err(build_error);
-            }
+            // 直接返回错误 - 不提供交互式处理，因为这个函数不支持重新翻译
+            // 交互式错误处理仅在主翻译工作流（complete_file_processing）中可用
+            return Err(build_error);
         }
     }
     
-    // 通过交互式错误处理进行测试
+    // 执行测试（非交互式 - 这个函数不在重新翻译上下文中）
     match c2rust_test(feature) {
         Ok(_) => {
             println!("│ {}", "✓ Hybrid build tests passed".bright_green().bold());
             Ok(())
         }
         Err(test_error) => {
-            // 仅当我们有文件上下文时才显示交互菜单
-            if let (Some(ftype), Some(rfile)) = (file_type, rs_file) {
-                let should_continue = handle_test_failure_interactive(feature, ftype, rfile, test_error)?;
-                if !should_continue {
-                    // Retranslation requested, but this function is not in a retranslation context
-                    anyhow::bail!("Retranslation cannot be performed in this test context - please use the main translation workflow");
-                }
-                Ok(())
-            } else {
-                // 没有文件上下文，只返回错误
-                Err(test_error)
-            }
+            // 直接返回错误 - 不提供交互式处理，因为这个函数不支持重新翻译
+            // 交互式错误处理仅在主翻译工作流（complete_file_processing）中可用
+            Err(test_error)
         }
     }
 }
