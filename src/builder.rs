@@ -827,10 +827,13 @@ pub fn run_full_build_and_test(feature: &str) -> Result<()> {
     Ok(())
 }
 
-/// 执行完整的构建和测试流程（交互式错误处理版本）
+/// 执行完整的构建和测试流程
 /// 顺序：cargo_build → c2rust_clean → c2rust_build → c2rust_test
-/// 在 c2rust_build 和 c2rust_test 步骤失败时提供交互式修复选项
-/// 注意：cargo_build 失败时直接返回错误，不提供交互式处理
+/// 
+/// 注意：此函数不提供交互式错误处理，任何步骤失败时都会直接返回错误。
+/// 调用方负责处理错误并提供交互式修复选项（如需要）。
+/// 
+/// 参数 `_file_type` 和 `_rs_file` 保留用于 API 兼容性，当前未使用。
 pub fn run_full_build_and_test_interactive(
     feature: &str,
     _file_type: &str,
