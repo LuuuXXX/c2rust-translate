@@ -69,6 +69,47 @@ fn get_config_value(key: &str, feature: &str) -> Result<String> {
     Ok(value)
 }
 
+/// 检查并提示缺失的配置命令
+/// 
+/// 检查 build、clean、test 命令是否已配置，如果缺失则显示友好的提示信息
+/// 此函数不会中断程序执行，只会输出警告信息
+pub fn check_and_warn_missing_commands(feature: &str) {
+    let commands = vec![
+        ("build", "用于编译项目的命令"),
+        ("clean", "用于清理项目的命令"),
+        ("test", "用于运行测试的命令"),
+    ];
+    
+    let mut missing_commands = Vec::new();
+    
+    for (cmd_name, cmd_desc) in &commands {
+        let key = format!("{}.cmd", cmd_name);
+        if get_config_value(&key, feature).is_err() {
+            missing_commands.push((*cmd_name, *cmd_desc));
+        }
+    }
+    
+    if !missing_commands.is_empty() {
+        println!("\n{}", "警告: 未找到以下配置命令:".yellow().bold());
+        for (cmd_name, cmd_desc) in &missing_commands {
+            println!("  {} {}: {}", "•".yellow(), cmd_name.yellow(), cmd_desc);
+        }
+        
+        println!("\n{}", "建议: 请在配置文件中添加这些命令，例如:".cyan().bold());
+        for (cmd_name, _) in &missing_commands {
+            match *cmd_name {
+                "build" => println!("  {} = \"cargo build\"", cmd_name.cyan()),
+                "clean" => println!("  {} = \"cargo clean\"", cmd_name.cyan()),
+                "test" => println!("  {} = \"cargo test\"", cmd_name.cyan()),
+                _ => {}
+            }
+        }
+        
+        println!("\n{}", "继续执行翻译过程...".green());
+        println!();
+    }
+}
+
 /// 如果启用了 LD_PRELOAD，则设置混合构建环境变量
 fn setup_hybrid_env(
     command: &mut Command, 
@@ -343,6 +384,9 @@ pub fn run_hybrid_build_interactive(
         eprintln!("{}", "Error: c2rust-config not found".red());
         anyhow::bail!("c2rust-config not found, cannot run hybrid build tests");
     }
+
+    // 检查并提示缺失的配置命令
+    check_and_warn_missing_commands(feature);
 
     // 执行命令
     println!("│ {}", "Running hybrid build tests...".bright_blue().bold());

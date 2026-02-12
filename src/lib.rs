@@ -701,6 +701,9 @@ where
         }
     }
     
+    // 检查并提示缺失的配置命令
+    builder::check_and_warn_missing_commands(feature);
+    
     // 使用自定义处理运行测试以检测成功/失败
     builder::c2rust_clean(feature)?;
     
