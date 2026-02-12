@@ -92,7 +92,7 @@ pub fn check_and_warn_missing_commands(feature: &str) {
     if !missing_commands.is_empty() {
         println!("\n{}", "警告: 未找到以下配置命令:".yellow().bold());
         for (cmd_name, cmd_desc) in &missing_commands {
-            println!("  {} {}: {}", "•".yellow(), cmd_name.yellow(), cmd_desc);
+            println!("  - {}: {}", cmd_name.yellow(), cmd_desc);
         }
         
         println!("\n{}", "建议: 请在配置文件中添加这些命令，例如:".cyan().bold());
