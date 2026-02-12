@@ -74,35 +74,31 @@ fn get_config_value(key: &str, feature: &str) -> Result<String> {
 /// 检查 build、clean、test 命令是否已配置，如果缺失则显示友好的提示信息
 /// 此函数不会中断程序执行，只会输出警告信息
 pub fn check_and_warn_missing_commands(feature: &str) {
+    // 定义需要检查的命令：(命令名, 描述, 示例)
     let commands = vec![
-        ("build", "用于编译项目的命令"),
-        ("clean", "用于清理项目的命令"),
-        ("test", "用于运行测试的命令"),
+        ("build", "用于编译项目的命令", "cargo build"),
+        ("clean", "用于清理项目的命令", "cargo clean"),
+        ("test", "用于运行测试的命令", "cargo test"),
     ];
     
     let mut missing_commands = Vec::new();
     
-    for (cmd_name, cmd_desc) in &commands {
+    for (cmd_name, cmd_desc, cmd_example) in &commands {
         let key = format!("{}.cmd", cmd_name);
         if get_config_value(&key, feature).is_err() {
-            missing_commands.push((*cmd_name, *cmd_desc));
+            missing_commands.push((*cmd_name, *cmd_desc, *cmd_example));
         }
     }
     
     if !missing_commands.is_empty() {
         println!("\n{}", "警告: 未找到以下配置命令:".yellow().bold());
-        for (cmd_name, cmd_desc) in &missing_commands {
+        for (cmd_name, cmd_desc, _) in &missing_commands {
             println!("  - {}: {}", cmd_name.yellow(), cmd_desc);
         }
         
         println!("\n{}", "建议: 请在配置文件中添加这些命令，例如:".cyan().bold());
-        for (cmd_name, _) in &missing_commands {
-            match *cmd_name {
-                "build" => println!("  {} = \"cargo build\"", cmd_name.cyan()),
-                "clean" => println!("  {} = \"cargo clean\"", cmd_name.cyan()),
-                "test" => println!("  {} = \"cargo test\"", cmd_name.cyan()),
-                _ => {}
-            }
+        for (cmd_name, _, cmd_example) in &missing_commands {
+            println!("  {} = \"{}\"", cmd_name.cyan(), cmd_example);
         }
         
         println!("\n{}", "继续执行翻译过程...".green());
