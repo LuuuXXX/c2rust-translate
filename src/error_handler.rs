@@ -82,17 +82,17 @@ pub(crate) fn handle_startup_test_failure_with_files(
             println!("│   {}. {}", idx + 1, file.display());
         }
         
-        // 处理错误中找到的每个文件
-        for (idx, file) in files.iter().enumerate() {
-            println!("│");
-            let file_display_name = file.file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| "<unknown>".to_string());
-            println!("│ {}", format!("═══ Processing file {}/{}: {} ═══", 
-                idx + 1, files.len(), file_display_name).bright_cyan().bold());
-            
-            // 从文件主干提取文件类型（var_ 或 fun_）
-            let file_stem = file.file_stem()
+        // 处理第一个文件（每次外层循环迭代只处理一个文件）
+        let file = &files[0];
+        println!("│");
+        let file_display_name = file.file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "<unknown>".to_string());
+        println!("│ {}", format!("═══ Processing file: {} ═══", 
+            file_display_name).bright_cyan().bold());
+        
+        // 从文件主干提取文件类型（var_ 或 fun_）
+        let file_stem = file.file_stem()
             .and_then(|s| s.to_str())
             .context("Invalid file stem")?;
             
@@ -156,7 +156,7 @@ pub(crate) fn handle_startup_test_failure_with_files(
                                 // 更新文件和错误以进行下一次迭代
                                 files = new_files;
                                 current_error = e;
-                                continue 'outer; // 重新开始外部循环以处理新文件
+                                continue; // 重新开始循环以处理新文件
                             }
                             _ => {
                                 // 没有更多文件需要处理，返回错误
@@ -191,10 +191,10 @@ pub(crate) fn handle_startup_test_failure_with_files(
                                     match parse_error_for_files(&e.to_string(), feature) {
                                         Ok(new_files) if !new_files.is_empty() => {
                                             println!("│ {}", "Found additional files in new error, will process them...".yellow());
-                                            // 更新文件和错误以进行下一次迭代
+                                            // 更新文件和错误以进行下一次外层迭代
                                             files = new_files;
                                             current_error = e;
-                                            continue 'outer; // 重新开始外部循环以处理新文件
+                                            continue 'outer; // 重新开始外层循环处理新文件
                                         }
                                         _ => {
                                             // 没有更多文件需要处理，询问用户是否想再试一次
@@ -251,13 +251,7 @@ pub(crate) fn handle_startup_test_failure_with_files(
                 return Err(current_error).context("User chose to exit during startup test failure handling");
             }
         }
-        } // 内部 for 循环结束
-        
-        // 如果我们已经处理完所有文件而没有错误或提前返回，则完成
-        println!("│");
-        println!("│ {}", "✓ All files processed successfully".bright_green().bold());
-        return Ok(());
-    } // 外部循环结束
+    } // 循环结束
 }
 
 #[cfg(test)]
