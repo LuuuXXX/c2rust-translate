@@ -158,10 +158,16 @@ pub fn prompt_file_selection(files: &[&PathBuf], rust_dir: &Path) -> Result<Vec<
     println!();
 
     // Use inquire::Text for better terminal handling (Delete key, arrow keys, etc.)
-    let input = Text::new("Your selection:")
+    let input = match Text::new("Your selection:")
         .with_help_message("Enter file numbers/ranges or 'all'")
         .prompt()
-        .context("Failed to get file selection")?;
+    {
+        Ok(s) => s,
+        Err(inquire::InquireError::OperationCanceled) => {
+            anyhow::bail!("File selection canceled by user");
+        }
+        Err(e) => return Err(e).context("Failed to get file selection"),
+    };
 
     parse_file_selection(&input, files.len())
 }
