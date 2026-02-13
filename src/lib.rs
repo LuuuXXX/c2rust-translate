@@ -27,65 +27,26 @@ pub fn translate_feature(
     let msg = format!("Starting translation for feature: {}", feature);
     println!("{}", msg.bright_cyan().bold());
 
-    // 验证特性名称以防止路径遍历攻击
-    util::validate_feature_name(feature)?;
+    // 步骤 1：查找项目根目录和初始化
+    println!(
+        "\n{}",
+        "Step 1: Find Project Root and Initialize".bright_cyan().bold()
+    );
+    initialization::check_and_initialize_feature(feature)?;
 
-    // 首先查找项目根目录
+    // 步骤 2：门禁验证
+    initialization::run_gate_verification(feature, show_full_output)?;
+
+    // 获取 rust 目录用于后续步骤
     let project_root = util::find_project_root()?;
+    let rust_dir = project_root.join(".c2rust").join(feature).join("rust");
 
-    // 步骤 1：检查 rust 目录是否存在（通过适当的 IO 错误处理）
-    let feature_path = project_root.join(".c2rust").join(feature);
-    let rust_dir = feature_path.join("rust");
-
-    let rust_dir_exists = match std::fs::metadata(&rust_dir) {
-        Ok(metadata) => {
-            if !metadata.is_dir() {
-                anyhow::bail!("Path exists but is not a directory: {}", rust_dir.display());
-            }
-            true
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
-        Err(e) => {
-            return Err(e).context(format!(
-                "Failed to access rust directory at {}",
-                rust_dir.display()
-            ));
-        }
-    };
-
-    if !rust_dir_exists {
-        println!(
-            "{}",
-            "Rust directory does not exist. Initializing...".yellow()
-        );
-        analyzer::initialize_feature(feature)?;
-
-        // 验证 rust 目录已创建并且确实是一个目录
-        match std::fs::metadata(&rust_dir) {
-            Ok(metadata) => {
-                if !metadata.is_dir() {
-                    anyhow::bail!(
-                        "Initialization created a file instead of a directory: {}",
-                        rust_dir.display()
-                    );
-                }
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                anyhow::bail!("Error: Failed to initialize rust directory");
-            }
-            Err(e) => {
-                return Err(e).context(format!(
-                    "Failed to verify initialized rust directory at {}",
-                    rust_dir.display()
-                ));
-            }
-        }
-
-        // 提交初始化
-        git::git_commit(&format!("Initialize {} rust directory", feature), feature)?;
-    }
-
-    // 在主循环之前初始化进度状态
+    // 步骤 3 & 4：扫描文件并初始化进度
+    println!(
+        "\n{}",
+        "Step 3: Select Files to Translate".bright_cyan().bold()
+    );
+    
     // 计算总 .rs 文件数和已处理的文件数
     let total_rs_files = file_scanner::count_all_rs_files(&rust_dir)?;
     let initial_empty_count = file_scanner::find_empty_rs_files(&rust_dir)?.len();
@@ -94,124 +55,30 @@ pub fn translate_feature(
     let mut progress_state =
         progress::ProgressState::with_initial_progress(total_rs_files, already_processed);
 
-    // 步骤 1：主循环 - 处理所有空的 .rs 文件
     println!(
         "\n{}",
-        "Step 1: Translate C source files".bright_cyan().bold()
+        "Step 4: Initialize Project Progress".bright_cyan().bold()
+    );
+    let progress_percentage = if total_rs_files > 0 {
+        (already_processed as f64 / total_rs_files as f64) * 100.0
+    } else {
+        0.0
+    };
+    println!(
+        "{} {:.1}% ({}/{} files processed)",
+        "Current progress:".cyan(),
+        progress_percentage,
+        already_processed,
+        total_rs_files
+    );
+
+    // 步骤 5：执行翻译所有待翻译文件
+    println!(
+        "\n{}",
+        "Step 5: Execute Translation for All Files".bright_cyan().bold()
     );
     loop {
-        // 步骤 1.1：首先尝试构建
-        println!("\n{}", "Building project...".bright_blue().bold());
-        match builder::cargo_build(feature, show_full_output) {
-            Ok(_) => {
-                println!("{}", "✓ Build successful!".bright_green().bold());
-            }
-            Err(e) => {
-                println!("{}", "✗ Initial build failed!".red().bold());
-                println!(
-                    "{}",
-                    "This may indicate issues with the project setup or previous translations."
-                        .yellow()
-                );
-
-                // 为启动构建失败提供交互式处理
-                let choice = interaction::prompt_user_choice("Initial build failure", false)?;
-
-                match choice {
-                    interaction::UserChoice::Continue => {
-                        println!("│ {}", "Continuing despite build failure. You can fix issues during file processing.".yellow());
-                        // 继续工作流
-                    }
-                    interaction::UserChoice::ManualFix => {
-                        println!(
-                            "│ {}",
-                            "Please manually fix the build issues and run the tool again.".yellow()
-                        );
-                        return Err(e).context("Initial build failed and user chose manual fix");
-                    }
-                    interaction::UserChoice::Exit => {
-                        return Err(e).context("Initial build failed and user chose to exit");
-                    }
-                }
-            }
-        }
-
-        println!("{}", "Updating code analysis...".bright_blue());
-        analyzer::update_code_analysis(feature)?;
-        println!("{}", "✓ Code analysis updated".bright_green());
-
-        git::git_commit(&format!("Update code analysis for {}", feature), feature)?;
-
-        println!("{}", "Running hybrid build tests...".bright_blue());
-        match builder::run_hybrid_build(feature) {
-            Ok(_) => {
-                println!("{}", "✓ Hybrid build tests passed".bright_green());
-            }
-            Err(e) => {
-                println!("{}", "✗ Initial hybrid build tests failed!".red().bold());
-
-                // 尝试解析错误并定位文件
-                match error_handler::parse_error_for_files(&e.to_string(), feature) {
-                    Ok(files) if !files.is_empty() => {
-                        // 找到文件，进入修复流程
-                        println!(
-                            "{}",
-                            "Attempting to automatically locate and fix files from error..."
-                                .yellow()
-                        );
-                        error_handler::handle_startup_test_failure_with_files(feature, e, files)?;
-                    }
-                    Ok(_) => {
-                        // 错误消息中未找到文件
-                        println!(
-                            "{}",
-                            "Unable to automatically locate files from error.".yellow()
-                        );
-                        println!("{}", "This may indicate issues with the test environment or previous translations.".yellow());
-
-                        let choice =
-                            interaction::prompt_user_choice("Initial test failure", false)?;
-
-                        match choice {
-                            interaction::UserChoice::Continue => {
-                                println!("│ {}", "Continuing despite test failure. You can fix issues during file processing.".yellow());
-                                // 继续工作流
-                            }
-                            interaction::UserChoice::ManualFix | interaction::UserChoice::Exit => {
-                                return Err(e).context("Initial tests failed");
-                            }
-                        }
-                    }
-                    Err(parse_err) => {
-                        // 解析错误消息失败（例如，find_project_root 失败）
-                        println!(
-                            "{}",
-                            format!("Error parsing failure message: {}", parse_err).yellow()
-                        );
-                        println!(
-                            "{}",
-                            "Unable to automatically locate files from error.".yellow()
-                        );
-                        println!("{}", "This may indicate issues with the test environment or previous translations.".yellow());
-
-                        let choice =
-                            interaction::prompt_user_choice("Initial test failure", false)?;
-
-                        match choice {
-                            interaction::UserChoice::Continue => {
-                                println!("│ {}", "Continuing despite test failure. You can fix issues during file processing.".yellow());
-                                // 继续工作流
-                            }
-                            interaction::UserChoice::ManualFix | interaction::UserChoice::Exit => {
-                                return Err(e).context("Initial tests failed");
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // 步骤 1.2：扫描空的 .rs 文件（未处理的文件）
+        // 5.1：扫描空的 .rs 文件（未处理的文件）
         let empty_rs_files = file_scanner::find_empty_rs_files(&rust_dir)?;
 
         if empty_rs_files.is_empty() {
