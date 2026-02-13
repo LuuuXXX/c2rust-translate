@@ -124,7 +124,7 @@ If extending the workflow:
 - **hybrid_build.rs** - Hybrid build command management
 - **builder.rs** - Cargo and build execution
 - **file_scanner.rs** - File discovery and selection
-- **progress.rs** - Progress tracking state
+- **util.rs** - Shared constants and progress tracking state
 
 ## Conclusion
 
