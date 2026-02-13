@@ -464,7 +464,7 @@ pub(crate) fn handle_build_failure_interactive(
             println!("│ {}", "✓ Retry scheduled".bright_green());
             
             // 返回 false 以信号重试翻译
-            return Ok(false);
+            Ok(false)
         }
         interaction::FailureChoice::AddSuggestion => {
             println!("│");
@@ -719,7 +719,7 @@ pub(crate) fn handle_test_failure_interactive(
             println!("│ {}", "✓ Retry scheduled".bright_green());
             
             // 返回 false 以信号重试翻译
-            return Ok(false);
+            Ok(false)
         }
         interaction::FailureChoice::AddSuggestion => {
             println!("│");
