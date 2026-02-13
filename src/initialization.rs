@@ -205,13 +205,25 @@ pub fn run_gate_verification(feature: &str, show_full_output: bool) -> Result<()
     gate_code_analysis(feature)?;
     
     // 2.3 混合构建清除
-    gate_hybrid_clean(feature)?;
+    let hybrid_clean_ok = gate_hybrid_clean(feature)?;
+    if !hybrid_clean_ok {
+        println!("{}", "Hybrid clean gate reported a user-accepted failure, stopping gate verification before commit.".yellow());
+        return Ok(());
+    }
     
     // 2.4 混合构建构建
-    gate_hybrid_build(feature)?;
+    let hybrid_build_ok = gate_hybrid_build(feature)?;
+    if !hybrid_build_ok {
+        println!("{}", "Hybrid build gate reported a user-accepted failure, stopping gate verification before commit.".yellow());
+        return Ok(());
+    }
     
     // 2.5 混合构建测试
-    gate_hybrid_test(feature)?;
+    let hybrid_test_ok = gate_hybrid_test(feature)?;
+    if !hybrid_test_ok {
+        println!("{}", "Hybrid test gate reported a user-accepted failure, stopping gate verification before commit.".yellow());
+        return Ok(());
+    }
     
     // 2.6 门禁通过提交
     println!("\n{}", "Step 2.6: Gate Verification Passed - Committing".bright_cyan().bold());
@@ -219,4 +231,49 @@ pub fn run_gate_verification(feature: &str, show_full_output: bool) -> Result<()
     println!("{}", "✓ Gate verification complete and committed".bright_green().bold());
     
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 确认 `check_and_initialize_feature` 的签名保持为 `fn(&str) -> Result<()>`
+    #[test]
+    fn check_and_initialize_feature_has_expected_signature() {
+        fn assert_signature<F>(f: F)
+        where
+            F: Fn(&str) -> Result<()>,
+        {
+            // 不调用实际逻辑，只验证类型兼容性
+            let _ = f;
+        }
+
+        assert_signature(check_and_initialize_feature);
+    }
+
+    /// 确认 `gate_hybrid_test` 的签名保持为 `fn(&str) -> Result<bool>`
+    #[test]
+    fn gate_hybrid_test_has_expected_signature() {
+        fn assert_signature<F>(f: F)
+        where
+            F: Fn(&str) -> Result<bool>,
+        {
+            let _ = f;
+        }
+
+        assert_signature(gate_hybrid_test);
+    }
+
+    /// 确认 `run_gate_verification` 的签名保持为 `fn(&str, bool) -> Result<()>`
+    #[test]
+    fn run_gate_verification_has_expected_signature() {
+        fn assert_signature<F>(f: F)
+        where
+            F: Fn(&str, bool) -> Result<()>,
+        {
+            let _ = f;
+        }
+
+        assert_signature(run_gate_verification);
+    }
 }

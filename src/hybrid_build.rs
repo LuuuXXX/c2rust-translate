@@ -80,7 +80,8 @@ pub fn execute_hybrid_build_command(feature: &str, command_type: HybridCommandTy
     analyzer::update_code_analysis(feature)?;
     println!("{}", "✓ Code analysis updated".bright_green());
     
-    let (cmd, _dir) = get_hybrid_build_command(feature, command_type)?;
+    // 直接获取命令字符串，避免重复调用 get_config_value
+    let cmd = get_config_value(command_type.cmd_key(), feature)?;
     
     crate::builder::execute_command_in_dir_with_type(
         &cmd,

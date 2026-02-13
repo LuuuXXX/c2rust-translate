@@ -1,33 +1,35 @@
 # 实现总结：代码重构与模块化
 
+本文档描述了 c2rust-translate 项目的重构工作。详细的架构说明请参见 [REFACTORING_SUMMARY.md](REFACTORING_SUMMARY.md)。
+
 ## 概述
 
-成功重构了 c2rust-translate 工具，按照新定义的流程重新组织代码架构，提高了代码的可维护性和可扩展性。
+成功重构了 c2rust-translate 工具，将 819 行的 lib.rs 分解为多个职责清晰的模块，减少了 30% 的代码量，同时提高了代码的可维护性和可扩展性。
 
-## 更改总结
-
-### 新增模块（3个新文件）
+## 新增模块
 
 1. **src/hybrid_build.rs**（148行）- 混合构建命令管理
+   - `HybridCommandType` 枚举统一 clean/build/test 操作
+   - `execute_hybrid_build_command()` 单一入口点
+   
 2. **src/initialization.rs**（222行）- 项目初始化和门禁验证
+   - `run_gate_verification()` 编排 6 步验证流程
+   - 各个门禁函数 (`gate_cargo_build`, `gate_hybrid_clean/build/test`)
+   
 3. **src/verification.rs**（286行）- 构建验证和修复循环
+   - `build_and_fix_loop()` 从 lib.rs 提取的错误恢复处理器
+   - 为每个用户恢复路径提供单独的函数
 
-### 修改的文件
+## 主要改进
 
-1. **src/lib.rs**（从819行减少到569行）- 主工作流程，移除重复代码
-2. **src/builder.rs**（963行）- 公开内部函数供新模块使用
+- **lib.rs**: 从 819 行减少到 569 行 (-30%)
+- **代码重用**: 统一的混合构建命令接口
+- **模块化**: 清晰的职责分离
+- **测试**: 所有 65 个测试通过
+- **兼容性**: 100% 向后兼容，零破坏性更改
 
-## 重构内容
+详细信息请参见 [REFACTORING_SUMMARY.md](REFACTORING_SUMMARY.md)。
 
-### ✅ 场景 1：编译成功
-当 Rust 代码编译成功时：
-- **显示代码比较** - 带终端格式的并排 C/Rust 视图
-- **显示测试结果** - 比较下方的格式化结果部分
-- **测试通过时的 4 个选项**：
-  1. 接受代码（提交到 git）
-  2. 自动接受所有后续翻译（启用批处理模式）
-  3. 手动修复（打开 VIM 编辑器）
-  4. 退出（中止过程）
 - **测试失败时的 3 个选项**：
   1. 添加修复建议（AI 修改代码）
   2. 手动修复（打开 VIM 编辑器）

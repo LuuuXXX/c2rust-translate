@@ -43,8 +43,8 @@ where
                         file_type,
                     );
                 } else {
-                    // Show full fixed code for visibility, respect user's error preview preference
-                    apply_error_fix(feature, file_type, rs_file, &build_error, format_progress, show_full_output)?;
+                    // Use lib.rs apply_error_fix instead of local duplicate
+                    crate::apply_error_fix(feature, file_type, rs_file, &build_error, format_progress, show_full_output)?;
                 }
             }
         }
@@ -55,28 +55,6 @@ where
     }
     
     Ok(false)
-}
-
-/// 应用错误修复
-fn apply_error_fix<F>(
-    feature: &str,
-    file_type: &str,
-    rs_file: &Path,
-    build_error: &anyhow::Error,
-    _format_progress: &F,
-    show_full_output: bool,
-) -> Result<()>
-where
-    F: Fn(&str) -> String
-{
-    println!("│");
-    println!("│ {}", "Attempting to fix build errors...".bright_yellow().bold());
-    
-    let error_msg = format!("{:#}", build_error);
-    translator::fix_translation_error(feature, file_type, rs_file, &error_msg, show_full_output, true)?;
-    
-    println!("│ {}", "✓ Fix applied".bright_green());
-    Ok(())
 }
 
 /// 处理达到最大修复尝试次数的情况
@@ -259,7 +237,11 @@ fn handle_manual_fix(
                         let retry_choice = interaction::prompt_user_choice("Build/tests still failing", false)?;
                         
                         match retry_choice {
-                            interaction::UserChoice::Continue | interaction::UserChoice::ManualFix => {
+                            interaction::UserChoice::Continue => {
+                                // 用户选择继续尝试，不再强制重新打开 Vim，直接在下一轮循环中重试构建和测试
+                                println!("│ {}", "Retrying build and tests without reopening the editor...".bright_cyan());
+                            }
+                            interaction::UserChoice::ManualFix => {
                                 println!("│ {}", "Opening Vim again for another manual fix attempt...".bright_cyan());
                                 interaction::open_in_vim(rs_file)?;
                             }
