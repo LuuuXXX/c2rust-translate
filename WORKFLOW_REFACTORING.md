@@ -1,139 +1,139 @@
-# Workflow Refactoring Summary
+# 工作流重构总结
 
-## Overview
+## 概述
 
-This document describes the refactoring of the main `translate_feature()` function in `lib.rs` to follow a structured, modular workflow as defined in the project requirements.
+本文档描述了如何按照项目要求将 `lib.rs` 中的主要 `translate_feature()` 函数重构为结构化的模块化工作流。
 
-## Problem Statement
+## 问题陈述
 
-The original implementation had:
-- Initialization logic embedded directly in the main workflow
-- Validation steps scattered throughout the code
-- Duplicate gate verification logic
-- ~270 lines of complex, intertwined code
+原始实现存在以下问题：
+- 初始化逻辑直接嵌入在主工作流中
+- 验证步骤分散在代码各处
+- 重复的门禁验证逻辑
+- 约270行复杂交织的代码
 
-## Solution
+## 解决方案
 
-Refactored to use a clean, 5-step workflow that delegates to specialized modules:
+重构为简洁的5步工作流，委托给专门的模块：
 
-### Step 1: Find Project Root and Initialize
+### 步骤 1：查找项目根目录并初始化
 ```rust
 initialization::check_and_initialize_feature(feature)?;
 ```
-- Validates feature name for security
-- Searches for `.c2rust` directory
-- Creates rust directory if needed
-- Initializes git repository
-- Commits initial state
+- 验证特性名称的安全性
+- 搜索 `.c2rust` 目录
+- 如需要则创建 rust 目录
+- 初始化 git 仓库
+- 提交初始状态
 
-### Step 2: Gate Verification
+### 步骤 2：门禁验证
 ```rust
 initialization::run_gate_verification(feature, show_full_output)?;
 ```
-Performs 6 ordered validation steps:
-1. **Cargo Build** - Verifies Rust code compiles with `RUSTFLAGS="-A warnings"`
-2. **Code Analysis Sync** - Updates code analysis via `code_analyse --update`
-3. **Hybrid Clean** - Gets and validates clean command via `c2rust-config`
-4. **Hybrid Build** - Gets and validates build command via `c2rust-config`
-5. **Hybrid Test** - Gets and validates test command via `c2rust-config`
-6. **Commit Progress** - Records successful gate verification in git
+执行6个有序的验证步骤：
+1. **Cargo 构建** - 使用 `RUSTFLAGS="-A warnings"` 验证 Rust 代码编译
+2. **代码分析同步** - 通过 `code_analyse --update` 更新代码分析
+3. **混合构建清理** - 通过 `c2rust-config` 获取并验证清理命令
+4. **混合构建** - 通过 `c2rust-config` 获取并验证构建命令
+5. **混合构建测试** - 通过 `c2rust-config` 获取并验证测试命令
+6. **提交进度** - 在 git 中记录成功的门禁验证
 
-Each gate provides interactive error handling with options:
-- Continue (despite errors)
-- Manual Fix (exit to fix issues)
-- Exit (abort process)
+每个门禁都提供交互式错误处理选项：
+- 继续（忽略错误）
+- 手动修复（退出以修复问题）
+- 退出（中止流程）
 
-### Step 3: Select Files to Translate
-- Scans for empty `.rs` files in the rust directory
-- Supports two modes:
-  - Interactive: Prompts user to select files (ranges, individual, or "all")
-  - Automatic: Uses `--allow-all` flag to process all files
+### 步骤 3：选择要翻译的文件
+- 扫描 rust 目录中的空 `.rs` 文件
+- 支持两种模式：
+  - 交互式：提示用户选择文件（范围、单个或"全部"）
+  - 自动：使用 `--allow-all` 标志处理所有文件
 
-### Step 4: Initialize Project Progress
-- Calculates progress: `(total_files - empty_files) / total_files`
-- Displays current percentage and file counts
-- Progress persists across runs (based on file content)
+### 步骤 4：初始化项目进度
+- 计算进度：`(总文件数 - 空文件数) / 总文件数`
+- 显示当前百分比和文件计数
+- 进度在运行之间持久化（基于文件内容）
 
-### Step 5: Execute Translation Loop
-- Processes each selected file in order
-- For each file:
-  1. Translate C to Rust
-  2. Build and fix errors (up to `max_fix_attempts`)
-  3. Run hybrid build tests
-  4. Commit changes
-  5. Update code analysis
+### 步骤 5：执行翻译循环
+- 按顺序处理每个选定的文件
+- 对于每个文件：
+  1. 将 C 翻译为 Rust
+  2. 构建并修复错误（最多 `max_fix_attempts` 次）
+  3. 运行混合构建测试
+  4. 提交更改
+  5. 更新代码分析
 
-## Benefits
+## 优势
 
-### Code Quality
-- **140 lines removed** from main workflow
-- **Single Responsibility Principle** - each module has one job
-- **DRY** - no duplicate validation logic
-- **Clear Flow** - explicit steps are easy to follow
+### 代码质量
+- 从主工作流中**删除了140行**代码
+- **单一职责原则** - 每个模块只有一个职责
+- **DRY原则** - 没有重复的验证逻辑
+- **清晰流程** - 显式步骤易于理解
 
-### Maintainability
-- Changes to gate verification only need updates in `initialization.rs`
-- Main workflow is now a high-level orchestrator
-- Each step is independently testable
+### 可维护性
+- 门禁验证的更改只需在 `initialization.rs` 中更新
+- 主工作流现在是高级编排器
+- 每个步骤都可以独立测试
 
-### User Experience
-- Consistent error messages across all gates
-- Uniform interactive prompts
-- Clear progress indication through labeled steps
+### 用户体验
+- 所有门禁的错误消息一致
+- 统一的交互式提示
+- 通过标记的步骤清晰显示进度
 
-### Security
-- Centralized feature name validation
-- No path traversal vulnerabilities
-- Clean code = fewer security risks
+### 安全性
+- 集中化的特性名称验证
+- 无路径遍历漏洞
+- 简洁代码 = 更少的安全风险
 
-## Testing
+## 测试
 
-All tests pass after refactoring:
-- **64 unit tests** ✅
-- **3 integration tests** ✅
-- **CodeQL security scan** ✅ (0 alerts)
+重构后所有测试都通过：
+- **64个单元测试** ✅
+- **3个集成测试** ✅
+- **CodeQL 安全扫描** ✅（0个警报）
 
-## Migration Notes
+## 迁移说明
 
-### For Users
-No changes to the CLI interface:
+### 对于用户
+CLI 接口无变化：
 ```bash
-c2rust-translate translate --feature <name>
+c2rust-translate translate --feature <名称>
 ```
 
-Same options supported:
-- `--feature <feature>` (default: "default")
-- `--max_fix_attempts <num>` (default: 10)
-- `--show_full_output` (show full output)
-- `--allow-all` (auto-process all files)
+支持相同的选项：
+- `--feature <特性名>` （默认："default"）
+- `--max_fix_attempts <数量>` （默认：10）
+- `--show_full_output` （显示完整输出）
+- `--allow-all` （自动处理所有文件）
 
-### For Developers
-If extending the workflow:
-1. Add new gate steps to `initialization.rs`
-2. Update `run_gate_verification()` to include them
-3. Main workflow automatically benefits from new gates
+### 对于开发者
+如果扩展工作流：
+1. 在 `initialization.rs` 中添加新的门禁步骤
+2. 更新 `run_gate_verification()` 以包含它们
+3. 主工作流自动受益于新门禁
 
-## Files Modified
+## 修改的文件
 
-1. **src/lib.rs** - Simplified from ~270 to ~130 lines
-2. **src/error_handler.rs** - Added `#[allow(dead_code)]` to preserve future-use functions
+1. **src/lib.rs** - 从约270行简化到约130行
+2. **src/error_handler.rs** - 添加 `#[allow(dead_code)]` 以保留未来使用的函数
 
-## Related Modules
+## 相关模块
 
-- **initialization.rs** - Gate verification and feature initialization
-- **hybrid_build.rs** - Hybrid build command management
-- **builder.rs** - Cargo and build execution
-- **file_scanner.rs** - File discovery and selection
-- **util.rs** - Shared constants and progress tracking state
+- **initialization.rs** - 门禁验证和特性初始化
+- **hybrid_build.rs** - 混合构建命令管理
+- **builder.rs** - Cargo 和构建执行
+- **file_scanner.rs** - 文件发现和选择
+- **util.rs** - 共享常量和进度跟踪状态
 
-## Conclusion
+## 结论
 
-The refactoring successfully achieves:
-✅ Clear separation of concerns  
-✅ Reduced code duplication  
-✅ Improved maintainability  
-✅ Better error handling  
-✅ Consistent user experience  
-✅ No breaking changes  
-✅ Full test coverage  
-✅ Zero security issues
+重构成功实现了：
+✅ 清晰的关注点分离  
+✅ 减少了代码重复  
+✅ 提高了可维护性  
+✅ 更好的错误处理  
+✅ 一致的用户体验  
+✅ 无破坏性更改  
+✅ 完整的测试覆盖  
+✅ 零安全问题
