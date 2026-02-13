@@ -100,7 +100,16 @@ pub fn prompt_user_choice(failure_type: &str, require_suggestion: bool) -> Resul
 }
 
 /// 提示用户输入修复建议
+/// 
 /// 如果 require_input 为 true，用户必须提供非空输入
+/// 
+/// Returns:
+/// - `Ok(Some(String))` if user provides non-empty input
+/// - `Ok(None)` if user cancels (Ctrl+C/ESC) or provides empty input when not required
+/// - `Err` on other errors
+/// 
+/// Note: When user cancels with Ctrl+C/ESC, this always returns Ok(None) regardless of 
+/// require_input. Callers should check for None and handle required input validation.
 pub fn prompt_suggestion(require_input: bool) -> Result<Option<String>> {
     loop {
         println!("│");
