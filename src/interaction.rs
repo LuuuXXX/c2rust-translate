@@ -82,16 +82,21 @@ pub fn prompt_user_choice(failure_type: &str, require_suggestion: bool) -> Resul
         "Exit (abort the translation process)",
     ];
 
-    let choice = Select::new("Select an option:", options)
+    let choice = Select::new("Select an option:", options.clone())
         .with_vim_mode(true)
         .prompt()
         .context("Failed to get user selection")?;
 
-    match choice {
-        c if c == continue_text => Ok(UserChoice::Continue),
-        "Manual fix (edit the file directly)" => Ok(UserChoice::ManualFix),
-        "Exit (abort the translation process)" => Ok(UserChoice::Exit),
-        _ => unreachable!(),
+    let choice_index = options
+        .iter()
+        .position(|&o| o == choice)
+        .context("Unexpected selection value")?;
+
+    match choice_index {
+        0 => Ok(UserChoice::Continue),
+        1 => Ok(UserChoice::ManualFix),
+        2 => Ok(UserChoice::Exit),
+        _ => unreachable!("Invalid selection index"),
     }
 }
 
@@ -199,17 +204,22 @@ pub fn prompt_compile_success_choice() -> Result<CompileSuccessChoice> {
         "Exit (abort the translation process)",
     ];
 
-    let choice = Select::new("What would you like to do?", options)
+    let choice = Select::new("What would you like to do?", options.clone())
         .with_vim_mode(true)
         .prompt()
         .context("Failed to get user selection")?;
 
-    match choice {
-        "Accept this code (will be committed)" => Ok(CompileSuccessChoice::Accept),
-        "Auto-accept all subsequent translations" => Ok(CompileSuccessChoice::AutoAccept),
-        "Manual fix (edit the file with VIM)" => Ok(CompileSuccessChoice::ManualFix),
-        "Exit (abort the translation process)" => Ok(CompileSuccessChoice::Exit),
-        _ => unreachable!(),
+    let choice_index = options
+        .iter()
+        .position(|&o| o == choice)
+        .context("Unexpected selection value")?;
+
+    match choice_index {
+        0 => Ok(CompileSuccessChoice::Accept),
+        1 => Ok(CompileSuccessChoice::AutoAccept),
+        2 => Ok(CompileSuccessChoice::ManualFix),
+        3 => Ok(CompileSuccessChoice::Exit),
+        _ => unreachable!("Invalid selection index"),
     }
 }
 
@@ -231,17 +241,22 @@ pub fn prompt_test_failure_choice() -> Result<FailureChoice> {
         "Exit (abort the translation process)",
     ];
 
-    let choice = Select::new("Select an option:", options)
+    let choice = Select::new("Select an option:", options.clone())
         .with_vim_mode(true)
         .prompt()
         .context("Failed to get user selection")?;
 
-    match choice {
-        "Retry directly (without adding suggestion)" => Ok(FailureChoice::RetryDirectly),
-        "Add fix suggestion for AI to modify" => Ok(FailureChoice::AddSuggestion),
-        "Manual fix (edit the file with VIM)" => Ok(FailureChoice::ManualFix),
-        "Exit (abort the translation process)" => Ok(FailureChoice::Exit),
-        _ => unreachable!(),
+    let choice_index = options
+        .iter()
+        .position(|&o| o == choice)
+        .context("Unexpected selection value")?;
+
+    match choice_index {
+        0 => Ok(FailureChoice::RetryDirectly),
+        1 => Ok(FailureChoice::AddSuggestion),
+        2 => Ok(FailureChoice::ManualFix),
+        3 => Ok(FailureChoice::Exit),
+        _ => unreachable!("Invalid selection index"),
     }
 }
 
@@ -263,17 +278,22 @@ pub fn prompt_compile_failure_choice() -> Result<FailureChoice> {
         "Exit (abort the translation process)",
     ];
 
-    let choice = Select::new("Select an option:", options)
+    let choice = Select::new("Select an option:", options.clone())
         .with_vim_mode(true)
         .prompt()
         .context("Failed to get user selection")?;
 
-    match choice {
-        "Retry directly (without adding suggestion)" => Ok(FailureChoice::RetryDirectly),
-        "Add fix suggestion for AI to modify" => Ok(FailureChoice::AddSuggestion),
-        "Manual fix (edit the file with VIM)" => Ok(FailureChoice::ManualFix),
-        "Exit (abort the translation process)" => Ok(FailureChoice::Exit),
-        _ => unreachable!(),
+    let choice_index = options
+        .iter()
+        .position(|&o| o == choice)
+        .context("Unexpected selection value")?;
+
+    match choice_index {
+        0 => Ok(FailureChoice::RetryDirectly),
+        1 => Ok(FailureChoice::AddSuggestion),
+        2 => Ok(FailureChoice::ManualFix),
+        3 => Ok(FailureChoice::Exit),
+        _ => unreachable!("Invalid selection index"),
     }
 }
 
@@ -293,17 +313,22 @@ pub fn prompt_build_failure_choice() -> Result<FailureChoice> {
         "Exit (abort the translation process)",
     ];
 
-    let choice = Select::new("Select an option:", options)
+    let choice = Select::new("Select an option:", options.clone())
         .with_vim_mode(true)
         .prompt()
         .context("Failed to get user selection")?;
 
-    match choice {
-        "Retry directly (without adding suggestion)" => Ok(FailureChoice::RetryDirectly),
-        "Add fix suggestion for AI to modify" => Ok(FailureChoice::AddSuggestion),
-        "Manual fix (edit the file with VIM)" => Ok(FailureChoice::ManualFix),
-        "Exit (abort the translation process)" => Ok(FailureChoice::Exit),
-        _ => unreachable!(),
+    let choice_index = options
+        .iter()
+        .position(|&o| o == choice)
+        .context("Unexpected selection value")?;
+
+    match choice_index {
+        0 => Ok(FailureChoice::RetryDirectly),
+        1 => Ok(FailureChoice::AddSuggestion),
+        2 => Ok(FailureChoice::ManualFix),
+        3 => Ok(FailureChoice::Exit),
+        _ => unreachable!("Invalid selection index"),
     }
 }
 
