@@ -1,6 +1,6 @@
 [package]
 name = "c2rust-translate"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [dependencies]
@@ -10,7 +10,6 @@ walkdir = "2.4"
 tempfile = "3.8"
 shell-words = "1.1"
 colored = "2.1"
-chrono = "0.4"
 regex = "1.10"
 lazy_static = "1.5"
 terminal_size = "0.4"

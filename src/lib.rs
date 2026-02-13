@@ -8,7 +8,6 @@ pub mod git;
 pub mod hybrid_build;
 pub mod initialization;
 pub(crate) mod interaction;
-pub mod logger;
 pub mod progress;
 pub(crate) mod suggestion;
 pub mod translator;
@@ -27,7 +26,6 @@ pub fn translate_feature(
 ) -> Result<()> {
     let msg = format!("Starting translation for feature: {}", feature);
     println!("{}", msg.bright_cyan().bold());
-    logger::log_message(&msg);
 
     // 验证特性名称以防止路径遍历攻击
     util::validate_feature_name(feature)?;
@@ -219,7 +217,6 @@ pub fn translate_feature(
         if empty_rs_files.is_empty() {
             let msg = "✓ No empty .rs files found. Translation complete!";
             println!("\n{}", msg.bright_green().bold());
-            logger::log_message(msg);
             break;
         }
 
@@ -259,7 +256,6 @@ pub fn translate_feature(
                 current_position, total_count, file_name
             );
             println!("\n{}", progress_msg.bright_magenta().bold());
-            logger::log_message(&progress_msg);
 
             process_rs_file(
                 feature,

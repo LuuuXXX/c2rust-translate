@@ -43,14 +43,6 @@ enum Commands {
 fn main() {
     let cli = Cli::parse();
 
-    // 在运行命令前初始化日志记录
-    if matches!(cli.command, Commands::Translate { .. }) {
-        if let Err(e) = c2rust_translate::logger::init_logger() {
-            eprintln!("Warning: Failed to initialize logger: {:#}", e);
-            eprintln!("Continuing without file logging...");
-        }
-    }
-
     let result = match cli.command {
         Commands::Translate {
             feature,
@@ -68,7 +60,6 @@ fn main() {
     if let Err(e) = result {
         let error_msg = format!("Error: {:#}", e);
         eprintln!("{}", error_msg);
-        c2rust_translate::logger::log_message(&error_msg);
         std::process::exit(1);
     }
 }

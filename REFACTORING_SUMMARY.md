@@ -166,9 +166,8 @@ src/
 - 零测试失败
 
 ### 集成测试
-✅ **4个集成测试全部通过**
+✅ **3个集成测试全部通过**
 - test_file_content_based_progress_tracking
-- test_logger_creates_output_directory
 - test_progress_numbering_across_rerun
 - test_progress_state_in_memory
 
@@ -244,7 +243,7 @@ src/
 - ✅ 更易维护和理解
 - ✅ 更易测试和扩展
 - ✅ 保持了完全的向后兼容性
-- ✅ 所有测试通过（65个单元测试 + 4个集成测试）
+- ✅ 所有测试通过（65个单元测试 + 3个集成测试）
 - ✅ 零编译警告和错误
 
 重构遵循了 SOLID 原则，特别是单一职责原则（SRP），使得每个模块都有明确的职责和目的。这为未来的功能扩展和维护奠定了良好的基础。
