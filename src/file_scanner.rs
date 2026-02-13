@@ -58,31 +58,31 @@ pub fn extract_file_type(filename: &str) -> Option<(&'static str, &str)> {
 /// 用户提供基于 1 的索引；返回所选文件的基于 0 的索引。
 pub fn parse_file_selection(input: &str, total_files: usize) -> Result<Vec<usize>> {
     let input = input.trim();
-    
+
     // 修剪后检查输入是否为空
     if input.is_empty() {
         anyhow::bail!("No input provided. Please select at least one file.");
     }
-    
+
     // 解析输入
     if input.eq_ignore_ascii_case("all") {
         // 选择所有文件
         return Ok((0..total_files).collect());
     }
-    
+
     let mut selected_indices = Vec::new();
-    
+
     // 按逗号拆分并处理每个部分
     for part in input.split(',') {
         let part = part.trim();
-        
+
         if part.contains('-') {
             // 处理范围（例如 "1-3"）
             let range_parts: Vec<&str> = part.split('-').collect();
             if range_parts.len() != 2 {
                 anyhow::bail!("Invalid range format: {}. Expected format like '1-3'", part);
             }
-            
+
             let start_str = range_parts[0].trim();
             let end_str = range_parts[1].trim();
 
@@ -92,57 +92,64 @@ pub fn parse_file_selection(input: &str, total_files: usize) -> Result<Vec<usize
                 );
             }
 
-            let start: usize = start_str.parse()
+            let start: usize = start_str
+                .parse()
                 .with_context(|| format!("Invalid number in range: {}", start_str))?;
-            let end: usize = end_str.parse()
+            let end: usize = end_str
+                .parse()
                 .with_context(|| format!("Invalid number in range: {}", end_str))?;
-            
+
             if start < 1 || end < 1 || start > total_files || end > total_files {
-                anyhow::bail!("Range {}-{} is out of bounds (valid: 1-{})", start, end, total_files);
+                anyhow::bail!(
+                    "Range {}-{} is out of bounds (valid: 1-{})",
+                    start,
+                    end,
+                    total_files
+                );
             }
-            
+
             if start > end {
                 anyhow::bail!("Invalid range: {} is greater than {}", start, end);
             }
-            
+
             for i in start..=end {
                 selected_indices.push(i - 1);
             }
         } else {
             // 处理单个数字
-            let num: usize = part.parse()
+            let num: usize = part
+                .parse()
                 .with_context(|| format!("Invalid number: {}", part))?;
-            
+
             if num < 1 || num > total_files {
                 anyhow::bail!("Number {} is out of bounds (valid: 1-{})", num, total_files);
             }
-            
+
             selected_indices.push(num - 1);
         }
     }
-    
+
     // 删除重复项并排序
     selected_indices.sort_unstable();
     selected_indices.dedup();
-    
+
     if selected_indices.is_empty() {
         anyhow::bail!("No files selected");
     }
-    
+
     Ok(selected_indices)
 }
 
 /// 提示用户从列表中选择文件
 pub fn prompt_file_selection(files: &[&PathBuf], rust_dir: &Path) -> Result<Vec<usize>> {
     println!("\n{}", "Available files to process:".bright_cyan().bold());
-    
+
     // 显示文件及其索引号和相对路径
     for (idx, file) in files.iter().enumerate() {
-        let relative_path = file.strip_prefix(rust_dir)
-            .unwrap_or(file);
+        let relative_path = file.strip_prefix(rust_dir).unwrap_or(file);
         println!("  {}. {}", idx + 1, relative_path.display());
     }
-    
+
     println!();
     println!("{}", "Select files to process:".bright_yellow());
     println!("  - Enter numbers separated by commas (e.g., 1,3,5)");
@@ -150,11 +157,11 @@ pub fn prompt_file_selection(files: &[&PathBuf], rust_dir: &Path) -> Result<Vec<
     println!("  - Enter 'all' to process all files");
     print!("\n{} ", "Your selection:".bright_green().bold());
     io::stdout().flush()?;
-    
+
     // 读取用户输入
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;
-    
+
     parse_file_selection(&input, files.len())
 }
 
@@ -167,7 +174,7 @@ mod tests {
     #[test]
     fn test_count_all_rs_files() {
         use std::io::Write;
-        
+
         // 创建临时目录
         let temp_dir = tempdir().unwrap();
 
@@ -178,7 +185,7 @@ mod tests {
         // 创建非空的 .rs 文件
         let mut file1 = fs::File::create(temp_dir.path().join("var_test3.rs")).unwrap();
         file1.write_all(b"pub static TEST: i32 = 42;").unwrap();
-        
+
         let mut file2 = fs::File::create(temp_dir.path().join("fun_test4.rs")).unwrap();
         file2.write_all(b"fn test() {}").unwrap();
 
@@ -188,7 +195,7 @@ mod tests {
         // 统计所有 .rs 文件
         let total_count = count_all_rs_files(temp_dir.path()).unwrap();
         assert_eq!(total_count, 4); // 应该统计空和非空的 .rs 文件
-        
+
         // 验证空文件数
         let empty_count = find_empty_rs_files(temp_dir.path()).unwrap().len();
         assert_eq!(empty_count, 2);
@@ -228,10 +235,10 @@ mod tests {
 
         // 查找空文件
         let empty_files = find_empty_rs_files(temp_dir.path()).unwrap();
-        
+
         // 验证我们找到了所有 3 个文件
         assert_eq!(empty_files.len(), 3);
-        
+
         // 验证文件按字母顺序排序
         assert_eq!(empty_files[0].file_name().unwrap(), "fun_alpha.rs");
         assert_eq!(empty_files[1].file_name().unwrap(), "var_middle.rs");
@@ -263,7 +270,7 @@ mod tests {
         let feature = "my_feature";
         let feature_path = PathBuf::from(feature);
         let rust_dir = feature_path.join("rust");
-        
+
         // 将路径作为 PathBuf 进行比较而不是字符串，以便在 Windows 上工作
         let expected = PathBuf::from("my_feature").join("rust");
         assert_eq!(rust_dir, expected);
@@ -279,46 +286,149 @@ mod tests {
 
         let test_cases = vec![
             // 成功案例
-            TestCase { input: "all", total_files: 5, expected: Ok(vec![0, 1, 2, 3, 4]) },
-            TestCase { input: "ALL", total_files: 3, expected: Ok(vec![0, 1, 2]) },
-            TestCase { input: "All", total_files: 3, expected: Ok(vec![0, 1, 2]) },
-            TestCase { input: "3", total_files: 5, expected: Ok(vec![2]) },
-            TestCase { input: "1,3,5", total_files: 5, expected: Ok(vec![0, 2, 4]) },
-            TestCase { input: "2-4", total_files: 5, expected: Ok(vec![1, 2, 3]) },
-            TestCase { input: "1,3-5,7", total_files: 10, expected: Ok(vec![0, 2, 3, 4, 6]) },
-            TestCase { input: "1,2,1,3,2", total_files: 5, expected: Ok(vec![0, 1, 2]) },
-            TestCase { input: " 1 , 3 , 5 ", total_files: 5, expected: Ok(vec![0, 2, 4]) },
-            TestCase { input: " 2 - 4 ", total_files: 5, expected: Ok(vec![1, 2, 3]) },
-            
+            TestCase {
+                input: "all",
+                total_files: 5,
+                expected: Ok(vec![0, 1, 2, 3, 4]),
+            },
+            TestCase {
+                input: "ALL",
+                total_files: 3,
+                expected: Ok(vec![0, 1, 2]),
+            },
+            TestCase {
+                input: "All",
+                total_files: 3,
+                expected: Ok(vec![0, 1, 2]),
+            },
+            TestCase {
+                input: "3",
+                total_files: 5,
+                expected: Ok(vec![2]),
+            },
+            TestCase {
+                input: "1,3,5",
+                total_files: 5,
+                expected: Ok(vec![0, 2, 4]),
+            },
+            TestCase {
+                input: "2-4",
+                total_files: 5,
+                expected: Ok(vec![1, 2, 3]),
+            },
+            TestCase {
+                input: "1,3-5,7",
+                total_files: 10,
+                expected: Ok(vec![0, 2, 3, 4, 6]),
+            },
+            TestCase {
+                input: "1,2,1,3,2",
+                total_files: 5,
+                expected: Ok(vec![0, 1, 2]),
+            },
+            TestCase {
+                input: " 1 , 3 , 5 ",
+                total_files: 5,
+                expected: Ok(vec![0, 2, 4]),
+            },
+            TestCase {
+                input: " 2 - 4 ",
+                total_files: 5,
+                expected: Ok(vec![1, 2, 3]),
+            },
             // 错误案例
-            TestCase { input: "6", total_files: 5, expected: Err("out of bounds") },
-            TestCase { input: "1,6", total_files: 5, expected: Err("out of bounds") },
-            TestCase { input: "5-2", total_files: 5, expected: Err("is greater than") },
-            TestCase { input: "abc", total_files: 5, expected: Err("") },
-            TestCase { input: "", total_files: 5, expected: Err("No input provided") },
-            TestCase { input: "   ", total_files: 5, expected: Err("No input provided") },
-            TestCase { input: "-3", total_files: 5, expected: Err("ranges must have both start and end values") },
-            TestCase { input: "1-", total_files: 5, expected: Err("ranges must have both start and end values") },
-            TestCase { input: "-", total_files: 5, expected: Err("ranges must have both start and end values") },
-            TestCase { input: "0", total_files: 5, expected: Err("") },
-            TestCase { input: "1-10", total_files: 5, expected: Err("") },
+            TestCase {
+                input: "6",
+                total_files: 5,
+                expected: Err("out of bounds"),
+            },
+            TestCase {
+                input: "1,6",
+                total_files: 5,
+                expected: Err("out of bounds"),
+            },
+            TestCase {
+                input: "5-2",
+                total_files: 5,
+                expected: Err("is greater than"),
+            },
+            TestCase {
+                input: "abc",
+                total_files: 5,
+                expected: Err(""),
+            },
+            TestCase {
+                input: "",
+                total_files: 5,
+                expected: Err("No input provided"),
+            },
+            TestCase {
+                input: "   ",
+                total_files: 5,
+                expected: Err("No input provided"),
+            },
+            TestCase {
+                input: "-3",
+                total_files: 5,
+                expected: Err("ranges must have both start and end values"),
+            },
+            TestCase {
+                input: "1-",
+                total_files: 5,
+                expected: Err("ranges must have both start and end values"),
+            },
+            TestCase {
+                input: "-",
+                total_files: 5,
+                expected: Err("ranges must have both start and end values"),
+            },
+            TestCase {
+                input: "0",
+                total_files: 5,
+                expected: Err(""),
+            },
+            TestCase {
+                input: "1-10",
+                total_files: 5,
+                expected: Err(""),
+            },
         ];
 
         for (i, tc) in test_cases.iter().enumerate() {
             let result = parse_file_selection(tc.input, tc.total_files);
             match &tc.expected {
                 Ok(expected_vec) => {
-                    assert!(result.is_ok(), "Test case #{}: expected Ok, got Err for input '{}'", i, tc.input);
-                    assert_eq!(&result.unwrap(), expected_vec, 
-                        "Test case #{}: mismatch for input '{}'", i, tc.input);
+                    assert!(
+                        result.is_ok(),
+                        "Test case #{}: expected Ok, got Err for input '{}'",
+                        i,
+                        tc.input
+                    );
+                    assert_eq!(
+                        &result.unwrap(),
+                        expected_vec,
+                        "Test case #{}: mismatch for input '{}'",
+                        i,
+                        tc.input
+                    );
                 }
                 Err(expected_err) => {
-                    assert!(result.is_err(), "Test case #{}: expected Err, got Ok for input '{}'", i, tc.input);
+                    assert!(
+                        result.is_err(),
+                        "Test case #{}: expected Err, got Ok for input '{}'",
+                        i,
+                        tc.input
+                    );
                     if !expected_err.is_empty() {
                         let err_msg = result.unwrap_err().to_string();
-                        assert!(err_msg.contains(expected_err), 
-                            "Test case #{}: error message '{}' doesn't contain '{}' for input '{}'", 
-                            i, err_msg, expected_err, tc.input);
+                        assert!(
+                            err_msg.contains(expected_err),
+                            "Test case #{}: error message '{}' doesn't contain '{}' for input '{}'",
+                            i,
+                            err_msg,
+                            expected_err,
+                            tc.input
+                        );
                     }
                 }
             }

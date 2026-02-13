@@ -94,7 +94,7 @@ mod tests {
         let state = ProgressState::with_initial_progress(10, 3);
         assert_eq!(state.processed_count, 3);
         assert_eq!(state.total_count, 10);
-        
+
         // 当前位置应该是 4（3 个已处理 + 1）
         assert_eq!(state.get_current_position(), 4);
     }
@@ -103,10 +103,10 @@ mod tests {
     fn test_with_initial_progress_continuation() {
         // 模拟 10 个文件中已处理 5 个的场景
         let mut state = ProgressState::with_initial_progress(10, 5);
-        
+
         // 下一个要处理的文件应显示为 [6/10]
         assert_eq!(state.get_current_position(), 6);
-        
+
         // 处理一个文件后，应显示为 [7/10]
         state.mark_processed();
         assert_eq!(state.get_current_position(), 7);
@@ -120,7 +120,7 @@ mod tests {
         assert_eq!(state.processed_count, 10); // 应该被限制为 10
         assert_eq!(state.total_count, 10);
         assert_eq!(state.get_current_position(), 11); // 10 + 1
-        
+
         // 测试边界情况：already_processed 等于 total_count
         let state2 = ProgressState::with_initial_progress(10, 10);
         assert_eq!(state2.processed_count, 10);

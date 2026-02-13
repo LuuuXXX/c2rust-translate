@@ -1,11 +1,11 @@
 //! suggestions.txt 的建议文件管理
 
+use crate::util;
 use anyhow::{Context, Result};
 use colored::Colorize;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
-use crate::util;
 
 /// 获取 suggestions.txt 建议文件的路径
 pub fn get_suggestion_file_path() -> Result<PathBuf> {
@@ -17,14 +17,18 @@ pub fn get_suggestion_file_path() -> Result<PathBuf> {
 #[cfg(test)]
 pub fn read_suggestions() -> Result<Option<String>> {
     let suggestion_file = get_suggestion_file_path()?;
-    
+
     if !suggestion_file.exists() {
         return Ok(None);
     }
-    
-    let content = fs::read_to_string(&suggestion_file)
-        .with_context(|| format!("Failed to read suggestion file: {}", suggestion_file.display()))?;
-    
+
+    let content = fs::read_to_string(&suggestion_file).with_context(|| {
+        format!(
+            "Failed to read suggestion file: {}",
+            suggestion_file.display()
+        )
+    })?;
+
     if content.trim().is_empty() {
         Ok(None)
     } else {
@@ -35,24 +39,32 @@ pub fn read_suggestions() -> Result<Option<String>> {
 /// 将建议追加到 suggestions.txt 文件
 pub fn append_suggestion(suggestion: &str) -> Result<()> {
     let suggestion_file = get_suggestion_file_path()?;
-    
+
     // 如果父目录不存在则创建
     if let Some(parent) = suggestion_file.parent() {
         fs::create_dir_all(parent)
             .with_context(|| format!("Failed to create directory: {}", parent.display()))?;
     }
-    
+
     let mut file = OpenOptions::new()
         .create(true)
         .append(true)
         .open(&suggestion_file)
-        .with_context(|| format!("Failed to open suggestion file: {}", suggestion_file.display()))?;
-    
+        .with_context(|| {
+            format!(
+                "Failed to open suggestion file: {}",
+                suggestion_file.display()
+            )
+        })?;
+
     // 以纯文本格式追加建议
     writeln!(file, "{}", suggestion)?;
-    
-    println!("│ {}", format!("✓ Suggestion saved to {}", suggestion_file.display()).bright_green());
-    
+
+    println!(
+        "│ {}",
+        format!("✓ Suggestion saved to {}", suggestion_file.display()).bright_green()
+    );
+
     Ok(())
 }
 
@@ -60,22 +72,29 @@ pub fn append_suggestion(suggestion: &str) -> Result<()> {
 /// 这在开始全新重试时很有用，以避免建议积累
 pub fn clear_suggestions() -> Result<()> {
     let suggestion_file = get_suggestion_file_path()?;
-    
+
     if suggestion_file.exists() {
-        fs::remove_file(&suggestion_file)
-            .with_context(|| format!("Failed to remove suggestion file: {}", suggestion_file.display()))?;
-        println!("│ {}", "✓ Cleared previous suggestions for fresh retry".bright_yellow());
+        fs::remove_file(&suggestion_file).with_context(|| {
+            format!(
+                "Failed to remove suggestion file: {}",
+                suggestion_file.display()
+            )
+        })?;
+        println!(
+            "│ {}",
+            "✓ Cleared previous suggestions for fresh retry".bright_yellow()
+        );
     }
-    
+
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
-    use std::env;
     use serial_test::serial;
+    use std::env;
+    use tempfile::TempDir;
 
     #[test]
     #[serial]
@@ -105,16 +124,16 @@ mod tests {
         // 创建临时目录
         let temp_dir = TempDir::new().unwrap();
         let old_dir = env::current_dir().unwrap();
-        
+
         // 创建 .c2rust 目录
         fs::create_dir(temp_dir.path().join(".c2rust")).unwrap();
         env::set_current_dir(temp_dir.path()).unwrap();
-        
+
         let result = read_suggestions();
-        
+
         // 恢复目录
         env::set_current_dir(old_dir).unwrap();
-        
+
         // 对于不存在的文件应返回 Ok(None)
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), None);
@@ -139,7 +158,7 @@ mod tests {
         // 读回文件并验证内容
         let suggestion_file = get_suggestion_file_path().unwrap();
         assert!(suggestion_file.exists());
-        
+
         let content = fs::read_to_string(&suggestion_file).unwrap();
         assert!(content.contains(suggestion_text));
         // 纯文本格式 - 无时间戳
@@ -154,14 +173,14 @@ mod tests {
         let content2 = fs::read_to_string(&suggestion_file).unwrap();
         assert!(content2.contains(suggestion_text));
         assert!(content2.contains(second_suggestion));
-        
+
         // 纯文本格式 - 无时间戳头
         assert!(!content2.contains("## Suggestion added at"));
 
         // 在 temp_dir 被删除前恢复原始工作目录
         env::set_current_dir(&old_dir).unwrap();
     }
-    
+
     #[test]
     #[serial]
     fn test_clear_suggestions() {
@@ -177,7 +196,7 @@ mod tests {
         let suggestion_text = "Test suggestion";
         let result = append_suggestion(suggestion_text);
         assert!(result.is_ok());
-        
+
         let suggestion_file = get_suggestion_file_path().unwrap();
         assert!(suggestion_file.exists());
 
@@ -195,7 +214,7 @@ mod tests {
         // 在 temp_dir 被删除前恢复原始工作目录
         env::set_current_dir(&old_dir).unwrap();
     }
-    
+
     #[test]
     #[serial]
     fn test_suggestion_workflow_with_retry() {
@@ -209,25 +228,25 @@ mod tests {
         // 第一次尝试 - 添加建议
         let first_suggestion = "First attempt: Use smart pointers";
         append_suggestion(first_suggestion).unwrap();
-        
+
         let content1 = read_suggestions().unwrap();
         assert!(content1.is_some());
         assert!(content1.unwrap().contains(first_suggestion));
 
         // 重试 - 在重试前清除建议
         clear_suggestions().unwrap();
-        
+
         let content_after_clear = read_suggestions().unwrap();
         assert!(content_after_clear.is_none());
 
         // 第二次尝试 - 添加不同的建议
         let second_suggestion = "Second attempt: Use Option<T> for nullable values";
         append_suggestion(second_suggestion).unwrap();
-        
+
         let content2 = read_suggestions().unwrap();
         assert!(content2.is_some());
         let final_content = content2.unwrap();
-        
+
         // 应该只包含第二个建议，不包含第一个
         assert!(final_content.contains(second_suggestion));
         assert!(!final_content.contains(first_suggestion));
