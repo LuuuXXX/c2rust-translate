@@ -259,11 +259,7 @@ fn handle_manual_fix(
                         let retry_choice = interaction::prompt_user_choice("Build/tests still failing", false)?;
                         
                         match retry_choice {
-                            interaction::UserChoice::Continue => {
-                                println!("│ {}", "Opening Vim again for another manual fix attempt...".bright_cyan());
-                                interaction::open_in_vim(rs_file)?;
-                            }
-                            interaction::UserChoice::ManualFix => {
+                            interaction::UserChoice::Continue | interaction::UserChoice::ManualFix => {
                                 println!("│ {}", "Opening Vim again for another manual fix attempt...".bright_cyan());
                                 interaction::open_in_vim(rs_file)?;
                             }
@@ -280,7 +276,10 @@ fn handle_manual_fix(
         }
         Err(e) => {
             println!("│ {}", format!("Failed to open Vim: {}", e).red());
-            Err(e).context("Failed to open file in Vim for manual editing")
+            Err(e).context(format!(
+                "Failed to open file {} in Vim for manual editing",
+                rs_file.display()
+            ))
         }
     }
 }
