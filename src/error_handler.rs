@@ -10,6 +10,7 @@ use crate::{builder, file_scanner, interaction, suggestion, translator, util};
 /// 解析错误消息以提取 Rust 文件路径
 /// 返回在错误消息中找到的文件路径列表
 /// 过滤为仅包含项目内的文件
+#[allow(dead_code)]
 pub(crate) fn parse_error_for_files(error_msg: &str, feature: &str) -> Result<Vec<PathBuf>> {
     // 验证特性名称以防止路径遍历
     util::validate_feature_name(feature)?;
@@ -59,6 +60,7 @@ pub(crate) fn parse_error_for_files(error_msg: &str, feature: &str) -> Result<Ve
 }
 
 /// 当可以定位文件时处理启动测试失败
+#[allow(dead_code)]
 pub(crate) fn handle_startup_test_failure_with_files(
     feature: &str,
     test_error: anyhow::Error,
