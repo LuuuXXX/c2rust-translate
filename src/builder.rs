@@ -144,7 +144,8 @@ fn print_command_details(
 }
 
 /// 在配置的目录中执行命令
-fn execute_command_in_dir(
+/// 此函数被 hybrid_build 模块使用，因此是公开的
+pub fn execute_command_in_dir_with_type(
     command_str: &str,
     dir_key: &str,
     feature: &str,
@@ -281,7 +282,7 @@ pub fn c2rust_clean(feature: &str) -> Result<()> {
     
     let clean_cmd = get_config_value("clean.cmd", feature)?;
     
-    execute_command_in_dir(&clean_cmd, "clean.dir", feature, false, "clean")
+    execute_command_in_dir_with_type(&clean_cmd, "clean.dir", feature, false, "clean")
 }
 
 /// 为给定特性运行构建命令
@@ -295,7 +296,7 @@ pub fn c2rust_build(feature: &str) -> Result<()> {
     
     let build_cmd = get_config_value("build.cmd", feature)?;
     
-    execute_command_in_dir(&build_cmd, "build.dir", feature, true, "build")
+    execute_command_in_dir_with_type(&build_cmd, "build.dir", feature, true, "build")
 }
 
 /// 为给定特性运行测试命令
@@ -308,7 +309,7 @@ pub fn c2rust_test(feature: &str) -> Result<()> {
     
     let test_cmd = get_config_value("test.cmd", feature)?;
     
-    execute_command_in_dir(&test_cmd, "test.dir", feature, false, "test")
+    execute_command_in_dir_with_type(&test_cmd, "test.dir", feature, false, "test")
 }
 
 /// 运行混合构建测试套件

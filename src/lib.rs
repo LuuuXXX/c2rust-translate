@@ -7,6 +7,8 @@ pub mod util;
 pub mod progress;
 pub mod logger;
 pub mod constants;
+pub mod hybrid_build;
+pub mod initialization;
 pub(crate) mod diff_display;
 pub(crate) mod interaction;
 pub(crate) mod suggestion;
