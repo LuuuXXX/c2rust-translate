@@ -132,14 +132,9 @@ pub fn prompt_suggestion(require_input: bool) -> Result<Option<String>> {
         let suggestion = match text_input {
             Ok(s) => s,
             Err(inquire::InquireError::OperationCanceled) => {
-                // User pressed Ctrl+C or ESC
-                if require_input {
-                    println!("│ {}", "Error: A suggestion is required to continue.".red());
-                    continue;
-                } else {
-                    println!("│ {}", "No suggestion provided.".yellow());
-                    return Ok(None);
-                }
+                // User pressed Ctrl+C or ESC: treat as cancellation and let caller decide what to do
+                println!("│ {}", "Suggestion input canceled by user.".yellow());
+                return Ok(None);
             }
             Err(e) => return Err(e.into()),
         };

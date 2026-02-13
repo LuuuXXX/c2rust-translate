@@ -166,7 +166,7 @@ pub fn prompt_file_selection(files: &[&PathBuf], rust_dir: &Path) -> Result<Vec<
         Err(inquire::InquireError::OperationCanceled) => {
             anyhow::bail!("File selection canceled by user");
         }
-        Err(e) => return Err(e).context("Failed to get file selection"),
+        Err(e) => return Err(anyhow::Error::new(e)).context("Failed to get file selection"),
     };
 
     parse_file_selection(&input, files.len())
