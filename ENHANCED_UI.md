@@ -196,7 +196,7 @@ pub enum FailureChoice {
 - `prompt_test_failure_choice()`：测试失败时的 4 选项交互式选择
 - `prompt_compile_failure_choice()`：编译失败时的 4 选项交互式选择
 - `prompt_build_failure_choice()`：构建失败时的 4 选项交互式选择
-- `prompt_user_choice()`：通用的 3 选项交互式选择
+- `prompt_user_choice()`：通用的 3 选项交互式选择（与上述失败场景的 4 选项选择不同）
 
 **文本输入函数**：
 - `prompt_file_selection()`：文件选择（支持数字、范围、逗号分隔、'all'）
