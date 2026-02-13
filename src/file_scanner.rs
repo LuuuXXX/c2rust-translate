@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use colored::Colorize;
+use inquire::MultiSelect;
 use std::fs;
-use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
@@ -143,26 +143,38 @@ pub fn parse_file_selection(input: &str, total_files: usize) -> Result<Vec<usize
 /// 提示用户从列表中选择文件
 pub fn prompt_file_selection(files: &[&PathBuf], rust_dir: &Path) -> Result<Vec<usize>> {
     println!("\n{}", "Available files to process:".bright_cyan().bold());
+    println!();
 
-    // 显示文件及其索引号和相对路径
-    for (idx, file) in files.iter().enumerate() {
-        let relative_path = file.strip_prefix(rust_dir).unwrap_or(file);
-        println!("  {}. {}", idx + 1, relative_path.display());
+    // Create display options with relative paths
+    let display_options: Vec<String> = files
+        .iter()
+        .map(|file| {
+            let relative_path = file.strip_prefix(rust_dir).unwrap_or(file);
+            relative_path.display().to_string()
+        })
+        .collect();
+
+    println!("{}", "Use arrow keys to navigate, Space to select/deselect, Enter to confirm".bright_yellow());
+    println!("{}", "Press 'a' to select all files".dimmed());
+    println!();
+
+    let selected = MultiSelect::new("Select files to process:", display_options.clone())
+        .with_vim_mode(true)
+        .prompt()
+        .context("Failed to get file selection")?;
+
+    if selected.is_empty() {
+        anyhow::bail!("No files selected");
     }
 
-    println!();
-    println!("{}", "Select files to process:".bright_yellow());
-    println!("  - Enter numbers separated by commas (e.g., 1,3,5)");
-    println!("  - Enter ranges (e.g., 1-3,5)");
-    println!("  - Enter 'all' to process all files");
-    print!("\n{} ", "Your selection:".bright_green().bold());
-    io::stdout().flush()?;
+    // Convert selected display strings back to indices
+    let mut selected_indices: Vec<usize> = selected
+        .iter()
+        .filter_map(|s| display_options.iter().position(|o| o == s))
+        .collect();
 
-    // 读取用户输入
-    let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
-
-    parse_file_selection(&input, files.len())
+    selected_indices.sort_unstable();
+    Ok(selected_indices)
 }
 
 #[cfg(test)]

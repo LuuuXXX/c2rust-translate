@@ -2,6 +2,7 @@
 
 use anyhow::{Context, Result};
 use colored::Colorize;
+use inquire::Select;
 use std::io::{self, Write};
 use std::path::Path;
 use std::process::Command;
@@ -68,52 +69,29 @@ pub fn prompt_user_choice(failure_type: &str, require_suggestion: bool) -> Resul
             .bold()
     );
     println!("│");
-    println!("│ {}", "Available options:".bright_cyan());
 
-    if require_suggestion {
-        println!(
-            "│   {} Continue trying (requires entering a fix suggestion)",
-            "1.".bright_white()
-        );
+    let continue_text = if require_suggestion {
+        "Continue trying (requires entering a fix suggestion)"
     } else {
-        println!(
-            "│   {} Continue trying (optionally enter a fix suggestion)",
-            "1.".bright_white()
-        );
-    }
+        "Continue trying (optionally enter a fix suggestion)"
+    };
 
-    println!(
-        "│   {} Manual fix (edit the file directly)",
-        "2.".bright_white()
-    );
-    println!(
-        "│   {} Exit (abort the translation process)",
-        "3.".bright_white()
-    );
-    println!("│");
+    let options = vec![
+        continue_text,
+        "Manual fix (edit the file directly)",
+        "Exit (abort the translation process)",
+    ];
 
-    loop {
-        print!("│ {} ", "Enter your choice (1/2/3):".bright_yellow());
-        io::stdout().flush()?;
+    let choice_idx = Select::new("Select an option:", options.clone())
+        .with_vim_mode(true)
+        .prompt()
+        .context("Failed to get user selection")?;
 
-        let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
-
-        match input.trim() {
-            "1" => return Ok(UserChoice::Continue),
-            "2" => return Ok(UserChoice::ManualFix),
-            "3" => return Ok(UserChoice::Exit),
-            _ => {
-                println!(
-                    "│ {}",
-                    format!(
-                        "Invalid choice '{}'. Please enter 1, 2, or 3.",
-                        input.trim()
-                    )
-                    .yellow()
-                );
-            }
-        }
+    match options.iter().position(|&x| x == choice_idx) {
+        Some(0) => Ok(UserChoice::Continue),
+        Some(1) => Ok(UserChoice::ManualFix),
+        Some(2) => Ok(UserChoice::Exit),
+        _ => unreachable!(),
     }
 }
 
@@ -213,50 +191,25 @@ pub fn prompt_compile_success_choice() -> Result<CompileSuccessChoice> {
         "✓ Compilation and tests successful!".bright_green().bold()
     );
     println!("│");
-    println!("│ {}", "What would you like to do?".bright_cyan().bold());
-    println!("│");
-    println!("│ {}", "Available options:".bright_cyan());
-    println!(
-        "│   {} Accept this code (will be committed)",
-        "1.".bright_white()
-    );
-    println!(
-        "│   {} Auto-accept all subsequent translations",
-        "2.".bright_white()
-    );
-    println!(
-        "│   {} Manual fix (edit the file with VIM)",
-        "3.".bright_white()
-    );
-    println!(
-        "│   {} Exit (abort the translation process)",
-        "4.".bright_white()
-    );
-    println!("│");
 
-    loop {
-        print!("│ {} ", "Enter your choice (1/2/3/4):".bright_yellow());
-        io::stdout().flush()?;
+    let options = vec![
+        "Accept this code (will be committed)",
+        "Auto-accept all subsequent translations",
+        "Manual fix (edit the file with VIM)",
+        "Exit (abort the translation process)",
+    ];
 
-        let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
+    let choice = Select::new("What would you like to do?", options)
+        .with_vim_mode(true)
+        .prompt()
+        .context("Failed to get user selection")?;
 
-        match input.trim() {
-            "1" => return Ok(CompileSuccessChoice::Accept),
-            "2" => return Ok(CompileSuccessChoice::AutoAccept),
-            "3" => return Ok(CompileSuccessChoice::ManualFix),
-            "4" => return Ok(CompileSuccessChoice::Exit),
-            _ => {
-                println!(
-                    "│ {}",
-                    format!(
-                        "Invalid choice '{}'. Please enter 1, 2, 3, or 4.",
-                        input.trim()
-                    )
-                    .yellow()
-                );
-            }
-        }
+    match choice {
+        "Accept this code (will be committed)" => Ok(CompileSuccessChoice::Accept),
+        "Auto-accept all subsequent translations" => Ok(CompileSuccessChoice::AutoAccept),
+        "Manual fix (edit the file with VIM)" => Ok(CompileSuccessChoice::ManualFix),
+        "Exit (abort the translation process)" => Ok(CompileSuccessChoice::Exit),
+        _ => unreachable!(),
     }
 }
 
@@ -270,48 +223,25 @@ pub fn prompt_test_failure_choice() -> Result<FailureChoice> {
             .bold()
     );
     println!("│");
-    println!("│ {}", "Available options:".bright_cyan());
-    println!(
-        "│   {} Retry directly (without adding suggestion)",
-        "1.".bright_white()
-    );
-    println!(
-        "│   {} Add fix suggestion for AI to modify",
-        "2.".bright_white()
-    );
-    println!(
-        "│   {} Manual fix (edit the file with VIM)",
-        "3.".bright_white()
-    );
-    println!(
-        "│   {} Exit (abort the translation process)",
-        "4.".bright_white()
-    );
-    println!("│");
 
-    loop {
-        print!("│ {} ", "Enter your choice (1/2/3/4):".bright_yellow());
-        io::stdout().flush()?;
+    let options = vec![
+        "Retry directly (without adding suggestion)",
+        "Add fix suggestion for AI to modify",
+        "Manual fix (edit the file with VIM)",
+        "Exit (abort the translation process)",
+    ];
 
-        let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
+    let choice = Select::new("Select an option:", options)
+        .with_vim_mode(true)
+        .prompt()
+        .context("Failed to get user selection")?;
 
-        match input.trim() {
-            "1" => return Ok(FailureChoice::RetryDirectly),
-            "2" => return Ok(FailureChoice::AddSuggestion),
-            "3" => return Ok(FailureChoice::ManualFix),
-            "4" => return Ok(FailureChoice::Exit),
-            _ => {
-                println!(
-                    "│ {}",
-                    format!(
-                        "Invalid choice '{}'. Please enter 1, 2, 3, or 4.",
-                        input.trim()
-                    )
-                    .yellow()
-                );
-            }
-        }
+    match choice {
+        "Retry directly (without adding suggestion)" => Ok(FailureChoice::RetryDirectly),
+        "Add fix suggestion for AI to modify" => Ok(FailureChoice::AddSuggestion),
+        "Manual fix (edit the file with VIM)" => Ok(FailureChoice::ManualFix),
+        "Exit (abort the translation process)" => Ok(FailureChoice::Exit),
+        _ => unreachable!(),
     }
 }
 
@@ -325,48 +255,25 @@ pub fn prompt_compile_failure_choice() -> Result<FailureChoice> {
             .bold()
     );
     println!("│");
-    println!("│ {}", "Available options:".bright_cyan());
-    println!(
-        "│   {} Retry directly (without adding suggestion)",
-        "1.".bright_white()
-    );
-    println!(
-        "│   {} Add fix suggestion for AI to modify",
-        "2.".bright_white()
-    );
-    println!(
-        "│   {} Manual fix (edit the file with VIM)",
-        "3.".bright_white()
-    );
-    println!(
-        "│   {} Exit (abort the translation process)",
-        "4.".bright_white()
-    );
-    println!("│");
 
-    loop {
-        print!("│ {} ", "Enter your choice (1/2/3/4):".bright_yellow());
-        io::stdout().flush()?;
+    let options = vec![
+        "Retry directly (without adding suggestion)",
+        "Add fix suggestion for AI to modify",
+        "Manual fix (edit the file with VIM)",
+        "Exit (abort the translation process)",
+    ];
 
-        let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
+    let choice = Select::new("Select an option:", options)
+        .with_vim_mode(true)
+        .prompt()
+        .context("Failed to get user selection")?;
 
-        match input.trim() {
-            "1" => return Ok(FailureChoice::RetryDirectly),
-            "2" => return Ok(FailureChoice::AddSuggestion),
-            "3" => return Ok(FailureChoice::ManualFix),
-            "4" => return Ok(FailureChoice::Exit),
-            _ => {
-                println!(
-                    "│ {}",
-                    format!(
-                        "Invalid choice '{}'. Please enter 1, 2, 3, or 4.",
-                        input.trim()
-                    )
-                    .yellow()
-                );
-            }
-        }
+    match choice {
+        "Retry directly (without adding suggestion)" => Ok(FailureChoice::RetryDirectly),
+        "Add fix suggestion for AI to modify" => Ok(FailureChoice::AddSuggestion),
+        "Manual fix (edit the file with VIM)" => Ok(FailureChoice::ManualFix),
+        "Exit (abort the translation process)" => Ok(FailureChoice::Exit),
+        _ => unreachable!(),
     }
 }
 
@@ -378,48 +285,25 @@ pub fn prompt_build_failure_choice() -> Result<FailureChoice> {
         "⚠ Build failed - What would you like to do?".red().bold()
     );
     println!("│");
-    println!("│ {}", "Available options:".bright_cyan());
-    println!(
-        "│   {} Retry directly (without adding suggestion)",
-        "1.".bright_white()
-    );
-    println!(
-        "│   {} Add fix suggestion for AI to modify",
-        "2.".bright_white()
-    );
-    println!(
-        "│   {} Manual fix (edit the file with VIM)",
-        "3.".bright_white()
-    );
-    println!(
-        "│   {} Exit (abort the translation process)",
-        "4.".bright_white()
-    );
-    println!("│");
 
-    loop {
-        print!("│ {} ", "Enter your choice (1/2/3/4):".bright_yellow());
-        io::stdout().flush()?;
+    let options = vec![
+        "Retry directly (without adding suggestion)",
+        "Add fix suggestion for AI to modify",
+        "Manual fix (edit the file with VIM)",
+        "Exit (abort the translation process)",
+    ];
 
-        let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
+    let choice = Select::new("Select an option:", options)
+        .with_vim_mode(true)
+        .prompt()
+        .context("Failed to get user selection")?;
 
-        match input.trim() {
-            "1" => return Ok(FailureChoice::RetryDirectly),
-            "2" => return Ok(FailureChoice::AddSuggestion),
-            "3" => return Ok(FailureChoice::ManualFix),
-            "4" => return Ok(FailureChoice::Exit),
-            _ => {
-                println!(
-                    "│ {}",
-                    format!(
-                        "Invalid choice '{}'. Please enter 1, 2, 3, or 4.",
-                        input.trim()
-                    )
-                    .yellow()
-                );
-            }
-        }
+    match choice {
+        "Retry directly (without adding suggestion)" => Ok(FailureChoice::RetryDirectly),
+        "Add fix suggestion for AI to modify" => Ok(FailureChoice::AddSuggestion),
+        "Manual fix (edit the file with VIM)" => Ok(FailureChoice::ManualFix),
+        "Exit (abort the translation process)" => Ok(FailureChoice::Exit),
+        _ => unreachable!(),
     }
 }
 
