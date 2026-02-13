@@ -46,7 +46,7 @@ pub fn translate_feature(
         "\n{}",
         "Step 3: Select Files to Translate".bright_cyan().bold()
     );
-    
+
     // 计算总 .rs 文件数和已处理的文件数
     let total_rs_files = file_scanner::count_all_rs_files(&rust_dir)?;
     let initial_empty_count = file_scanner::find_empty_rs_files(&rust_dir)?.len();
