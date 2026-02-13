@@ -113,11 +113,10 @@
 
 这些选项的工作方式与测试失败场景相同。
 
-### 3. 文件选择交互增强
+### 3. 文件选择
 
-工具现在提供了更直观的**多选交互界面**来选择要处理的文件：
+工具提供灵活的文件选择方式：
 
-#### 旧方式（文本输入）
 ```
 Available files to process:
   1. src/var_counter.rs
@@ -132,36 +131,12 @@ Select files to process:
 
 Your selection: _
 ```
-用户需要手动输入数字、范围或逗号分隔的列表。
-
-#### 新方式（交互式多选）
-```
-
-Available files to process:
-
-Use arrow keys to navigate, Space to select/deselect, Enter to confirm
-Press 'a' to select all files
-
-? Select files to process:
- ◯ src/var_counter.rs
-❯◉ src/fun_calculate.rs
- ◯ src/var_global.rs
- ◉ src/fun_helper.rs
-```
 
 **使用方法**：
-- 使用 **↑↓ 方向键**或 **j/k**（Vim 模式）在文件间移动
-- 按 **空格键** 选择/取消选择当前文件
-- 按 **a 键** 快速选择所有文件
-- 按 **回车键** 确认选择
-- **◯** 表示未选择，**◉** 表示已选择
-- **❯** 表示当前光标位置
-
-**优势**：
-- 更直观的视觉反馈
-- 无需记忆复杂的输入格式
-- 减少输入错误
-- 快速批量选择
+- 输入单个数字：`1` 或 `3`
+- 输入多个文件（逗号分隔）：`1,3,5`
+- 输入范围：`1-3` 或 `1-3,5`
+- 输入 `all` 选择所有文件
 
 ### 4. 自动接受模式
 
@@ -185,8 +160,7 @@ Press 'a' to select all files
 ### 依赖库
 
 - **`inquire` v0.7**：提供交互式命令行界面
-  - `Select`：单选菜单组件
-  - `MultiSelect`：多选菜单组件
+  - `Select`：单选菜单组件，用于用户选择提示
   - 支持 Vim 模式导航
   - 无安全漏洞（已通过 GitHub Advisory Database 检查）
 
@@ -194,7 +168,6 @@ Press 'a' to select all files
 
 - **`src/diff_display.rs`**：处理并排代码比较显示
 - 增强的 **`src/interaction.rs`**：使用 `inquire` 库提供交互式选择界面
-- 增强的 **`src/file_scanner.rs`**：使用 `MultiSelect` 提供文件多选界面
 
 ### 新枚举
 
@@ -224,12 +197,14 @@ pub enum FailureChoice {
 - `prompt_compile_failure_choice()`：编译失败时的 4 选项交互式选择
 - `prompt_build_failure_choice()`：构建失败时的 4 选项交互式选择
 - `prompt_user_choice()`：通用的 3 选项交互式选择
-- `prompt_file_selection()`：文件多选交互界面
+
+**文本输入函数**：
+- `prompt_file_selection()`：文件选择（支持数字、范围、逗号分隔、'all'）
+- `prompt_suggestion()`：修复建议文本输入（自由文本输入）
 
 **其他功能函数**：
 - `display_code_comparison()`：并排代码显示
 - `is_auto_accept_mode()`, `enable_auto_accept_mode()`：自动接受模式管理
-- `prompt_suggestion()`：修复建议文本输入（保持文本输入，因为需要自由输入）
 
 ## 向后兼容性
 
