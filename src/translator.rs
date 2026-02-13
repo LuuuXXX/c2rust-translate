@@ -1,4 +1,3 @@
-use crate::constants;
 use crate::util;
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -148,7 +147,7 @@ pub fn translate_c_to_rust(
     display_code(
         c_file,
         "─ C Source Preview ─",
-        constants::CODE_PREVIEW_LINES,
+        util::CODE_PREVIEW_LINES,
         show_full_output,
     );
 
@@ -207,7 +206,7 @@ pub fn translate_c_to_rust(
     display_code(
         rs_file,
         "─ Translated Rust Code ─",
-        constants::CODE_PREVIEW_LINES,
+        util::CODE_PREVIEW_LINES,
         show_full_output,
     );
 
@@ -221,7 +220,7 @@ fn display_error_preview(error_msg: &str, show_full: bool) {
     let display_lines = if show_full {
         total_lines
     } else {
-        std::cmp::min(total_lines, constants::ERROR_PREVIEW_LINES)
+        std::cmp::min(total_lines, util::ERROR_PREVIEW_LINES)
     };
 
     println!("│ {}", "─ Build Error Preview ─".yellow());
@@ -374,7 +373,7 @@ pub fn fix_translation_error(
     display_code(
         rs_file,
         "─ Fixed Rust Code ─",
-        constants::CODE_PREVIEW_LINES,
+        util::CODE_PREVIEW_LINES,
         show_full_fixed_code,
     );
 
@@ -692,11 +691,11 @@ mod tests {
         let display_lines = if show_full {
             total_lines
         } else {
-            std::cmp::min(total_lines, constants::ERROR_PREVIEW_LINES)
+            std::cmp::min(total_lines, util::ERROR_PREVIEW_LINES)
         };
         assert_eq!(
             display_lines,
-            constants::ERROR_PREVIEW_LINES,
+            util::ERROR_PREVIEW_LINES,
             "Should truncate to ERROR_PREVIEW_LINES when show_full is false"
         );
         assert!(
@@ -709,7 +708,7 @@ mod tests {
         let display_lines = if show_full {
             total_lines
         } else {
-            std::cmp::min(total_lines, constants::ERROR_PREVIEW_LINES)
+            std::cmp::min(total_lines, util::ERROR_PREVIEW_LINES)
         };
         assert_eq!(
             display_lines, 25,
@@ -734,7 +733,7 @@ mod tests {
         let display_lines = if show_full {
             total_lines
         } else {
-            std::cmp::min(total_lines, constants::ERROR_PREVIEW_LINES)
+            std::cmp::min(total_lines, util::ERROR_PREVIEW_LINES)
         };
         assert_eq!(
             display_lines, 3,
@@ -749,7 +748,7 @@ mod tests {
         let display_lines = if show_full {
             total_lines
         } else {
-            std::cmp::min(total_lines, constants::ERROR_PREVIEW_LINES)
+            std::cmp::min(total_lines, util::ERROR_PREVIEW_LINES)
         };
         assert_eq!(
             display_lines, 3,
@@ -760,7 +759,7 @@ mod tests {
     #[test]
     fn test_display_error_preview_line_count_message() {
         // 创建正好 ERROR_PREVIEW_LINES + 5 行的错误消息
-        let num_lines = constants::ERROR_PREVIEW_LINES + 5;
+        let num_lines = util::ERROR_PREVIEW_LINES + 5;
         let mut error_msg = String::new();
         for i in 1..=num_lines {
             error_msg.push_str(&format!("Error line {}\n", i));
@@ -774,11 +773,11 @@ mod tests {
         let display_lines = if show_full {
             total_lines
         } else {
-            std::cmp::min(total_lines, constants::ERROR_PREVIEW_LINES)
+            std::cmp::min(total_lines, util::ERROR_PREVIEW_LINES)
         };
 
         // 截断消息应显示："showing {display_lines} of {total_lines} lines"
-        assert_eq!(display_lines, constants::ERROR_PREVIEW_LINES);
+        assert_eq!(display_lines, util::ERROR_PREVIEW_LINES);
         assert_eq!(total_lines, num_lines);
         assert!(
             total_lines > display_lines,

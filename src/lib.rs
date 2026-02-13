@@ -1,298 +1,316 @@
+//! C to Rust translation workflow orchestration
+//!
+//! This module provides the main translation workflow that coordinates initialization,
+//! gate verification, file selection, and translation execution across multiple modules.
+
+// Public modules - external API
 pub mod analyzer;
 pub mod builder;
-pub mod constants;
-pub(crate) mod diff_display;
-pub(crate) mod error_handler;
 pub mod file_scanner;
 pub mod git;
 pub mod hybrid_build;
 pub mod initialization;
-pub(crate) mod interaction;
-pub mod progress;
-pub(crate) mod suggestion;
 pub mod translator;
 pub mod util;
 pub mod verification;
 
+// Internal modules - implementation details
+pub(crate) mod diff_display;
+pub(crate) mod error_handler;
+pub(crate) mod interaction;
+pub(crate) mod suggestion;
+
 use anyhow::{Context, Result};
 use colored::Colorize;
+use std::path::Path;
 
-/// 特性的主要翻译工作流
+/// Main translation workflow for a feature
+///
+/// Executes the complete C to Rust translation workflow in 5 steps:
+/// 1. Find project root and initialize feature directory
+/// 2. Run gate verification (cargo build, code analysis, hybrid build/test)
+/// 3. Scan for files to translate and initialize progress tracking
+/// 4. Display current progress status
+/// 5. Execute translation loop (select and process files interactively or auto-all)
+///
+/// # Arguments
+/// * `feature` - Feature name (must not contain path separators)
+/// * `allow_all` - If true, auto-process all files without prompting
+/// * `max_fix_attempts` - Maximum number of error fix attempts per file
+/// * `show_full_output` - If true, show complete code/error output without truncation
+///
+/// # Returns
+/// * `Ok(())` - All translations completed successfully
+/// * `Err` - Translation failed or user aborted
 pub fn translate_feature(
     feature: &str,
     allow_all: bool,
     max_fix_attempts: usize,
     show_full_output: bool,
 ) -> Result<()> {
+    print_workflow_header(feature);
+
+    // Step 1: Initialize feature directory
+    step_1_initialize(feature)?;
+
+    // Step 2: Run gate verification
+    step_2_gate_verification(feature, show_full_output)?;
+
+    // Step 3 & 4: Select files and initialize progress
+    let (rust_dir, mut progress_state) = step_3_4_select_files_and_init_progress(feature)?;
+
+    // Step 5: Execute translation loop
+    step_5_execute_translation_loop(
+        feature,
+        &rust_dir,
+        &mut progress_state,
+        allow_all,
+        max_fix_attempts,
+        show_full_output,
+    )?;
+
+    Ok(())
+}
+
+// ============================================================================
+// Workflow Step Functions
+// ============================================================================
+
+/// Print the workflow header
+fn print_workflow_header(feature: &str) {
     let msg = format!("Starting translation for feature: {}", feature);
     println!("{}", msg.bright_cyan().bold());
+}
 
-    // 验证特性名称以防止路径遍历攻击
-    util::validate_feature_name(feature)?;
+/// Step 1: Find project root and initialize feature directory
+fn step_1_initialize(feature: &str) -> Result<()> {
+    println!(
+        "\n{}",
+        "Step 1: Find Project Root and Initialize"
+            .bright_cyan()
+            .bold()
+    );
+    initialization::check_and_initialize_feature(feature)
+}
 
-    // 首先查找项目根目录
+/// Step 2: Run gate verification
+fn step_2_gate_verification(feature: &str, show_full_output: bool) -> Result<()> {
+    initialization::run_gate_verification(feature, show_full_output)
+}
+
+/// Steps 3 & 4: Scan for files to translate and initialize progress tracking
+fn step_3_4_select_files_and_init_progress(
+    feature: &str,
+) -> Result<(std::path::PathBuf, util::ProgressState)> {
+    println!(
+        "\n{}",
+        "Step 3: Scan Files to Translate".bright_cyan().bold()
+    );
+
+    // Get rust directory path
     let project_root = util::find_project_root()?;
+    let rust_dir = project_root.join(".c2rust").join(feature).join("rust");
 
-    // 步骤 1：检查 rust 目录是否存在（通过适当的 IO 错误处理）
-    let feature_path = project_root.join(".c2rust").join(feature);
-    let rust_dir = feature_path.join("rust");
-
-    let rust_dir_exists = match std::fs::metadata(&rust_dir) {
-        Ok(metadata) => {
-            if !metadata.is_dir() {
-                anyhow::bail!("Path exists but is not a directory: {}", rust_dir.display());
-            }
-            true
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
-        Err(e) => {
-            return Err(e).context(format!(
-                "Failed to access rust directory at {}",
-                rust_dir.display()
-            ));
-        }
-    };
-
-    if !rust_dir_exists {
-        println!(
-            "{}",
-            "Rust directory does not exist. Initializing...".yellow()
-        );
-        analyzer::initialize_feature(feature)?;
-
-        // 验证 rust 目录已创建并且确实是一个目录
-        match std::fs::metadata(&rust_dir) {
-            Ok(metadata) => {
-                if !metadata.is_dir() {
-                    anyhow::bail!(
-                        "Initialization created a file instead of a directory: {}",
-                        rust_dir.display()
-                    );
-                }
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                anyhow::bail!("Error: Failed to initialize rust directory");
-            }
-            Err(e) => {
-                return Err(e).context(format!(
-                    "Failed to verify initialized rust directory at {}",
-                    rust_dir.display()
-                ));
-            }
-        }
-
-        // 提交初始化
-        git::git_commit(&format!("Initialize {} rust directory", feature), feature)?;
-    }
-
-    // 在主循环之前初始化进度状态
-    // 计算总 .rs 文件数和已处理的文件数
+    // Calculate progress
     let total_rs_files = file_scanner::count_all_rs_files(&rust_dir)?;
     let initial_empty_count = file_scanner::find_empty_rs_files(&rust_dir)?.len();
     let already_processed = total_rs_files.saturating_sub(initial_empty_count);
 
-    let mut progress_state =
-        progress::ProgressState::with_initial_progress(total_rs_files, already_processed);
+    let progress_state =
+        util::ProgressState::with_initial_progress(total_rs_files, already_processed);
 
-    // 步骤 1：主循环 - 处理所有空的 .rs 文件
+    // Display progress
+    print_progress_status(already_processed, total_rs_files);
+
+    Ok((rust_dir, progress_state))
+}
+
+/// Print current progress status
+fn print_progress_status(already_processed: usize, total_rs_files: usize) {
     println!(
         "\n{}",
-        "Step 1: Translate C source files".bright_cyan().bold()
+        "Step 4: Initialize Project Progress".bright_cyan().bold()
     );
+
+    let progress_percentage = if total_rs_files > 0 {
+        (already_processed as f64 / total_rs_files as f64) * 100.0
+    } else {
+        0.0
+    };
+
+    println!(
+        "{} {:.1}% ({}/{} files processed)",
+        "Current progress:".cyan(),
+        progress_percentage,
+        already_processed,
+        total_rs_files
+    );
+}
+
+/// Step 5: Execute translation loop for all files
+fn step_5_execute_translation_loop(
+    feature: &str,
+    rust_dir: &Path,
+    progress_state: &mut util::ProgressState,
+    allow_all: bool,
+    max_fix_attempts: usize,
+    show_full_output: bool,
+) -> Result<()> {
+    println!(
+        "\n{}",
+        "Step 5: Execute Translation for All Files"
+            .bright_cyan()
+            .bold()
+    );
+
     loop {
-        // 步骤 1.1：首先尝试构建
-        println!("\n{}", "Building project...".bright_blue().bold());
-        match builder::cargo_build(feature, show_full_output) {
-            Ok(_) => {
-                println!("{}", "✓ Build successful!".bright_green().bold());
-            }
-            Err(e) => {
-                println!("{}", "✗ Initial build failed!".red().bold());
-                println!(
-                    "{}",
-                    "This may indicate issues with the project setup or previous translations."
-                        .yellow()
-                );
-
-                // 为启动构建失败提供交互式处理
-                let choice = interaction::prompt_user_choice("Initial build failure", false)?;
-
-                match choice {
-                    interaction::UserChoice::Continue => {
-                        println!("│ {}", "Continuing despite build failure. You can fix issues during file processing.".yellow());
-                        // 继续工作流
-                    }
-                    interaction::UserChoice::ManualFix => {
-                        println!(
-                            "│ {}",
-                            "Please manually fix the build issues and run the tool again.".yellow()
-                        );
-                        return Err(e).context("Initial build failed and user chose manual fix");
-                    }
-                    interaction::UserChoice::Exit => {
-                        return Err(e).context("Initial build failed and user chose to exit");
-                    }
-                }
-            }
-        }
-
-        println!("{}", "Updating code analysis...".bright_blue());
-        analyzer::update_code_analysis(feature)?;
-        println!("{}", "✓ Code analysis updated".bright_green());
-
-        git::git_commit(&format!("Update code analysis for {}", feature), feature)?;
-
-        println!("{}", "Running hybrid build tests...".bright_blue());
-        match builder::run_hybrid_build(feature) {
-            Ok(_) => {
-                println!("{}", "✓ Hybrid build tests passed".bright_green());
-            }
-            Err(e) => {
-                println!("{}", "✗ Initial hybrid build tests failed!".red().bold());
-
-                // 尝试解析错误并定位文件
-                match error_handler::parse_error_for_files(&e.to_string(), feature) {
-                    Ok(files) if !files.is_empty() => {
-                        // 找到文件，进入修复流程
-                        println!(
-                            "{}",
-                            "Attempting to automatically locate and fix files from error..."
-                                .yellow()
-                        );
-                        error_handler::handle_startup_test_failure_with_files(feature, e, files)?;
-                    }
-                    Ok(_) => {
-                        // 错误消息中未找到文件
-                        println!(
-                            "{}",
-                            "Unable to automatically locate files from error.".yellow()
-                        );
-                        println!("{}", "This may indicate issues with the test environment or previous translations.".yellow());
-
-                        let choice =
-                            interaction::prompt_user_choice("Initial test failure", false)?;
-
-                        match choice {
-                            interaction::UserChoice::Continue => {
-                                println!("│ {}", "Continuing despite test failure. You can fix issues during file processing.".yellow());
-                                // 继续工作流
-                            }
-                            interaction::UserChoice::ManualFix | interaction::UserChoice::Exit => {
-                                return Err(e).context("Initial tests failed");
-                            }
-                        }
-                    }
-                    Err(parse_err) => {
-                        // 解析错误消息失败（例如，find_project_root 失败）
-                        println!(
-                            "{}",
-                            format!("Error parsing failure message: {}", parse_err).yellow()
-                        );
-                        println!(
-                            "{}",
-                            "Unable to automatically locate files from error.".yellow()
-                        );
-                        println!("{}", "This may indicate issues with the test environment or previous translations.".yellow());
-
-                        let choice =
-                            interaction::prompt_user_choice("Initial test failure", false)?;
-
-                        match choice {
-                            interaction::UserChoice::Continue => {
-                                println!("│ {}", "Continuing despite test failure. You can fix issues during file processing.".yellow());
-                                // 继续工作流
-                            }
-                            interaction::UserChoice::ManualFix | interaction::UserChoice::Exit => {
-                                return Err(e).context("Initial tests failed");
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // 步骤 1.2：扫描空的 .rs 文件（未处理的文件）
-        let empty_rs_files = file_scanner::find_empty_rs_files(&rust_dir)?;
+        // Scan for empty .rs files
+        let empty_rs_files = file_scanner::find_empty_rs_files(rust_dir)?;
 
         if empty_rs_files.is_empty() {
-            let msg = "✓ No empty .rs files found. Translation complete!";
-            println!("\n{}", msg.bright_green().bold());
+            print_completion_message();
             break;
         }
 
-        println!(
-            "{}",
-            format!(
-                "Found {} empty .rs file(s) to process",
-                empty_rs_files.len()
-            )
-            .cyan()
-        );
+        print_files_found_message(empty_rs_files.len());
 
-        // 基于 allow_all 标志选择要处理的文件
-        let selected_indices: Vec<usize> = if allow_all {
-            // 不提示处理所有空文件
-            (0..empty_rs_files.len()).collect()
-        } else {
-            // 提示用户选择文件
-            let file_refs: Vec<_> = empty_rs_files.iter().collect();
-            file_scanner::prompt_file_selection(&file_refs, &rust_dir)?
-        };
+        // Select files to process
+        let selected_indices = select_files_to_process(&empty_rs_files, rust_dir, allow_all)?;
 
-        for &idx in selected_indices.iter() {
-            let rs_file = &empty_rs_files[idx];
-            // 获取当前进度位置（在循环迭代之间保持）
-            let current_position = progress_state.get_current_position();
-            let total_count = progress_state.get_total_count();
-
-            // 获取文件名以供显示
-            let file_name = rs_file
-                .file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or("<unknown>");
-
-            let progress_msg = format!(
-                "[{}/{}] Processing {}",
-                current_position, total_count, file_name
-            );
-            println!("\n{}", progress_msg.bright_magenta().bold());
-
-            process_rs_file(
-                feature,
-                rs_file,
-                file_name,
-                current_position,
-                total_count,
-                max_fix_attempts,
-                show_full_output,
-            )?;
-
-            // 标记此会话中已处理的文件
-            progress_state.mark_processed();
-        }
+        // Process each selected file
+        process_selected_files(
+            feature,
+            &empty_rs_files,
+            &selected_indices,
+            progress_state,
+            max_fix_attempts,
+            show_full_output,
+        )?;
     }
 
     Ok(())
 }
 
-/// 通过翻译工作流处理单个 .rs 文件
+// ============================================================================
+// File Processing Functions
+// ============================================================================
+
+/// Select files to process based on allow_all flag
+fn select_files_to_process(
+    empty_rs_files: &[std::path::PathBuf],
+    rust_dir: &Path,
+    allow_all: bool,
+) -> Result<Vec<usize>> {
+    if allow_all {
+        // Auto-process all files without prompting
+        Ok((0..empty_rs_files.len()).collect())
+    } else {
+        // Prompt user for file selection
+        let file_refs: Vec<_> = empty_rs_files.iter().collect();
+        file_scanner::prompt_file_selection(&file_refs, rust_dir)
+    }
+}
+
+/// Process all selected files
+fn process_selected_files(
+    feature: &str,
+    empty_rs_files: &[std::path::PathBuf],
+    selected_indices: &[usize],
+    progress_state: &mut util::ProgressState,
+    max_fix_attempts: usize,
+    show_full_output: bool,
+) -> Result<()> {
+    for &idx in selected_indices.iter() {
+        let rs_file = &empty_rs_files[idx];
+        let current_position = progress_state.get_current_position();
+        let total_count = progress_state.get_total_count();
+
+        let file_name = rs_file
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("<unknown>");
+
+        print_file_processing_header(current_position, total_count, file_name);
+
+        process_rs_file(
+            feature,
+            rs_file,
+            file_name,
+            current_position,
+            total_count,
+            max_fix_attempts,
+            show_full_output,
+        )?;
+
+        progress_state.mark_processed();
+    }
+    Ok(())
+}
+
+// ============================================================================
+// Display Helper Functions
+// ============================================================================
+
+/// Print completion message
+fn print_completion_message() {
+    let msg = "✓ No empty .rs files found. Translation complete!";
+    println!("\n{}", msg.bright_green().bold());
+}
+
+/// Print files found message
+fn print_files_found_message(count: usize) {
+    println!(
+        "{}",
+        format!("Found {} empty .rs file(s) to process", count).cyan()
+    );
+}
+
+/// Print file processing header
+fn print_file_processing_header(current_position: usize, total_count: usize, file_name: &str) {
+    let progress_msg = format!(
+        "[{}/{}] Processing {}",
+        current_position, total_count, file_name
+    );
+    println!("\n{}", progress_msg.bright_magenta().bold());
+}
+
+// ============================================================================
+// Single File Translation Workflow
+// ============================================================================
+
+/// Process a single .rs file through the translation workflow
+///
+/// Attempts translation up to MAX_TRANSLATION_ATTEMPTS times, with each attempt
+/// including: translation → build → fix (if needed) → hybrid tests → commit
+///
+/// # Arguments
+/// * `feature` - Feature name
+/// * `rs_file` - Path to the .rs file to process
+/// * `file_name` - Display name of the file
+/// * `current_position` - Current file position in the overall workflow
+/// * `total_count` - Total number of files to process
+/// * `max_fix_attempts` - Maximum error fix attempts per translation
+/// * `show_full_output` - Whether to show full output
+///
+/// # Returns
+/// * `Ok(())` - File processed successfully
+/// * `Err` - Processing failed after all retry attempts
 fn process_rs_file(
     feature: &str,
-    rs_file: &std::path::Path,
+    rs_file: &Path,
     file_name: &str,
     current_position: usize,
     total_count: usize,
     max_fix_attempts: usize,
     show_full_output: bool,
 ) -> Result<()> {
-    use constants::MAX_TRANSLATION_ATTEMPTS;
+    use util::MAX_TRANSLATION_ATTEMPTS;
 
     for attempt_number in 1..=MAX_TRANSLATION_ATTEMPTS {
         let is_last_attempt = attempt_number == MAX_TRANSLATION_ATTEMPTS;
 
         print_attempt_header(attempt_number, rs_file);
 
-        // 为重试尝试添加消息
         if attempt_number > 1 {
             println!(
                 "│ {}",
@@ -301,9 +319,11 @@ fn process_rs_file(
             );
         }
 
+        // Extract file information and validate
         let (file_type, _name) = extract_and_validate_file_info(rs_file)?;
         check_c_file_exists(rs_file)?;
 
+        // Create progress formatter
         let format_progress = |operation: &str| {
             format!(
                 "[{}/{}] Processing {} - {}",
@@ -311,16 +331,10 @@ fn process_rs_file(
             )
         };
 
-        // 将 C 翻译为 Rust
-        translate_file(
-            feature,
-            file_type,
-            rs_file,
-            &format_progress,
-            show_full_output,
-        )?;
+        // Translate C to Rust
+        translate_file(feature, file_type, rs_file, &format_progress, show_full_output)?;
 
-        // 构建并修复错误 - 使用 verification 模块
+        // Build and fix errors
         let build_successful = verification::build_and_fix_loop(
             feature,
             file_type,
@@ -339,25 +353,27 @@ fn process_rs_file(
             if processing_complete {
                 return Ok(());
             }
-            // If processing_complete is false, retry translation (loop continues)
+            // If not complete, retry translation (loop continues)
         }
     }
 
     anyhow::bail!("Unexpected: all retry attempts completed without resolution")
 }
 
-/// 打印当前尝试的标题
-fn print_attempt_header(attempt_number: usize, rs_file: &std::path::Path) {
+// ============================================================================
+// File Processing Helper Functions
+// ============================================================================
+
+/// Print header for translation attempt
+fn print_attempt_header(attempt_number: usize, rs_file: &Path) {
     if attempt_number > 1 {
         let retry_number = attempt_number - 1;
-        let max_retries = constants::MAX_TRANSLATION_ATTEMPTS - 1;
+        let max_retries = util::MAX_TRANSLATION_ATTEMPTS - 1;
         println!(
             "\n{}",
             format!(
                 "┌─ Retry attempt {}/{}: {}",
-                retry_number,
-                max_retries,
-                rs_file.display()
+                retry_number, max_retries, rs_file.display()
             )
             .bright_yellow()
             .bold()
@@ -372,8 +388,10 @@ fn print_attempt_header(attempt_number: usize, rs_file: &std::path::Path) {
     }
 }
 
-/// 提取文件类型和名称，打印信息
-fn extract_and_validate_file_info(rs_file: &std::path::Path) -> Result<(&'static str, &str)> {
+/// Extract and validate file type information from filename
+///
+/// Returns (file_type, name) tuple where file_type is either "var" or "fun"
+fn extract_and_validate_file_info(rs_file: &Path) -> Result<(&'static str, &str)> {
     let file_stem = rs_file
         .file_stem()
         .and_then(|s| s.to_str())
@@ -388,12 +406,11 @@ fn extract_and_validate_file_info(rs_file: &std::path::Path) -> Result<(&'static
     Ok((file_type, name))
 }
 
-/// 检查对应的 C 文件是否存在
-fn check_c_file_exists(rs_file: &std::path::Path) -> Result<()> {
-    use std::fs;
-
+/// Check if corresponding C source file exists
+fn check_c_file_exists(rs_file: &Path) -> Result<()> {
     let c_file = rs_file.with_extension("c");
-    match fs::metadata(&c_file) {
+    
+    match std::fs::metadata(&c_file) {
         Ok(_) => {
             println!(
                 "│ {} {}",
@@ -415,19 +432,21 @@ fn check_c_file_exists(rs_file: &std::path::Path) -> Result<()> {
     }
 }
 
-/// 将 C 文件翻译为 Rust
+// ============================================================================
+// Translation and Error Fix Functions
+// ============================================================================
+
+/// Translate C source file to Rust
 fn translate_file<F>(
     feature: &str,
     file_type: &str,
-    rs_file: &std::path::Path,
+    rs_file: &Path,
     format_progress: &F,
     show_full_output: bool,
 ) -> Result<()>
 where
     F: Fn(&str) -> String,
 {
-    use std::fs;
-
     let c_file = rs_file.with_extension("c");
 
     println!("│");
@@ -441,12 +460,15 @@ where
             .bright_blue()
             .bold()
     );
+    
     translator::translate_c_to_rust(feature, file_type, &c_file, rs_file, show_full_output)?;
 
-    let metadata = fs::metadata(rs_file)?;
+    // Verify translation produced output
+    let metadata = std::fs::metadata(rs_file)?;
     if metadata.len() == 0 {
         anyhow::bail!("Translation failed: output file is empty");
     }
+    
     println!(
         "│ {}",
         format!("✓ Translation complete ({} bytes)", metadata.len()).bright_green()
@@ -455,11 +477,11 @@ where
     Ok(())
 }
 
-/// 对文件应用错误修复
+/// Apply error fix to translated file
 pub(crate) fn apply_error_fix<F>(
     feature: &str,
     file_type: &str,
-    rs_file: &std::path::Path,
+    rs_file: &Path,
     build_error: &anyhow::Error,
     format_progress: &F,
     show_full_output: bool,
@@ -467,8 +489,6 @@ pub(crate) fn apply_error_fix<F>(
 where
     F: Fn(&str) -> String,
 {
-    use std::fs;
-
     println!(
         "│ {}",
         "⚠ Build failed, attempting to fix errors..."
@@ -477,43 +497,55 @@ where
     );
     println!("│");
     println!("│ {}", format_progress("Fix").bright_magenta().bold());
-    // 始终显示完整的修复代码，但尊重用户对错误预览的偏好
+    
+    // Fix translation error
+    // Always show full fix code, but respect user preference for error preview
     translator::fix_translation_error(
         feature,
         file_type,
         rs_file,
         &build_error.to_string(),
-        show_full_output, // 用户对错误预览的偏好
-        true,             // 始终显示完整的修复代码
+        show_full_output, // User preference for error preview
+        true,             // Always show full fix code
     )?;
 
-    let metadata = fs::metadata(rs_file)?;
+    // Verify fix produced output
+    let metadata = std::fs::metadata(rs_file)?;
     if metadata.len() == 0 {
         anyhow::bail!("Fix failed: output file is empty");
     }
+    
     println!("│ {}", "✓ Fix applied".bright_green());
 
     Ok(())
 }
 
-/// 完成文件处理（提交、分析、混合构建）
-/// Completes file processing by running hybrid build tests and committing changes
+// ============================================================================
+// File Completion and Finalization
+// ============================================================================
+
+/// Complete file processing by running hybrid build tests and committing changes
 ///
-/// Returns:
-/// - Ok(true) if file processing completed successfully (continue to next file)
-/// - Ok(false) if translation should be retried from scratch
-/// - Err if an unrecoverable error occurred
+/// This function runs the final verification steps:
+/// 1. Pre-check config and tools availability
+/// 2. Run hybrid build clean/build/test
+/// 3. Handle user interaction for successful tests
+/// 4. Commit changes and update code analysis
+///
+/// # Returns
+/// * `Ok(true)` - File processing completed successfully (continue to next file)
+/// * `Ok(false)` - Translation should be retried from scratch
+/// * `Err` - Unrecoverable error occurred
 fn complete_file_processing<F>(
     feature: &str,
     file_name: &str,
     file_type: &str,
-    rs_file: &std::path::Path,
+    rs_file: &Path,
     format_progress: &F,
 ) -> Result<bool>
 where
     F: Fn(&str) -> String,
 {
-    // 在提交之前首先运行混合构建测试
     println!("│");
     println!(
         "│ {}",
@@ -523,7 +555,45 @@ where
     );
     println!("│ {}", "Running hybrid build tests...".bright_blue());
 
-    // 预检查（与 run_hybrid_build_interactive 中相同）
+    // Pre-check: Verify config and tools are available
+    verify_hybrid_build_prerequisites()?;
+
+    // Run hybrid build clean/build/test
+    builder::c2rust_clean(feature)?;
+
+    // Handle build
+    if let Err(build_error) = builder::c2rust_build(feature) {
+        println!("│ {}", "✗ Build failed".red().bold());
+        let processing_complete = builder::handle_build_failure_interactive(
+            feature,
+            file_type,
+            rs_file,
+            build_error,
+        )?;
+        if !processing_complete {
+            return Ok(false); // Retry translation
+        }
+    } else {
+        println!("│ {}", "✓ Build successful".bright_green().bold());
+    }
+
+    // Handle test
+    match builder::c2rust_test(feature) {
+        Ok(_) => {
+            println!("│ {}", "✓ Hybrid build tests passed".bright_green().bold());
+            handle_successful_tests(feature, file_name, file_type, rs_file, format_progress)?;
+            Ok(true) // Processing complete
+        }
+        Err(test_error) => {
+            let processing_complete =
+                builder::handle_test_failure_interactive(feature, file_type, rs_file, test_error)?;
+            Ok(processing_complete)
+        }
+    }
+}
+
+/// Verify prerequisites for hybrid build (config file and tools)
+fn verify_hybrid_build_prerequisites() -> Result<()> {
     let project_root = util::find_project_root()?;
     let config_path = project_root.join(".c2rust/config.toml");
 
@@ -535,154 +605,122 @@ where
         anyhow::bail!("Config file not found, cannot run hybrid build tests");
     }
 
-    // 继续之前检查 c2rust-config 是否可用
+    // Check if c2rust-config is available
     let check_output = std::process::Command::new("c2rust-config")
         .arg("--help")
         .output();
 
     match check_output {
+        Ok(output) if output.status.success() => Ok(()),
         Ok(output) => {
-            if !output.status.success() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                eprintln!(
-                    "{}",
-                    format!(
-                        "Error: c2rust-config --version failed.\nstdout:\n{}\nstderr:\n{}",
-                        stdout, stderr
-                    )
-                    .red()
-                );
-                anyhow::bail!(
-                    "c2rust-config is present but failed to run successfully, cannot run hybrid build tests"
-                );
-            }
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            eprintln!(
+                "{}",
+                format!(
+                    "Error: c2rust-config failed to run.\nstdout:\n{}\nstderr:\n{}",
+                    stdout, stderr
+                )
+                .red()
+            );
+            anyhow::bail!(
+                "c2rust-config is present but failed to run successfully, cannot run hybrid build tests"
+            )
         }
         Err(_) => {
             eprintln!("{}", "Error: c2rust-config not found".red());
-            anyhow::bail!("c2rust-config not found, cannot run hybrid build tests");
+            anyhow::bail!("c2rust-config not found, cannot run hybrid build tests")
+        }
+    }
+}
+
+/// Handle successful test completion with user interaction
+fn handle_successful_tests<F>(
+    feature: &str,
+    file_name: &str,
+    file_type: &str,
+    rs_file: &Path,
+    format_progress: &F,
+) -> Result<()>
+where
+    F: Fn(&str) -> String,
+{
+    // If in auto-accept mode, skip interaction
+    if interaction::is_auto_accept_mode() {
+        println!(
+            "│ {}",
+            "Auto-accept mode: automatically accepting translation".bright_green()
+        );
+        finalize_file_processing(feature, file_name, format_progress)?;
+        return Ok(());
+    }
+
+    // Show code comparison and get user choice
+    let c_file = rs_file.with_extension("c");
+    interaction::display_file_paths(Some(&c_file), rs_file);
+
+    let success_message = "✓ All tests passed";
+    if let Err(e) = diff_display::display_code_comparison(
+        &c_file,
+        rs_file,
+        success_message,
+        diff_display::ResultType::TestPass,
+    ) {
+        println!(
+            "│ {}",
+            format!("Failed to display comparison: {}", e).yellow()
+        );
+        println!("│ {}", success_message.bright_green().bold());
+    }
+
+    let choice = interaction::prompt_compile_success_choice()?;
+
+    match choice {
+        interaction::CompileSuccessChoice::Accept => {
+            println!("│ {}", "You chose: Accept this code".bright_cyan());
+            finalize_file_processing(feature, file_name, format_progress)?;
+        }
+        interaction::CompileSuccessChoice::AutoAccept => {
+            println!(
+                "│ {}",
+                "You chose: Auto-accept all subsequent translations".bright_cyan()
+            );
+            interaction::enable_auto_accept_mode();
+            finalize_file_processing(feature, file_name, format_progress)?;
+        }
+        interaction::CompileSuccessChoice::ManualFix => {
+            println!("│ {}", "You chose: Manual fix".bright_cyan());
+            interaction::open_in_vim(rs_file)?;
+            println!(
+                "│ {}",
+                "Running full build and test after manual changes...".bright_blue()
+            );
+            builder::run_full_build_and_test_interactive(feature, file_type, rs_file)?;
+            println!(
+                "│ {}",
+                "✓ All builds and tests pass after manual changes".bright_green()
+            );
+            finalize_file_processing(feature, file_name, format_progress)?;
+        }
+        interaction::CompileSuccessChoice::Exit => {
+            println!("│ {}", "You chose: Exit".yellow());
+            anyhow::bail!("User chose to exit after successful tests");
         }
     }
 
-    // 使用自定义处理运行测试以检测成功/失败
-    builder::c2rust_clean(feature)?;
+    Ok(())
+}
 
-    match builder::c2rust_build(feature) {
-        Ok(_) => {
-            println!("│ {}", "✓ Build successful".bright_green().bold());
-        }
-        Err(build_error) => {
-            println!("│ {}", "✗ Build failed".red().bold());
-            // Enter interactive build failure handling
-            let processing_complete = builder::handle_build_failure_interactive(
-                feature,
-                file_type,
-                rs_file,
-                build_error,
-            )?;
-            if !processing_complete {
-                // User chose to retry translation
-                return Ok(false);
-            }
-        }
-    }
-
-    let test_result = builder::c2rust_test(feature);
-
-    match test_result {
-        Ok(_) => {
-            println!("│ {}", "✓ Hybrid build tests passed".bright_green().bold());
-
-            // 如果不在自动接受模式下，显示代码比较和成功提示
-            if !interaction::is_auto_accept_mode() {
-                let c_file = rs_file.with_extension("c");
-
-                // 显示文件位置
-                interaction::display_file_paths(Some(&c_file), rs_file);
-
-                // 使用差异显示进行更好的比较
-                let success_message = "✓ All tests passed";
-                if let Err(e) = diff_display::display_code_comparison(
-                    &c_file,
-                    rs_file,
-                    success_message,
-                    diff_display::ResultType::TestPass,
-                ) {
-                    // 如果比较失败则回退到简单消息
-                    println!(
-                        "│ {}",
-                        format!("Failed to display comparison: {}", e).yellow()
-                    );
-                    println!("│ {}", success_message.bright_green().bold());
-                }
-
-                // 获取用户选择
-                let choice = interaction::prompt_compile_success_choice()?;
-
-                match choice {
-                    interaction::CompileSuccessChoice::Accept => {
-                        println!("│ {}", "You chose: Accept this code".bright_cyan());
-                        // 继续提交
-                    }
-                    interaction::CompileSuccessChoice::AutoAccept => {
-                        println!(
-                            "│ {}",
-                            "You chose: Auto-accept all subsequent translations".bright_cyan()
-                        );
-                        interaction::enable_auto_accept_mode();
-                        // 继续提交
-                    }
-                    interaction::CompileSuccessChoice::ManualFix => {
-                        println!("│ {}", "You chose: Manual fix".bright_cyan());
-
-                        // 打开 vim 进行手动编辑
-                        match interaction::open_in_vim(rs_file) {
-                            Ok(_) => {
-                                // 编辑后，执行完整构建和测试
-                                println!(
-                                    "│ {}",
-                                    "Running full build and test after manual changes..."
-                                        .bright_blue()
-                                );
-                                builder::run_full_build_and_test_interactive(
-                                    feature, file_type, rs_file,
-                                )?;
-                                println!(
-                                    "│ {}",
-                                    "✓ All builds and tests pass after manual changes"
-                                        .bright_green()
-                                );
-                                // 继续提交
-                            }
-                            Err(e) => {
-                                return Err(e).context("Failed to open vim for manual editing");
-                            }
-                        }
-                    }
-                    interaction::CompileSuccessChoice::Exit => {
-                        println!("│ {}", "You chose: Exit".yellow());
-                        anyhow::bail!("User chose to exit after successful tests");
-                    }
-                }
-            } else {
-                println!(
-                    "│ {}",
-                    "Auto-accept mode: automatically accepting translation".bright_green()
-                );
-            }
-        }
-        Err(test_error) => {
-            // 测试失败 - 使用交互式处理器
-            let processing_complete =
-                builder::handle_test_failure_interactive(feature, file_type, rs_file, test_error)?;
-            if !processing_complete {
-                // User chose to retry translation
-                return Ok(false);
-            }
-        }
-    }
-
-    // 提交更改
+/// Finalize file processing: commit changes and update analysis
+fn finalize_file_processing<F>(
+    feature: &str,
+    file_name: &str,
+    format_progress: &F,
+) -> Result<()>
+where
+    F: Fn(&str) -> String,
+{
+    // Commit changes
     println!("│");
     println!("│ {}", format_progress("Commit").bright_magenta().bold());
     println!("│ {}", "Committing changes...".bright_blue());
@@ -695,7 +733,7 @@ where
     )?;
     println!("│ {}", "✓ Changes committed".bright_green());
 
-    // 更新代码分析
+    // Update code analysis
     println!("│");
     println!(
         "│ {}",
@@ -705,7 +743,7 @@ where
     analyzer::update_code_analysis(feature)?;
     println!("│ {}", "✓ Code analysis updated".bright_green());
 
-    // 提交分析
+    // Commit analysis
     println!("│");
     println!(
         "│ {}",
@@ -713,7 +751,10 @@ where
     );
     git::git_commit(&format!("Update code analysis for {}", feature), feature)?;
 
-    println!("{}", "└─ File processing complete".bright_white().bold());
+    println!(
+        "{}",
+        "└─ File processing complete".bright_white().bold()
+    );
 
-    Ok(true)
+    Ok(())
 }

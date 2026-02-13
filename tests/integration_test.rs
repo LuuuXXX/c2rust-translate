@@ -6,7 +6,7 @@ use tempfile::TempDir;
 #[serial]
 fn test_progress_state_in_memory() {
     // Test that progress state works correctly in memory
-    let mut progress = c2rust_translate::progress::ProgressState::new(10);
+    let mut progress = c2rust_translate::util::ProgressState::new(10);
 
     // Initially at position 1 (0 processed + 1)
     assert_eq!(progress.get_current_position(), 1);
@@ -60,7 +60,7 @@ fn test_file_content_based_progress_tracking() {
         .any(|f| f.file_name().unwrap() == "var_test3.rs"));
 
     // Create a progress state for this session
-    let mut progress = c2rust_translate::progress::ProgressState::new(empty_files.len());
+    let mut progress = c2rust_translate::util::ProgressState::new(empty_files.len());
     assert_eq!(progress.get_total_count(), 2);
 
     // Simulate processing files
@@ -104,7 +104,7 @@ fn test_progress_numbering_across_rerun() {
 
     // Create progress state with initial progress
     let already_processed = total_files - empty_files.len();
-    let mut progress = c2rust_translate::progress::ProgressState::with_initial_progress(
+    let mut progress = c2rust_translate::util::ProgressState::with_initial_progress(
         total_files,
         already_processed,
     );
