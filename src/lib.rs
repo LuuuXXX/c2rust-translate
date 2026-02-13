@@ -29,9 +29,9 @@ use std::path::Path;
 /// Executes the complete C to Rust translation workflow in 5 steps:
 /// 1. Find project root and initialize feature directory
 /// 2. Run gate verification (cargo build, code analysis, hybrid build/test)
-/// 3. Select files to translate (interactive or auto-all)
-/// 4. Initialize progress tracking
-/// 5. Execute translation loop for all selected files
+/// 3. Scan for files to translate and initialize progress tracking
+/// 4. Display current progress status
+/// 5. Execute translation loop (select and process files interactively or auto-all)
 ///
 /// # Arguments
 /// * `feature` - Feature name (must not contain path separators)
@@ -98,13 +98,13 @@ fn step_2_gate_verification(feature: &str, show_full_output: bool) -> Result<()>
     initialization::run_gate_verification(feature, show_full_output)
 }
 
-/// Steps 3 & 4: Select files to translate and initialize progress tracking
+/// Steps 3 & 4: Scan for files to translate and initialize progress tracking
 fn step_3_4_select_files_and_init_progress(
     feature: &str,
 ) -> Result<(std::path::PathBuf, util::ProgressState)> {
     println!(
         "\n{}",
-        "Step 3: Select Files to Translate".bright_cyan().bold()
+        "Step 3: Scan Files to Translate".bright_cyan().bold()
     );
 
     // Get rust directory path
@@ -131,13 +131,13 @@ fn print_progress_status(already_processed: usize, total_rs_files: usize) {
         "\n{}",
         "Step 4: Initialize Project Progress".bright_cyan().bold()
     );
-    
+
     let progress_percentage = if total_rs_files > 0 {
         (already_processed as f64 / total_rs_files as f64) * 100.0
     } else {
         0.0
     };
-    
+
     println!(
         "{} {:.1}% ({}/{} files processed)",
         "Current progress:".cyan(),
