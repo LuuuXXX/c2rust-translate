@@ -2,6 +2,24 @@
 
 一个使用 c2rust 框架自动化 C 代码到 Rust 代码翻译的工具。
 
+## 项目架构
+
+本项目采用模块化设计，代码组织清晰：
+
+- **lib.rs** - 主工作流程编排
+- **hybrid_build.rs** - 混合构建命令管理
+- **initialization.rs** - 项目初始化和门禁验证
+- **verification.rs** - 构建验证和修复循环
+- **builder.rs** - Cargo 构建和命令执行
+- **translator.rs** - C 到 Rust 翻译
+- **analyzer.rs** - 代码分析集成
+- **interaction.rs** - 用户交互
+- **file_scanner.rs** - 文件发现和选择
+- **git.rs** - Git 版本控制
+- 其他辅助模块（logger, progress, diff_display 等）
+
+详细的架构说明请参见 [REFACTORING_SUMMARY.md](REFACTORING_SUMMARY.md)。
+
 ## 功能特性
 
 ### 核心功能

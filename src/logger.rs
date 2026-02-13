@@ -10,16 +10,20 @@ static GLOBAL_LOGGER: OnceLock<Mutex<Option<File>>> = OnceLock::new();
 pub fn init_logger() -> Result<()> {
     let project_root = crate::util::find_project_root()?;
     let output_dir = project_root.join(".c2rust").join("output");
-    
+
     // 如果输出目录不存在则创建
-    std::fs::create_dir_all(&output_dir)
-        .with_context(|| format!("Failed to create output directory: {}", output_dir.display()))?;
-    
+    std::fs::create_dir_all(&output_dir).with_context(|| {
+        format!(
+            "Failed to create output directory: {}",
+            output_dir.display()
+        )
+    })?;
+
     // 生成带毫秒的时间戳文件名以避免冲突
     let timestamp = Local::now().format("%Y%m%d_%H%M%S%.3f");
     let log_filename = format!("translate_{}.log", timestamp);
     let log_path = output_dir.join(&log_filename);
-    
+
     // 创建日志文件
     let (file, actual_path) = OpenOptions::new()
         .create_new(true)
@@ -42,10 +46,15 @@ pub fn init_logger() -> Result<()> {
             }
             anyhow::bail!("Failed to create log file: too many files with same timestamp")
         })
-        .with_context(|| format!("Failed to create log file in directory: {}", output_dir.display()))?;
-    
+        .with_context(|| {
+            format!(
+                "Failed to create log file in directory: {}",
+                output_dir.display()
+            )
+        })?;
+
     println!("Log file created: {}", actual_path.display());
-    
+
     // 初始化或更新全局日志记录器
     match GLOBAL_LOGGER.get() {
         Some(logger_mutex) => {
@@ -59,7 +68,7 @@ pub fn init_logger() -> Result<()> {
             GLOBAL_LOGGER.get_or_init(|| Mutex::new(Some(file)));
         }
     }
-    
+
     Ok(())
 }
 
