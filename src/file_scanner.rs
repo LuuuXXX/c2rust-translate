@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use colored::Colorize;
+use inquire::Text;
 use std::fs;
-use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
@@ -155,12 +155,13 @@ pub fn prompt_file_selection(files: &[&PathBuf], rust_dir: &Path) -> Result<Vec<
     println!("  - Enter numbers separated by commas (e.g., 1,3,5)");
     println!("  - Enter ranges (e.g., 1-3,5)");
     println!("  - Enter 'all' to process all files");
-    print!("\n{} ", "Your selection:".bright_green().bold());
-    io::stdout().flush()?;
+    println!();
 
-    // 读取用户输入
-    let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
+    // Use inquire::Text for better terminal handling (Delete key, arrow keys, etc.)
+    let input = Text::new("Your selection:")
+        .with_help_message("Enter file numbers/ranges or 'all'")
+        .prompt()
+        .context("Failed to get file selection")?;
 
     parse_file_selection(&input, files.len())
 }

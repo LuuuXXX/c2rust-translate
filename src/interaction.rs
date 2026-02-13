@@ -2,8 +2,7 @@
 
 use anyhow::{Context, Result};
 use colored::Colorize;
-use inquire::Select;
-use std::io::{self, Write};
+use inquire::{Select, Text};
 use std::path::Path;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -122,11 +121,28 @@ pub fn prompt_suggestion(require_input: bool) -> Result<Option<String>> {
         }
 
         println!("│");
-        print!("│ {} ", "Suggestion:".bright_yellow());
-        io::stdout().flush()?;
 
-        let mut suggestion = String::new();
-        io::stdin().read_line(&mut suggestion)?;
+        // Use inquire::Text instead of io::stdin().read_line() to properly handle terminal escape sequences
+        // including Delete key (\x1b[3~), Backspace, arrow keys, etc.
+        let prompt_text = "│ Suggestion: ";
+        let text_input = Text::new(prompt_text)
+            .with_help_message("Use Delete/Backspace to edit, Enter to submit")
+            .prompt();
+
+        let suggestion = match text_input {
+            Ok(s) => s,
+            Err(inquire::InquireError::OperationCanceled) => {
+                // User pressed Ctrl+C or ESC
+                if require_input {
+                    println!("│ {}", "Error: A suggestion is required to continue.".red());
+                    continue;
+                } else {
+                    println!("│ {}", "No suggestion provided.".yellow());
+                    return Ok(None);
+                }
+            }
+            Err(e) => return Err(e.into()),
+        };
 
         let trimmed = suggestion.trim().to_string();
 
