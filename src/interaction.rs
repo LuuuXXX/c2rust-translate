@@ -82,15 +82,15 @@ pub fn prompt_user_choice(failure_type: &str, require_suggestion: bool) -> Resul
         "Exit (abort the translation process)",
     ];
 
-    let choice_idx = Select::new("Select an option:", options.clone())
+    let choice = Select::new("Select an option:", options)
         .with_vim_mode(true)
         .prompt()
         .context("Failed to get user selection")?;
 
-    match options.iter().position(|&x| x == choice_idx) {
-        Some(0) => Ok(UserChoice::Continue),
-        Some(1) => Ok(UserChoice::ManualFix),
-        Some(2) => Ok(UserChoice::Exit),
+    match choice {
+        c if c == continue_text => Ok(UserChoice::Continue),
+        "Manual fix (edit the file directly)" => Ok(UserChoice::ManualFix),
+        "Exit (abort the translation process)" => Ok(UserChoice::Exit),
         _ => unreachable!(),
     }
 }
