@@ -6,12 +6,10 @@
 // Public modules - external API
 pub mod analyzer;
 pub mod builder;
-pub mod constants;
 pub mod file_scanner;
 pub mod git;
 pub mod hybrid_build;
 pub mod initialization;
-pub mod progress;
 pub mod translator;
 pub mod util;
 pub mod verification;
@@ -103,7 +101,7 @@ fn step_2_gate_verification(feature: &str, show_full_output: bool) -> Result<()>
 /// Steps 3 & 4: Select files to translate and initialize progress tracking
 fn step_3_4_select_files_and_init_progress(
     feature: &str,
-) -> Result<(std::path::PathBuf, progress::ProgressState)> {
+) -> Result<(std::path::PathBuf, util::ProgressState)> {
     println!(
         "\n{}",
         "Step 3: Select Files to Translate".bright_cyan().bold()
@@ -119,7 +117,7 @@ fn step_3_4_select_files_and_init_progress(
     let already_processed = total_rs_files.saturating_sub(initial_empty_count);
 
     let progress_state =
-        progress::ProgressState::with_initial_progress(total_rs_files, already_processed);
+        util::ProgressState::with_initial_progress(total_rs_files, already_processed);
 
     // Display progress
     print_progress_status(already_processed, total_rs_files);
@@ -153,7 +151,7 @@ fn print_progress_status(already_processed: usize, total_rs_files: usize) {
 fn step_5_execute_translation_loop(
     feature: &str,
     rust_dir: &Path,
-    progress_state: &mut progress::ProgressState,
+    progress_state: &mut util::ProgressState,
     allow_all: bool,
     max_fix_attempts: usize,
     show_full_output: bool,
@@ -218,7 +216,7 @@ fn process_selected_files(
     feature: &str,
     empty_rs_files: &[std::path::PathBuf],
     selected_indices: &[usize],
-    progress_state: &mut progress::ProgressState,
+    progress_state: &mut util::ProgressState,
     max_fix_attempts: usize,
     show_full_output: bool,
 ) -> Result<()> {
@@ -306,7 +304,7 @@ fn process_rs_file(
     max_fix_attempts: usize,
     show_full_output: bool,
 ) -> Result<()> {
-    use constants::MAX_TRANSLATION_ATTEMPTS;
+    use util::MAX_TRANSLATION_ATTEMPTS;
 
     for attempt_number in 1..=MAX_TRANSLATION_ATTEMPTS {
         let is_last_attempt = attempt_number == MAX_TRANSLATION_ATTEMPTS;
@@ -371,7 +369,7 @@ fn process_rs_file(
 fn print_attempt_header(attempt_number: usize, rs_file: &Path) {
     if attempt_number > 1 {
         let retry_number = attempt_number - 1;
-        let max_retries = constants::MAX_TRANSLATION_ATTEMPTS - 1;
+        let max_retries = util::MAX_TRANSLATION_ATTEMPTS - 1;
         println!(
             "\n{}",
             format!(

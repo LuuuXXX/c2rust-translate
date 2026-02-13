@@ -1,4 +1,4 @@
-use crate::{analyzer, builder, constants, diff_display, interaction, suggestion, translator};
+use crate::{analyzer, builder, diff_display, interaction, suggestion, translator};
 use anyhow::{Context, Result};
 use colored::Colorize;
 use std::path::Path;
@@ -152,7 +152,7 @@ fn handle_max_fix_attempts_reached(
 
 /// 处理直接重试选项
 fn handle_retry_directly(attempt_number: usize, is_last_attempt: bool) -> Result<bool> {
-    use constants::MAX_TRANSLATION_ATTEMPTS;
+    use crate::util::MAX_TRANSLATION_ATTEMPTS;
 
     println!("│");
     println!(
@@ -201,7 +201,7 @@ fn handle_add_suggestion(
     is_last_attempt: bool,
     attempt_number: usize,
 ) -> Result<bool> {
-    use constants::MAX_TRANSLATION_ATTEMPTS;
+    use crate::util::MAX_TRANSLATION_ATTEMPTS;
 
     println!("│");
     println!(
