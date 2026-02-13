@@ -16,7 +16,7 @@
 - **interaction.rs** - 用户交互
 - **file_scanner.rs** - 文件发现和选择
 - **git.rs** - Git 版本控制
-- 其他辅助模块（logger, progress, diff_display 等）
+- 其他辅助模块（progress, diff_display 等）
 
 详细的架构说明请参见 [REFACTORING_SUMMARY.md](REFACTORING_SUMMARY.md)。
 

@@ -166,9 +166,8 @@ src/
 - 零测试失败
 
 ### 集成测试
-✅ **4个集成测试全部通过**
+✅ **3个集成测试全部通过**
 - test_file_content_based_progress_tracking
-- test_logger_creates_output_directory
 - test_progress_numbering_across_rerun
 - test_progress_state_in_memory
 

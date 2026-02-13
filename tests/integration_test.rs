@@ -2,68 +2,6 @@ use serial_test::serial;
 use std::fs;
 use tempfile::TempDir;
 
-// RAII guard to restore current directory on drop
-struct CwdGuard {
-    original_dir: std::path::PathBuf,
-}
-
-impl CwdGuard {
-    fn new() -> std::io::Result<Self> {
-        Ok(Self {
-            original_dir: std::env::current_dir()?,
-        })
-    }
-}
-
-impl Drop for CwdGuard {
-    fn drop(&mut self) {
-        let _ = std::env::set_current_dir(&self.original_dir);
-    }
-}
-
-#[test]
-#[serial]
-fn test_logger_creates_output_directory() {
-    // Create a temporary directory structure
-    let temp_dir = TempDir::new().unwrap();
-    let project_root = temp_dir.path();
-
-    // Create the .c2rust directory (required by find_project_root)
-    fs::create_dir(project_root.join(".c2rust")).unwrap();
-
-    // Change to the project directory with RAII guard
-    let _guard = CwdGuard::new().unwrap();
-    std::env::set_current_dir(project_root).unwrap();
-
-    // Initialize logger
-    c2rust_translate::logger::init_logger().unwrap();
-
-    // Verify the output directory exists
-    let output_dir = project_root.join(".c2rust").join("output");
-    assert!(output_dir.exists(), "Output directory should exist");
-    assert!(output_dir.is_dir(), "Output path should be a directory");
-
-    // Verify at least one log file with the expected name pattern was created
-    let log_files: Vec<String> = fs::read_dir(&output_dir)
-        .unwrap()
-        .filter_map(|entry_res| entry_res.ok())
-        .filter(|entry| entry.file_type().map(|t| t.is_file()).unwrap_or(false))
-        .filter_map(|entry| {
-            let filename = entry.file_name();
-            let filename_str = filename.to_str()?;
-            if filename_str.starts_with("translate_") && filename_str.ends_with(".log") {
-                Some(filename_str.to_string())
-            } else {
-                None
-            }
-        })
-        .collect();
-    assert!(
-        !log_files.is_empty(),
-        "At least one log file matching 'translate_*.log' should exist"
-    );
-}
-
 #[test]
 #[serial]
 fn test_progress_state_in_memory() {
