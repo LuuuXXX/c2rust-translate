@@ -184,7 +184,7 @@ fn handle_retry_directly(attempt_number: usize, is_last_attempt: bool) -> Result
         "│ {}",
         "You chose: Retry directly without suggestion".bright_cyan()
     );
-    
+
     display_retry_directly_warning();
 
     // 清除旧建议

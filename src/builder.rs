@@ -869,7 +869,7 @@ pub(crate) fn handle_test_failure_interactive(
                 "│ {}",
                 "You chose: Retry directly without suggestion".bright_cyan()
             );
-            
+
             crate::verification::display_retry_directly_warning();
 
             // 清除旧建议
