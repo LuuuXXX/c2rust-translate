@@ -159,6 +159,24 @@ fn handle_retry_directly(attempt_number: usize, is_last_attempt: bool) -> Result
         "│ {}",
         "You chose: Retry directly without suggestion".bright_cyan()
     );
+    println!("│");
+    println!(
+        "│ {}",
+        "⚠ Warning: This will:".bright_yellow().bold()
+    );
+    println!(
+        "│ {}",
+        "  • Clear the current .rs file content".bright_yellow()
+    );
+    println!(
+        "│ {}",
+        "  • Re-translate from C source completely".bright_yellow()
+    );
+    println!(
+        "│ {}",
+        "  • Clear all previous suggestions".bright_yellow()
+    );
+    println!("│");
 
     // 清除旧建议
     suggestion::clear_suggestions()?;

@@ -246,7 +246,7 @@ pub fn prompt_test_failure_choice() -> Result<FailureChoice> {
     println!("│");
 
     let options = vec![
-        "Retry directly (without adding suggestion)",
+        "Retry directly (⚠ Will clear .rs file, re-translate from C, and clear suggestions)",
         "Add fix suggestion for AI to modify",
         "Manual fix (edit the file with VIM)",
         "Exit (abort the translation process)",
@@ -283,7 +283,7 @@ pub fn prompt_compile_failure_choice() -> Result<FailureChoice> {
     println!("│");
 
     let options = vec![
-        "Retry directly (without adding suggestion)",
+        "Retry directly (⚠ Will clear .rs file, re-translate from C, and clear suggestions)",
         "Add fix suggestion for AI to modify",
         "Manual fix (edit the file with VIM)",
         "Exit (abort the translation process)",
@@ -318,7 +318,7 @@ pub fn prompt_build_failure_choice() -> Result<FailureChoice> {
     println!("│");
 
     let options = vec![
-        "Retry directly (without adding suggestion)",
+        "Retry directly (⚠ Will clear .rs file, re-translate from C, and clear suggestions)",
         "Add fix suggestion for AI to modify",
         "Manual fix (edit the file with VIM)",
         "Exit (abort the translation process)",
