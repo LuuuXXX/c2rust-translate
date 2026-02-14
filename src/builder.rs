@@ -870,6 +870,8 @@ pub(crate) fn handle_test_failure_interactive(
                 "You chose: Retry directly without suggestion".bright_cyan()
             );
 
+            crate::verification::display_retry_directly_warning();
+
             // 清除旧建议
             suggestion::clear_suggestions()?;
 
@@ -1184,20 +1186,54 @@ pub fn run_full_build_and_test_interactive(
 
     // 2. 清理混合构建环境
     println!("│ {}", "→ Step 2/4: Cleaning hybrid build...".bright_blue());
-    c2rust_clean(feature)?;
+    match c2rust_clean(feature) {
+        Ok(_) => {
+            println!("│ {}", "  ✓ Clean successful".bright_green());
+        }
+        Err(e) => {
+            println!("│ {}", "  ✗ Clean failed".red());
+            println!("│");
+            println!("│ {}", "Error details:".red().bold());
+            println!("│ {}", format!("{:#}", e).red());
+            println!("│");
+            return Err(e).context("Clean failed in full build flow");
+        }
+    }
 
     // 3. 混合构建（不调用交互式处理器以避免递归）
     println!(
         "│ {}",
         "→ Step 3/4: Running hybrid build (C + Rust)...".bright_blue()
     );
-    c2rust_build(feature)?;
-    println!("│ {}", "  ✓ Hybrid build successful".bright_green());
+    match c2rust_build(feature) {
+        Ok(_) => {
+            println!("│ {}", "  ✓ Hybrid build successful".bright_green());
+        }
+        Err(e) => {
+            println!("│ {}", "  ✗ Hybrid build failed".red());
+            println!("│");
+            println!("│ {}", "Error details:".red().bold());
+            println!("│ {}", format!("{:#}", e).red());
+            println!("│");
+            return Err(e).context("Hybrid build failed in full build flow");
+        }
+    }
 
     // 4. 运行测试（不调用交互式处理器以避免递归）
     println!("│ {}", "→ Step 4/4: Running tests...".bright_blue());
-    c2rust_test(feature)?;
-    println!("│ {}", "  ✓ All tests passed".bright_green().bold());
+    match c2rust_test(feature) {
+        Ok(_) => {
+            println!("│ {}", "  ✓ All tests passed".bright_green().bold());
+        }
+        Err(e) => {
+            println!("│ {}", "  ✗ Tests failed".red());
+            println!("│");
+            println!("│ {}", "Error details:".red().bold());
+            println!("│ {}", format!("{:#}", e).red());
+            println!("│");
+            return Err(e).context("Tests failed in full build flow");
+        }
+    }
 
     Ok(())
 }

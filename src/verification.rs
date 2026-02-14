@@ -3,6 +3,28 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use std::path::Path;
 
+/// Display warning message about retry directly operation
+pub fn display_retry_directly_warning() {
+    println!("│");
+    println!(
+        "│ {}",
+        "⚠ Warning: This will:".bright_yellow().bold()
+    );
+    println!(
+        "│ {}",
+        "  • Clear the current .rs file content".bright_yellow()
+    );
+    println!(
+        "│ {}",
+        "  • Re-translate from C source completely".bright_yellow()
+    );
+    println!(
+        "│ {}",
+        "  • Clear all previous suggestions".bright_yellow()
+    );
+    println!("│");
+}
+
 /// 在循环中构建并修复错误
 ///
 /// 返回 Ok(true) 如果构建成功，Ok(false) 如果需要重试翻译
@@ -141,6 +163,9 @@ fn handle_max_fix_attempts_reached(
             &build_error,
             is_last_attempt,
             attempt_number,
+            file_name,
+            max_fix_attempts,
+            false, // show_full_output: false for now, could be passed as parameter if needed
         ),
         interaction::FailureChoice::ManualFix => handle_manual_fix(feature, file_type, rs_file),
         interaction::FailureChoice::Exit => Err(build_error).context(format!(
@@ -159,6 +184,8 @@ fn handle_retry_directly(attempt_number: usize, is_last_attempt: bool) -> Result
         "│ {}",
         "You chose: Retry directly without suggestion".bright_cyan()
     );
+
+    display_retry_directly_warning();
 
     // 清除旧建议
     suggestion::clear_suggestions()?;
@@ -197,9 +224,12 @@ fn handle_add_suggestion(
     feature: &str,
     file_type: &str,
     rs_file: &Path,
-    build_error: &anyhow::Error,
+    _build_error: &anyhow::Error,
     is_last_attempt: bool,
     attempt_number: usize,
+    file_name: &str,
+    max_fix_attempts: usize,
+    show_full_output: bool,
 ) -> Result<bool> {
     use crate::util::MAX_TRANSLATION_ATTEMPTS;
 
@@ -240,38 +270,39 @@ fn handle_add_suggestion(
         println!("│ {}", "✓ Retry scheduled".bright_green());
         Ok(false) // 发出重试信号
     } else {
-        // 没有更多翻译重试，但我们可以再次尝试修复
-        println!(
-            "│ {}",
-            "No translation retries remaining, attempting fix with new suggestion..."
-                .bright_yellow()
-        );
-
-        // 应用带有建议的修复
-        let error_msg = format!("{:#}", build_error);
-        translator::fix_translation_error(feature, file_type, rs_file, &error_msg, true, true)?;
-
-        // 再试一次构建和测试
+        // 没有更多翻译重试，但用户输入了新建议
+        // 不清空 .rs 文件，而是用新建议重新开始完整的修复循环
         println!("│");
         println!(
             "│ {}",
-            "Running full build and test after applying fix..."
-                .bright_blue()
-                .bold()
+            "No translation retries remaining.".bright_yellow()
         );
-        match builder::run_full_build_and_test_interactive(feature, file_type, rs_file) {
-            Ok(_) => Ok(true),
-            Err(e) => {
-                println!(
-                    "│ {}",
-                    "✗ Build or tests still failing after fix attempt".red()
-                );
-                Err(e).context(format!(
-                    "Build or tests failed after fix with suggestion for file {}",
-                    rs_file.display()
-                ))
-            }
-        }
+        println!(
+            "│ {}",
+            "Starting new fix-and-verify cycle with your suggestion...".bright_cyan()
+        );
+        println!(
+            "│ {}",
+            format!("(You will have {} fix attempts)", max_fix_attempts).bright_blue()
+        );
+        println!("│");
+
+        // 调用 build_and_fix_loop 重新开始完整的修复循环
+        // 注意：这里传入 is_last_attempt=true 表示这是最后一次翻译机会
+        // 但修复循环本身会有完整的 max_fix_attempts 次机会
+        let build_success = crate::verification::build_and_fix_loop(
+            feature,
+            file_type,
+            rs_file,
+            file_name,
+            &|op: &str| format!("Suggestion-based fix - {}", op),
+            true,  // is_last_attempt: 翻译层面确实是最后一次了
+            attempt_number,
+            max_fix_attempts,
+            show_full_output,
+        )?;
+
+        return Ok(build_success);
     }
 }
 
