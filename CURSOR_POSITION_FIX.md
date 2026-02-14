@@ -15,7 +15,7 @@ The issue was in the `inquire` library version 0.7.5, which had a bug in its cur
 
 ## Solution
 
-Updated the `inquire` library from version 0.7.5 to 0.9.3.
+Updated the `inquire` library from version 0.7.5 to 0.9.x (currently 0.9.3).
 
 ### Key Changes
 
@@ -38,7 +38,7 @@ This fix properly handles the display width calculation for:
 
 | Package | Old Version | New Version |
 |---------|-------------|-------------|
-| inquire | 0.7.5 | 0.9.3 |
+| inquire | 0.7.5 | 0.9.x (currently 0.9.3) |
 | crossterm | 0.25.0 | 0.29.0 |
 | unicode-width | 0.1.14 | 0.2.2 |
 
@@ -51,7 +51,7 @@ All existing tests continue to pass:
 cargo test
 ```
 
-Result: **67 tests passed, 0 failed**
+Result: **All tests passed**
 
 ### Manual Testing
 
@@ -76,10 +76,12 @@ Verify that:
 
 ### Security Verification
 
-All new dependencies have been checked against the GitHub Advisory Database:
-- ✓ No known security vulnerabilities
-- ✓ All dependencies are actively maintained
-- ✓ Using latest stable versions
+Dependencies can be verified using:
+```bash
+cargo audit
+```
+
+At the time of this update, no known security vulnerabilities were found in the GitHub Advisory Database for the updated dependencies.
 
 ## Impact Assessment
 
@@ -103,10 +105,10 @@ This update is fully backward compatible:
 
 ### Performance
 
-No performance impact observed:
-- Build time: Similar (~23 seconds)
-- Test execution: Similar (~0.01 seconds)
-- Runtime behavior: No noticeable changes
+No significant performance impact observed in local testing:
+- Build time: Similar to previous versions (measured on a developer laptop; exact times will vary by machine)
+- Test execution: Similar to previous versions (measured on a developer laptop; exact times will vary by machine)
+- Runtime behavior: No noticeable changes in interactive prompts during manual testing
 
 ## Acceptance Criteria Status
 
@@ -118,7 +120,7 @@ No performance impact observed:
 
 ## Additional Benefits
 
-By updating to inquire 0.9.3, we also gain:
+By updating to inquire 0.9.x, we also gain:
 
 1. **Better multi-line handling**: Fixed bug where inputs spanning 3+ lines would break text rendering
 2. **Improved autocomplete**: Fixed autocomplete suggestions not being updated after a suggestion is accepted

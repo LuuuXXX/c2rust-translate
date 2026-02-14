@@ -2,10 +2,10 @@
 ///
 /// This example demonstrates that the cursor positioning issue with mixed
 /// Chinese and English characters has been fixed by upgrading inquire from
-/// v0.7.5 to v0.9.3.
+/// v0.7.5 to 0.9.
 ///
 /// To run this example:
-/// ```
+/// ```bash
 /// cargo run --example test_cursor_position
 /// ```
 ///
