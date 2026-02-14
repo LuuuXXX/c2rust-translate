@@ -3,6 +3,28 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use std::path::Path;
 
+/// Display warning message about retry directly operation
+pub fn display_retry_directly_warning() {
+    println!("│");
+    println!(
+        "│ {}",
+        "⚠ Warning: This will:".bright_yellow().bold()
+    );
+    println!(
+        "│ {}",
+        "  • Clear the current .rs file content".bright_yellow()
+    );
+    println!(
+        "│ {}",
+        "  • Re-translate from C source completely".bright_yellow()
+    );
+    println!(
+        "│ {}",
+        "  • Clear all previous suggestions".bright_yellow()
+    );
+    println!("│");
+}
+
 /// 在循环中构建并修复错误
 ///
 /// 返回 Ok(true) 如果构建成功，Ok(false) 如果需要重试翻译
@@ -162,24 +184,8 @@ fn handle_retry_directly(attempt_number: usize, is_last_attempt: bool) -> Result
         "│ {}",
         "You chose: Retry directly without suggestion".bright_cyan()
     );
-    println!("│");
-    println!(
-        "│ {}",
-        "⚠ Warning: This will:".bright_yellow().bold()
-    );
-    println!(
-        "│ {}",
-        "  • Clear the current .rs file content".bright_yellow()
-    );
-    println!(
-        "│ {}",
-        "  • Re-translate from C source completely".bright_yellow()
-    );
-    println!(
-        "│ {}",
-        "  • Clear all previous suggestions".bright_yellow()
-    );
-    println!("│");
+    
+    display_retry_directly_warning();
 
     // 清除旧建议
     suggestion::clear_suggestions()?;

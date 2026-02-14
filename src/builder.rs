@@ -869,24 +869,8 @@ pub(crate) fn handle_test_failure_interactive(
                 "│ {}",
                 "You chose: Retry directly without suggestion".bright_cyan()
             );
-            println!("│");
-            println!(
-                "│ {}",
-                "⚠ Warning: This will:".bright_yellow().bold()
-            );
-            println!(
-                "│ {}",
-                "  • Clear the current .rs file content".bright_yellow()
-            );
-            println!(
-                "│ {}",
-                "  • Re-translate from C source completely".bright_yellow()
-            );
-            println!(
-                "│ {}",
-                "  • Clear all previous suggestions".bright_yellow()
-            );
-            println!("│");
+            
+            crate::verification::display_retry_directly_warning();
 
             // 清除旧建议
             suggestion::clear_suggestions()?;
