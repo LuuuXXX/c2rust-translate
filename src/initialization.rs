@@ -411,7 +411,6 @@ pub fn run_final_verification(feature: &str, show_full_output: bool) -> Result<(
     )
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
