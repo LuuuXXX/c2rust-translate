@@ -274,7 +274,6 @@ pub fn run_gate_verification(feature: &str, show_full_output: bool) -> Result<()
     Ok(())
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
