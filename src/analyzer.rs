@@ -24,6 +24,8 @@ pub fn initialize_feature(feature: &str) -> Result<()> {
 
 /// 为 feature 合并代码分析，将独立的 rs 文件合并为与 C 文件一一对应的大文件
 pub fn merge_code_analysis(feature: &str) -> Result<()> {
+    println!("Running code_analyse --merge --feature {}", feature);
+
     let project_root = util::find_project_root()?;
 
     let output = Command::new("code_analyse")

@@ -210,16 +210,7 @@ fn step_6_merge_and_verify(feature: &str, show_full_output: bool) -> Result<()> 
     analyzer::merge_code_analysis(feature)?;
     println!("│ {}", "✓ Files merged successfully".bright_green());
 
-    // 2. Commit merged files
-    println!("│");
-    println!("│ {}", "Committing merged files...".bright_blue().bold());
-    git::git_commit(
-        &format!("Merge translated files for feature: {}", feature),
-        feature,
-    )?;
-    println!("│ {}", "✓ Changes committed".bright_green());
-
-    // 3. Run full verification (build + test)
+    // 2. Run full verification (build + test), which commits on success
     println!("│");
     println!(
         "│ {}",
@@ -227,7 +218,7 @@ fn step_6_merge_and_verify(feature: &str, show_full_output: bool) -> Result<()> 
             .bright_blue()
             .bold()
     );
-    initialization::run_gate_verification(feature, show_full_output)?;
+    initialization::run_final_verification(feature, show_full_output)?;
     println!("│ {}", "✓ Verification complete".bright_green());
 
     println!(

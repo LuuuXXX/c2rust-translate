@@ -274,6 +274,156 @@ pub fn run_gate_verification(feature: &str, show_full_output: bool) -> Result<()
     Ok(())
 }
 
+/// 运行最终验证流程（合并后）
+///
+/// 与 run_gate_verification 相同的验证步骤，但使用 Step 6.x 标签，适用于合并后的最终验证：
+/// 1. Cargo 构建
+/// 2. 代码分析同步
+/// 3. 混合构建清除
+/// 4. 混合构建构建
+/// 5. 混合构建测试
+/// 6. 如果全部通过，提交到 git
+pub fn run_final_verification(feature: &str, show_full_output: bool) -> Result<()> {
+    println!(
+        "\n{}",
+        "═══ Final Verification (Post-Merge) ═══"
+            .bright_magenta()
+            .bold()
+    );
+
+    // 6.1 Cargo Build
+    println!(
+        "\n{}",
+        "Step 6.1: Cargo Build Verification".bright_cyan().bold()
+    );
+    println!("{}", "Building project...".bright_blue().bold());
+    match builder::cargo_build(feature, show_full_output) {
+        Ok(_) => {
+            println!("{}", "✓ Build successful!".bright_green().bold());
+        }
+        Err(e) => {
+            println!("{}", "✗ Build failed!".red().bold());
+            let choice = interaction::prompt_user_choice("Final build failure", false)?;
+            match choice {
+                interaction::UserChoice::Continue => {
+                    println!(
+                        "│ {}",
+                        "Continuing despite build failure.".yellow()
+                    );
+                    return Ok(());
+                }
+                interaction::UserChoice::ManualFix | interaction::UserChoice::Exit => {
+                    return Err(e).context("Build failed during final verification");
+                }
+            }
+        }
+    }
+
+    // 6.2 代码分析同步
+    println!("\n{}", "Step 6.2: Code Analysis Sync".bright_cyan().bold());
+    println!("{}", "Updating code analysis...".bright_blue());
+    analyzer::update_code_analysis(feature)?;
+    println!("{}", "✓ Code analysis updated".bright_green());
+
+    // 6.3 混合构建清除
+    println!("\n{}", "Step 6.3: Hybrid Build Clean".bright_cyan().bold());
+    match hybrid_build::execute_hybrid_build_command(
+        feature,
+        hybrid_build::HybridCommandType::Clean,
+    ) {
+        Ok(_) => println!("{}", "✓ Hybrid clean successful".bright_green()),
+        Err(e) => {
+            println!("{}", "✗ Hybrid clean failed!".red().bold());
+            let choice = interaction::prompt_user_choice("Hybrid clean failure", false)?;
+            match choice {
+                interaction::UserChoice::Continue => {
+                    println!(
+                        "{}",
+                        "Hybrid clean failure accepted, stopping verification before commit."
+                            .yellow()
+                    );
+                    return Ok(());
+                }
+                interaction::UserChoice::ManualFix | interaction::UserChoice::Exit => {
+                    return Err(e).context("Hybrid clean failed during final verification");
+                }
+            }
+        }
+    }
+
+    // 6.4 混合构建构建
+    println!("\n{}", "Step 6.4: Hybrid Build".bright_cyan().bold());
+    match hybrid_build::execute_hybrid_build_command(
+        feature,
+        hybrid_build::HybridCommandType::Build,
+    ) {
+        Ok(_) => println!("{}", "✓ Hybrid build successful".bright_green()),
+        Err(e) => {
+            println!("{}", "✗ Hybrid build failed!".red().bold());
+            let choice = interaction::prompt_user_choice("Hybrid build failure", false)?;
+            match choice {
+                interaction::UserChoice::Continue => {
+                    println!(
+                        "{}",
+                        "Hybrid build failure accepted, stopping verification before commit."
+                            .yellow()
+                    );
+                    return Ok(());
+                }
+                interaction::UserChoice::ManualFix | interaction::UserChoice::Exit => {
+                    return Err(e).context("Hybrid build failed during final verification");
+                }
+            }
+        }
+    }
+
+    // 6.5 混合构建测试
+    println!("\n{}", "Step 6.5: Hybrid Build Test".bright_cyan().bold());
+    match hybrid_build::execute_hybrid_build_command(
+        feature,
+        hybrid_build::HybridCommandType::Test,
+    ) {
+        Ok(_) => println!("{}", "✓ Hybrid test successful".bright_green()),
+        Err(e) => {
+            println!("{}", "✗ Hybrid test failed!".red().bold());
+            let choice = interaction::prompt_user_choice("Hybrid test failure", false)?;
+            match choice {
+                interaction::UserChoice::Continue => {
+                    println!(
+                        "{}",
+                        "Hybrid test failure accepted, stopping verification before commit."
+                            .yellow()
+                    );
+                    return Ok(());
+                }
+                interaction::UserChoice::ManualFix | interaction::UserChoice::Exit => {
+                    return Err(e).context("Hybrid test failed during final verification");
+                }
+            }
+        }
+    }
+
+    // 6.6 最终验证通过提交
+    println!(
+        "\n{}",
+        "Step 6.6: Final Verification Passed - Committing"
+            .bright_cyan()
+            .bold()
+    );
+    git::git_commit(
+        &format!("Final verification passed for {}", feature),
+        feature,
+    )?;
+    println!(
+        "{}",
+        "✓ Final verification complete and committed"
+            .bright_green()
+            .bold()
+    );
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
