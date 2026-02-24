@@ -310,18 +310,34 @@ pub fn prompt_compile_failure_choice() -> Result<FailureChoice> {
 
 /// 翻译完成后询问用户是否执行合并操作
 pub fn prompt_merge_confirmation() -> Result<bool> {
-    println!();
-    println!("{}", "✓ 翻译完成！".bright_green().bold());
-    println!();
-    println!("{}", "所有文件已完成翻译。您可以选择是否执行合并操作。".bright_white());
-    println!();
-    println!("{}", "⚠️  注意：由于文件是分开翻译的，合并后可能会存在以下问题：".yellow().bold());
-    println!("{}", "  - 跨文件引用不一致".yellow());
-    println!("{}", "  - 术语翻译不统一".yellow());
-    println!("{}", "  - 上下文衔接问题".yellow());
-    println!();
-    println!("{}", "建议在合并后仔细检查并手动修复可能出现的错误。".bright_white());
-    println!();
+    // 在自动接受模式下，默认执行合并操作，无需提示用户
+    if is_auto_accept_mode() {
+        return Ok(true);
+    }
+
+    println!("│");
+    println!("│ {}", "✓ 翻译完成！".bright_green().bold());
+    println!("│");
+    println!(
+        "│ {}",
+        "所有文件已完成翻译。您可以选择是否执行合并操作。".bright_white()
+    );
+    println!("│");
+    println!(
+        "│ {}",
+        "⚠️  注意：由于文件是分开翻译的，合并后可能会存在以下问题："
+            .yellow()
+            .bold()
+    );
+    println!("│ {}", "  - 跨文件引用不一致".yellow());
+    println!("│ {}", "  - 术语翻译不统一".yellow());
+    println!("│ {}", "  - 上下文衔接问题".yellow());
+    println!("│");
+    println!(
+        "│ {}",
+        "建议在合并后仔细检查并手动修复可能出现的错误。".bright_white()
+    );
+    println!("│");
 
     let options = vec!["Yes (执行合并)", "No (跳过合并)"];
 
@@ -425,5 +441,26 @@ mod tests {
 
         // 清理 - 确保下次测试时禁用
         disable_auto_accept_mode();
+    }
+
+    #[test]
+    #[serial]
+    fn test_prompt_merge_confirmation_auto_accept() {
+        // 在自动接受模式下应自动返回 true，无需用户交互
+        disable_auto_accept_mode();
+        enable_auto_accept_mode();
+        let result = prompt_merge_confirmation();
+        disable_auto_accept_mode();
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+    }
+
+    /// 基本测试：在交互式环境中手动验证 prompt_merge_confirmation 可以调用
+    ///
+    /// 此测试标记为 ignored，因为它需要用户的交互式终端输入。
+    #[test]
+    #[ignore]
+    fn test_prompt_merge_confirmation_interactive() {
+        let _result: Result<bool> = prompt_merge_confirmation();
     }
 }

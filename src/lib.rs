@@ -78,8 +78,18 @@ pub fn translate_feature(
         return Err(e);
     }
 
-    // Prompt user before merging
-    let should_merge = interaction::prompt_merge_confirmation()?;
+    // Prompt user before merging (unless allow_all is enabled)
+    let should_merge = if allow_all {
+        true
+    } else {
+        match interaction::prompt_merge_confirmation() {
+            Ok(value) => value,
+            Err(e) => {
+                stats.print_summary();
+                return Err(e);
+            }
+        }
+    };
 
     if !should_merge {
         println!(
