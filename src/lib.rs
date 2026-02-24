@@ -390,6 +390,9 @@ fn process_rs_file(
             show_full_output,
         )?;
 
+        // These counters are cumulative across all translation attempts for this file.
+        // For example, if attempt 1 uses 5 fix attempts and attempt 2 uses 3, the recorded
+        // total_fix_attempts will be 8, and had_restart will be true if any attempt restarted.
         total_fix_attempts += fix_attempts;
         had_restart |= did_restart;
 
