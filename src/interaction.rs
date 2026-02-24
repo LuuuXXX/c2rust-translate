@@ -308,6 +308,31 @@ pub fn prompt_compile_failure_choice() -> Result<FailureChoice> {
     }
 }
 
+/// 翻译完成后询问用户是否执行合并操作
+pub fn prompt_merge_confirmation() -> Result<bool> {
+    println!();
+    println!("{}", "✓ 翻译完成！".bright_green().bold());
+    println!();
+    println!("{}", "所有文件已完成翻译。您可以选择是否执行合并操作。".bright_white());
+    println!();
+    println!("{}", "⚠️  注意：由于文件是分开翻译的，合并后可能会存在以下问题：".yellow().bold());
+    println!("{}", "  - 跨文件引用不一致".yellow());
+    println!("{}", "  - 术语翻译不统一".yellow());
+    println!("{}", "  - 上下文衔接问题".yellow());
+    println!();
+    println!("{}", "建议在合并后仔细检查并手动修复可能出现的错误。".bright_white());
+    println!();
+
+    let options = vec!["Yes (执行合并)", "No (跳过合并)"];
+
+    let choice = Select::new("是否现在执行合并？[Y/n]", options)
+        .with_vim_mode(true)
+        .prompt()
+        .context("Failed to get user selection")?;
+
+    Ok(choice == "Yes (执行合并)")
+}
+
 /// 构建失败时提示用户
 pub fn prompt_build_failure_choice() -> Result<FailureChoice> {
     println!("│");
