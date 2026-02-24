@@ -62,6 +62,7 @@ impl TranslationStats {
     ) {
         self.total_files += 1;
 
+        debug_assert!(attempts > 0, "attempts must be at least 1, got: {}", attempts);
         match attempts {
             1 => self.success_first_try += 1,
             2 => self.success_retry_1 += 1,
@@ -90,6 +91,12 @@ impl TranslationStats {
         println!("\n{}", "═".repeat(80).bright_cyan());
         println!("{}", "📊 Translation Statistics Summary".bright_cyan().bold());
         println!("{}", "═".repeat(80).bright_cyan());
+
+        if self.total_files == 0 {
+            println!("\n{}", "No files were successfully translated.".yellow());
+            println!("\n{}", "═".repeat(80).bright_cyan());
+            return;
+        }
 
         // 总体统计
         println!("\n{}", "Overall Statistics:".bright_white().bold());

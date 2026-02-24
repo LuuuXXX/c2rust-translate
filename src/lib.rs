@@ -62,7 +62,7 @@ pub fn translate_feature(
 
     // Step 5: Execute translation loop
     let mut stats = util::TranslationStats::new();
-    step_5_execute_translation_loop(
+    let step5_result = step_5_execute_translation_loop(
         feature,
         &rust_dir,
         &mut progress_state,
@@ -70,15 +70,21 @@ pub fn translate_feature(
         max_fix_attempts,
         show_full_output,
         &mut stats,
-    )?;
+    );
+
+    // Print summary even if step 5 or step 6 fails, so progress is not lost
+    if let Err(e) = step5_result {
+        stats.print_summary();
+        return Err(e);
+    }
 
     // Step 6: Merge translated files and verify
-    step_6_merge_and_verify(feature, show_full_output)?;
+    let step6_result = step_6_merge_and_verify(feature, show_full_output);
 
-    // Print statistics summary
+    // Print statistics summary (always, even on step 6 failure)
     stats.print_summary();
 
-    Ok(())
+    step6_result
 }
 
 // ============================================================================

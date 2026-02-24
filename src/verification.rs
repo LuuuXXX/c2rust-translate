@@ -66,7 +66,7 @@ where
             }
             Err(build_error) => {
                 if attempt == max_fix_attempts {
-                    let (build_successful, had_restart) = handle_max_fix_attempts_reached(
+                    let (build_successful, extra_fix_attempts, had_restart) = handle_max_fix_attempts_reached(
                         build_error,
                         file_name,
                         rs_file,
@@ -76,7 +76,7 @@ where
                         feature,
                         file_type,
                     )?;
-                    return Ok((build_successful, fix_attempts, had_restart));
+                    return Ok((build_successful, fix_attempts + extra_fix_attempts, had_restart));
                 } else {
                     // Use lib.rs apply_error_fix instead of local duplicate
                     crate::apply_error_fix(
@@ -102,9 +102,9 @@ where
 
 /// 处理达到最大修复尝试次数的情况
 ///
-/// 返回 (build_successful, had_restart)：
-/// - Ok((true, _)) 如果处理应继续而不重试翻译
-/// - Ok((false, had_restart)) 如果应重试翻译
+/// 返回 (build_successful, extra_fix_attempts, had_restart)：
+/// - Ok((true, _, _)) 如果处理应继续而不重试翻译
+/// - Ok((false, _, had_restart)) 如果应重试翻译
 fn handle_max_fix_attempts_reached(
     build_error: anyhow::Error,
     file_name: &str,
@@ -114,7 +114,7 @@ fn handle_max_fix_attempts_reached(
     max_fix_attempts: usize,
     feature: &str,
     file_type: &str,
-) -> Result<(bool, bool)> {
+) -> Result<(bool, usize, bool)> {
     println!("│");
     println!("│ {}", "⚠ Maximum fix attempts reached!".red().bold());
     println!(
@@ -182,7 +182,7 @@ fn handle_max_fix_attempts_reached(
 }
 
 /// 处理直接重试选项
-fn handle_retry_directly(attempt_number: usize, is_last_attempt: bool) -> Result<(bool, bool)> {
+fn handle_retry_directly(attempt_number: usize, is_last_attempt: bool) -> Result<(bool, usize, bool)> {
     use crate::util::MAX_TRANSLATION_ATTEMPTS;
 
     println!("│");
@@ -222,7 +222,7 @@ fn handle_retry_directly(attempt_number: usize, is_last_attempt: bool) -> Result
         "Note: The translator will overwrite the existing file content.".bright_blue()
     );
     println!("│ {}", "✓ Retry scheduled".bright_green());
-    Ok((false, true)) // 发出重试信号，且使用了重来功能
+    Ok((false, 0, true)) // 发出重试信号，且使用了重来功能
 }
 
 /// 处理添加建议选项
@@ -236,7 +236,7 @@ fn handle_add_suggestion(
     file_name: &str,
     max_fix_attempts: usize,
     show_full_output: bool,
-) -> Result<(bool, bool)> {
+) -> Result<(bool, usize, bool)> {
     use crate::util::MAX_TRANSLATION_ATTEMPTS;
 
     println!("│");
@@ -274,7 +274,7 @@ fn handle_add_suggestion(
             "Note: The translator will overwrite the existing file content.".bright_blue()
         );
         println!("│ {}", "✓ Retry scheduled".bright_green());
-        Ok((false, false)) // 发出重试信号，未使用重来功能
+        Ok((false, 0, false)) // 发出重试信号，未使用重来功能
     } else {
         // 没有更多翻译重试，但用户输入了新建议
         // 不清空 .rs 文件，而是用新建议重新开始完整的修复循环
@@ -296,7 +296,8 @@ fn handle_add_suggestion(
         // 调用 build_and_fix_loop 重新开始完整的修复循环
         // 注意：这里传入 is_last_attempt=true 表示这是最后一次翻译机会
         // 但修复循环本身会有完整的 max_fix_attempts 次机会
-        let (build_successful, _, had_restart) = crate::verification::build_and_fix_loop(
+        // 第二个返回值是递归循环中消耗的 fix_attempts 次数，由调用方 process_rs_file 聚合统计。
+        let (build_successful, recursive_fix_attempts, had_restart) = crate::verification::build_and_fix_loop(
             feature,
             file_type,
             rs_file,
@@ -308,12 +309,12 @@ fn handle_add_suggestion(
             show_full_output,
         )?;
 
-        Ok((build_successful, had_restart))
+        Ok((build_successful, recursive_fix_attempts, had_restart))
     }
 }
 
 /// 处理手动修复选项
-fn handle_manual_fix(feature: &str, file_type: &str, rs_file: &Path) -> Result<(bool, bool)> {
+fn handle_manual_fix(feature: &str, file_type: &str, rs_file: &Path) -> Result<(bool, usize, bool)> {
     println!("│");
     println!("│ {}", "You chose: Manual fix".bright_cyan());
 
@@ -337,7 +338,7 @@ fn handle_manual_fix(feature: &str, file_type: &str, rs_file: &Path) -> Result<(
                                 .bright_green()
                                 .bold()
                         );
-                        return Ok((true, false));
+                        return Ok((true, 0, false));
                     }
                     Err(e) => {
                         println!(
