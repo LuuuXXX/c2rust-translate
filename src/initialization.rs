@@ -99,6 +99,11 @@ pub fn gate_cargo_build(feature: &str, show_full_output: bool) -> Result<()> {
                     .yellow()
             );
 
+            println!();
+            println!("{}", "Error details:".red().bold());
+            println!("{}", format!("{:#}", e).red());
+            println!();
+
             // 提供交互式处理
             let choice = interaction::prompt_user_choice("Initial build failure", false)?;
 
@@ -142,6 +147,11 @@ pub fn gate_hybrid_clean(feature: &str) -> Result<bool> {
         Err(e) => {
             println!("{}", "✗ Hybrid clean failed!".red().bold());
 
+            println!();
+            println!("{}", "Error details:".red().bold());
+            println!("{}", format!("{:#}", e).red());
+            println!();
+
             // 提供交互式处理
             let choice = interaction::prompt_user_choice("Hybrid clean failure", false)?;
 
@@ -170,6 +180,11 @@ pub fn gate_hybrid_build(feature: &str) -> Result<bool> {
         Err(e) => {
             println!("{}", "✗ Hybrid build failed!".red().bold());
 
+            println!();
+            println!("{}", "Error details:".red().bold());
+            println!("{}", format!("{:#}", e).red());
+            println!();
+
             // 提供交互式处理
             let choice = interaction::prompt_user_choice("Hybrid build failure", false)?;
 
@@ -195,6 +210,11 @@ pub fn gate_hybrid_test(feature: &str) -> Result<bool> {
         }
         Err(e) => {
             println!("{}", "✗ Hybrid test failed!".red().bold());
+
+            println!();
+            println!("{}", "Error details:".red().bold());
+            println!("{}", format!("{:#}", e).red());
+            println!();
 
             // 提供交互式处理
             let choice = interaction::prompt_user_choice("Hybrid test failure", false)?;
