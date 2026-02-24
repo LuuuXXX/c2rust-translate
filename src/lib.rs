@@ -26,12 +26,13 @@ use std::path::Path;
 
 /// Main translation workflow for a feature
 ///
-/// Executes the complete C to Rust translation workflow in 5 steps:
+/// Executes the complete C to Rust translation workflow in 6 steps:
 /// 1. Find project root and initialize feature directory
 /// 2. Run gate verification (cargo build, code analysis, hybrid build/test)
 /// 3. Scan for files to translate and initialize progress tracking
 /// 4. Display current progress status
 /// 5. Execute translation loop (select and process files interactively or auto-all)
+/// 6. Merge translated files and run final verification
 ///
 /// # Arguments
 /// * `feature` - Feature name (must not contain path separators)
@@ -68,6 +69,9 @@ pub fn translate_feature(
         max_fix_attempts,
         show_full_output,
     )?;
+
+    // Step 6: Merge translated files and verify
+    step_6_merge_and_verify(feature, show_full_output)?;
 
     Ok(())
 }
@@ -189,6 +193,26 @@ fn step_5_execute_translation_loop(
     }
 
     Ok(())
+}
+
+/// Step 6: Merge translated files and run final verification
+fn step_6_merge_and_verify(feature: &str, show_full_output: bool) -> Result<()> {
+    println!(
+        "\n{}",
+        "Step 6: Merge Files and Final Verification"
+            .bright_cyan()
+            .bold()
+    );
+
+    // 1. Merge translated files
+    println!("│");
+    println!("│ {}", "Merging translated files...".bright_blue().bold());
+    analyzer::merge_code_analysis(feature)?;
+    println!("│ {}", "✓ Files merged successfully".bright_green());
+
+    // 2. Run full verification (build + test), which commits on success
+    println!("│");
+    initialization::run_gate_verification(feature, show_full_output)
 }
 
 // ============================================================================
