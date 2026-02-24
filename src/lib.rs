@@ -78,6 +78,28 @@ pub fn translate_feature(
         return Err(e);
     }
 
+    // Prompt user before merging (unless allow_all is enabled)
+    let should_merge = if allow_all {
+        true
+    } else {
+        match interaction::prompt_merge_confirmation() {
+            Ok(value) => value,
+            Err(e) => {
+                stats.print_summary();
+                return Err(e);
+            }
+        }
+    };
+
+    if !should_merge {
+        println!(
+            "{}",
+            "│ 跳过合并操作。翻译已完成，您可以稍后手动执行合并。".bright_yellow()
+        );
+        stats.print_summary();
+        return Ok(());
+    }
+
     // Step 6: Merge translated files and verify
     let step6_result = step_6_merge_and_verify(feature, show_full_output);
 
