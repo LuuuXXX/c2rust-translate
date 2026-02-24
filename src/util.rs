@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 // ============================================================================
@@ -13,6 +14,180 @@ pub const CODE_PREVIEW_LINES: usize = 15;
 
 /// 从错误消息预览的行数
 pub const ERROR_PREVIEW_LINES: usize = 10;
+
+// ============================================================================
+// Translation Statistics Tracking
+// ============================================================================
+
+#[derive(Debug, Clone)]
+pub struct FileAttemptStat {
+    /// 翻译尝试次数（1-3）
+    pub translation_attempts: usize,
+    /// 修复尝试次数（每次翻译的修复次数总和）
+    pub fix_attempts: usize,
+    /// 是否使用了"重来"功能
+    pub had_restart: bool,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct TranslationStats {
+    /// 总文件数
+    pub total_files: usize,
+    /// 一次性通过的文件数
+    pub success_first_try: usize,
+    /// 重试1次后成功的文件数
+    pub success_retry_1: usize,
+    /// 重试2次后成功的文件数
+    pub success_retry_2: usize,
+    /// 重试3次及以上后成功的文件数
+    pub success_retry_3_plus: usize,
+    /// 需要"重来"（RetryDirectly）的文件数
+    pub restart_count: usize,
+    /// 每个文件的详细统计（文件名 -> 尝试次数）
+    pub file_attempts: HashMap<String, FileAttemptStat>,
+}
+
+impl TranslationStats {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 记录文件翻译完成
+    pub fn record_file_completion(
+        &mut self,
+        file_name: String,
+        attempts: usize,
+        had_restart: bool,
+        fix_attempts: usize,
+    ) {
+        self.total_files += 1;
+
+        match attempts {
+            1 => self.success_first_try += 1,
+            2 => self.success_retry_1 += 1,
+            3 => self.success_retry_2 += 1,
+            _ => self.success_retry_3_plus += 1,
+        }
+
+        if had_restart {
+            self.restart_count += 1;
+        }
+
+        self.file_attempts.insert(
+            file_name,
+            FileAttemptStat {
+                translation_attempts: attempts,
+                fix_attempts,
+                had_restart,
+            },
+        );
+    }
+
+    /// 打印统计报告
+    pub fn print_summary(&self) {
+        use colored::Colorize;
+
+        println!("\n{}", "═".repeat(80).bright_cyan());
+        println!("{}", "📊 Translation Statistics Summary".bright_cyan().bold());
+        println!("{}", "═".repeat(80).bright_cyan());
+
+        // 总体统计
+        println!("\n{}", "Overall Statistics:".bright_white().bold());
+        println!(
+            "  Total files processed:       {}",
+            self.total_files.to_string().bright_green()
+        );
+        println!(
+            "  Files with restart:          {}",
+            self.restart_count.to_string().bright_yellow()
+        );
+
+        // 计算总重试次数（translation_attempts 始终 >= 1，saturating_sub 防御性处理）
+        let total_retries: usize = self
+            .file_attempts
+            .values()
+            .map(|stat| stat.translation_attempts.saturating_sub(1))
+            .sum();
+        println!(
+            "  Total retries:               {}",
+            total_retries.to_string().bright_yellow()
+        );
+
+        // 按重试次数分类
+        println!("\n{}", "Success Rate by Attempts:".bright_white().bold());
+        println!(
+            "  ✓ First try (no retry):      {} ({:.1}%)",
+            self.success_first_try.to_string().bright_green(),
+            self.percentage(self.success_first_try)
+        );
+        println!(
+            "  ↻ Retry 1 time:              {} ({:.1}%)",
+            self.success_retry_1.to_string().bright_cyan(),
+            self.percentage(self.success_retry_1)
+        );
+        println!(
+            "  ↻ Retry 2 times:             {} ({:.1}%)",
+            self.success_retry_2.to_string().bright_yellow(),
+            self.percentage(self.success_retry_2)
+        );
+        println!(
+            "  ↻ Retry 3+ times:            {} ({:.1}%)",
+            self.success_retry_3_plus.to_string().bright_red(),
+            self.percentage(self.success_retry_3_plus)
+        );
+
+        // 详细文件列表
+        if !self.file_attempts.is_empty() {
+            println!(
+                "\n{}",
+                "Detailed File Statistics (Top 10 by translation attempts):"
+                    .bright_white()
+                    .bold()
+            );
+            let mut files: Vec<_> = self.file_attempts.iter().collect();
+            files.sort_by(|a, b| {
+                b.1.translation_attempts
+                    .cmp(&a.1.translation_attempts)
+                    .then_with(|| b.1.fix_attempts.cmp(&a.1.fix_attempts))
+            });
+
+            for (file_name, stat) in files.iter().take(10) {
+                let restart_indicator = if stat.had_restart {
+                    " [RESTART]".bright_red().to_string()
+                } else {
+                    String::new()
+                };
+                println!(
+                    "  {} - {} translation attempt(s), {} fix attempt(s){}",
+                    file_name.bright_white(),
+                    stat.translation_attempts.to_string().bright_cyan(),
+                    stat.fix_attempts.to_string().bright_yellow(),
+                    restart_indicator
+                );
+            }
+
+            if self.file_attempts.len() > 10 {
+                println!("  ... and {} more files", self.file_attempts.len() - 10);
+            }
+        }
+
+        println!("\n{}", "═".repeat(80).bright_cyan());
+        println!(
+            "{}",
+            "💡 Tip: Use these statistics to evaluate and select the optimal LLM model"
+                .bright_blue()
+        );
+        println!("{}", "═".repeat(80).bright_cyan());
+    }
+
+    fn percentage(&self, count: usize) -> f64 {
+        if self.total_files == 0 {
+            0.0
+        } else {
+            (count as f64 / self.total_files as f64) * 100.0
+        }
+    }
+}
 
 // ============================================================================
 // Progress Tracking
@@ -285,5 +460,113 @@ mod tests {
         let state2 = ProgressState::with_initial_progress(10, 10);
         assert_eq!(state2.processed_count, 10);
         assert_eq!(state2.get_current_position(), 11);
+    }
+
+    // ========================================================================
+    // TranslationStats Tests
+    // ========================================================================
+
+    #[test]
+    fn test_translation_stats_default() {
+        let stats = TranslationStats::default();
+        assert_eq!(stats.total_files, 0);
+        assert_eq!(stats.success_first_try, 0);
+        assert_eq!(stats.success_retry_1, 0);
+        assert_eq!(stats.success_retry_2, 0);
+        assert_eq!(stats.success_retry_3_plus, 0);
+        assert_eq!(stats.restart_count, 0);
+        assert!(stats.file_attempts.is_empty());
+    }
+
+    #[test]
+    fn test_translation_stats_percentage_empty() {
+        let stats = TranslationStats::new();
+        assert_eq!(stats.percentage(0), 0.0);
+        assert_eq!(stats.percentage(5), 0.0);
+    }
+
+    #[test]
+    fn test_record_file_completion_first_try() {
+        let mut stats = TranslationStats::new();
+        stats.record_file_completion("foo.rs".to_string(), 1, false, 0);
+
+        assert_eq!(stats.total_files, 1);
+        assert_eq!(stats.success_first_try, 1);
+        assert_eq!(stats.success_retry_1, 0);
+        assert_eq!(stats.restart_count, 0);
+
+        let entry = stats.file_attempts.get("foo.rs").unwrap();
+        assert_eq!(entry.translation_attempts, 1);
+        assert_eq!(entry.fix_attempts, 0);
+        assert!(!entry.had_restart);
+    }
+
+    #[test]
+    fn test_record_file_completion_retry_1() {
+        let mut stats = TranslationStats::new();
+        stats.record_file_completion("bar.rs".to_string(), 2, false, 3);
+
+        assert_eq!(stats.total_files, 1);
+        assert_eq!(stats.success_first_try, 0);
+        assert_eq!(stats.success_retry_1, 1);
+
+        let entry = stats.file_attempts.get("bar.rs").unwrap();
+        assert_eq!(entry.translation_attempts, 2);
+        assert_eq!(entry.fix_attempts, 3);
+    }
+
+    #[test]
+    fn test_record_file_completion_retry_2() {
+        let mut stats = TranslationStats::new();
+        stats.record_file_completion("baz.rs".to_string(), 3, false, 5);
+
+        assert_eq!(stats.success_retry_2, 1);
+    }
+
+    #[test]
+    fn test_record_file_completion_retry_3_plus() {
+        let mut stats = TranslationStats::new();
+        stats.record_file_completion("qux.rs".to_string(), 4, false, 8);
+
+        assert_eq!(stats.success_retry_3_plus, 1);
+    }
+
+    #[test]
+    fn test_record_file_completion_with_restart() {
+        let mut stats = TranslationStats::new();
+        stats.record_file_completion("restart.rs".to_string(), 2, true, 2);
+
+        assert_eq!(stats.restart_count, 1);
+
+        let entry = stats.file_attempts.get("restart.rs").unwrap();
+        assert!(entry.had_restart);
+    }
+
+    #[test]
+    fn test_translation_stats_percentage() {
+        let mut stats = TranslationStats::new();
+        stats.record_file_completion("a.rs".to_string(), 1, false, 0);
+        stats.record_file_completion("b.rs".to_string(), 1, false, 0);
+        stats.record_file_completion("c.rs".to_string(), 1, false, 0);
+        stats.record_file_completion("d.rs".to_string(), 2, false, 1);
+
+        assert_eq!(stats.total_files, 4);
+        assert!((stats.percentage(3) - 75.0).abs() < f64::EPSILON);
+        assert!((stats.percentage(1) - 25.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_translation_stats_multiple_files() {
+        let mut stats = TranslationStats::new();
+        stats.record_file_completion("a.rs".to_string(), 1, false, 0);
+        stats.record_file_completion("b.rs".to_string(), 2, true, 3);
+        stats.record_file_completion("c.rs".to_string(), 3, false, 5);
+
+        assert_eq!(stats.total_files, 3);
+        assert_eq!(stats.success_first_try, 1);
+        assert_eq!(stats.success_retry_1, 1);
+        assert_eq!(stats.success_retry_2, 1);
+        assert_eq!(stats.restart_count, 1);
+        assert_eq!(stats.file_attempts.len(), 3);
     }
 }
