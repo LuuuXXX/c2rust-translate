@@ -101,7 +101,7 @@ impl TranslationStats {
         // 总体统计
         println!("\n{}", "Overall Statistics:".bright_white().bold());
         println!(
-            "  Total files processed:       {}",
+            "  Total files successfully translated: {}",
             self.total_files.to_string().bright_green()
         );
         println!(

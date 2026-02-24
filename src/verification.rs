@@ -75,6 +75,7 @@ where
                         max_fix_attempts,
                         feature,
                         file_type,
+                        show_full_output,
                     )?;
                     return Ok((build_successful, fix_attempts + extra_fix_attempts, had_restart));
                 } else {
@@ -114,6 +115,7 @@ fn handle_max_fix_attempts_reached(
     max_fix_attempts: usize,
     feature: &str,
     file_type: &str,
+    show_full_output: bool,
 ) -> Result<(bool, usize, bool)> {
     println!("│");
     println!("│ {}", "⚠ Maximum fix attempts reached!".red().bold());
@@ -171,7 +173,7 @@ fn handle_max_fix_attempts_reached(
             attempt_number,
             file_name,
             max_fix_attempts,
-            false, // show_full_output: false for now, could be passed as parameter if needed
+            show_full_output,
         ),
         interaction::FailureChoice::ManualFix => handle_manual_fix(feature, file_type, rs_file),
         interaction::FailureChoice::Exit => Err(build_error).context(format!(
@@ -196,27 +198,31 @@ fn handle_retry_directly(attempt_number: usize, is_last_attempt: bool) -> Result
     // 清除旧建议
     suggestion::clear_suggestions()?;
 
-    // 重新翻译（清空并重新生成 rs 文件）
-    let remaining_retries = MAX_TRANSLATION_ATTEMPTS - attempt_number;
+    // 当这是最后一次翻译机会时，RetryDirectly 无法再次重新翻译，返回明确错误
     if is_last_attempt {
         println!(
             "│ {}",
-            "This is the last automatic retry attempt.".bright_yellow()
+            "✗ Cannot retry directly: this is the last translation attempt.".bright_red()
         );
         println!(
             "│ {}",
-            "Retrying translation from scratch one final time...".bright_cyan()
+            "No more translation retries are available.".yellow()
         );
-    } else {
-        println!(
-            "│ {}",
-            format!(
-                "Retrying translation from scratch... ({} retries remaining)",
-                remaining_retries
-            )
-            .bright_cyan()
+        anyhow::bail!(
+            "RetryDirectly selected on last translation attempt — no retries remaining"
         );
     }
+
+    // 重新翻译（清空并重新生成 rs 文件）
+    let remaining_retries = MAX_TRANSLATION_ATTEMPTS - attempt_number;
+    println!(
+        "│ {}",
+        format!(
+            "Retrying translation from scratch... ({} retries remaining)",
+            remaining_retries
+        )
+        .bright_cyan()
+    );
     println!(
         "│ {}",
         "Note: The translator will overwrite the existing file content.".bright_blue()
