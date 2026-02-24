@@ -209,6 +209,176 @@ pub fn gate_hybrid_test(feature: &str) -> Result<bool> {
     }
 }
 
+/// 验证流程的共享内部实现
+///
+/// 被 `run_gate_verification` 和 `run_final_verification` 复用，通过参数控制标题、步骤编号前缀和提交消息。
+fn run_verification_impl(
+    feature: &str,
+    show_full_output: bool,
+    header: &str,
+    step_prefix: &str,
+    commit_label: &str,
+) -> Result<()> {
+    println!("\n{}", header.bright_magenta().bold());
+
+    // X.1 Cargo Build
+    println!(
+        "\n{}",
+        format!("Step {}.1: Cargo Build Verification", step_prefix)
+            .bright_cyan()
+            .bold()
+    );
+    println!("{}", "Building project...".bright_blue().bold());
+    match builder::cargo_build(feature, show_full_output) {
+        Ok(_) => {
+            println!("{}", "✓ Build successful!".bright_green().bold());
+        }
+        Err(e) => {
+            println!("{}", "✗ Build failed!".red().bold());
+            println!(
+                "{}",
+                "This may indicate issues with the project setup or previous translations."
+                    .yellow()
+            );
+            let choice = interaction::prompt_user_choice("Build failure", false)?;
+            match choice {
+                interaction::UserChoice::Continue => {
+                    println!(
+                        "│ {}",
+                        "Continuing despite build failure. You can fix issues during file processing.".yellow()
+                    );
+                }
+                interaction::UserChoice::ManualFix => {
+                    return Err(e).context("Build failed and user chose manual fix");
+                }
+                interaction::UserChoice::Exit => {
+                    return Err(e).context("Build failed and user chose to exit");
+                }
+            }
+        }
+    }
+
+    // X.2 代码分析同步
+    println!(
+        "\n{}",
+        format!("Step {}.2: Code Analysis Sync", step_prefix)
+            .bright_cyan()
+            .bold()
+    );
+    println!("{}", "Updating code analysis...".bright_blue());
+    analyzer::update_code_analysis(feature)?;
+    println!("{}", "✓ Code analysis updated".bright_green());
+
+    // X.3 混合构建清除
+    println!(
+        "\n{}",
+        format!("Step {}.3: Hybrid Build Clean", step_prefix)
+            .bright_cyan()
+            .bold()
+    );
+    match hybrid_build::execute_hybrid_build_command(
+        feature,
+        hybrid_build::HybridCommandType::Clean,
+    ) {
+        Ok(_) => println!("{}", "✓ Hybrid clean successful".bright_green()),
+        Err(e) => {
+            println!("{}", "✗ Hybrid clean failed!".red().bold());
+            let choice = interaction::prompt_user_choice("Hybrid clean failure", false)?;
+            match choice {
+                interaction::UserChoice::Continue => {
+                    println!(
+                        "{}",
+                        "Hybrid clean failure accepted, stopping verification before commit."
+                            .yellow()
+                    );
+                    return Ok(());
+                }
+                interaction::UserChoice::ManualFix | interaction::UserChoice::Exit => {
+                    return Err(e).context("Hybrid clean failed");
+                }
+            }
+        }
+    }
+
+    // X.4 混合构建构建
+    println!(
+        "\n{}",
+        format!("Step {}.4: Hybrid Build", step_prefix)
+            .bright_cyan()
+            .bold()
+    );
+    match hybrid_build::execute_hybrid_build_command(
+        feature,
+        hybrid_build::HybridCommandType::Build,
+    ) {
+        Ok(_) => println!("{}", "✓ Hybrid build successful".bright_green()),
+        Err(e) => {
+            println!("{}", "✗ Hybrid build failed!".red().bold());
+            let choice = interaction::prompt_user_choice("Hybrid build failure", false)?;
+            match choice {
+                interaction::UserChoice::Continue => {
+                    println!(
+                        "{}",
+                        "Hybrid build failure accepted, stopping verification before commit."
+                            .yellow()
+                    );
+                    return Ok(());
+                }
+                interaction::UserChoice::ManualFix | interaction::UserChoice::Exit => {
+                    return Err(e).context("Hybrid build failed");
+                }
+            }
+        }
+    }
+
+    // X.5 混合构建测试
+    println!(
+        "\n{}",
+        format!("Step {}.5: Hybrid Build Test", step_prefix)
+            .bright_cyan()
+            .bold()
+    );
+    match hybrid_build::execute_hybrid_build_command(feature, hybrid_build::HybridCommandType::Test)
+    {
+        Ok(_) => println!("{}", "✓ Hybrid test successful".bright_green()),
+        Err(e) => {
+            println!("{}", "✗ Hybrid test failed!".red().bold());
+            let choice = interaction::prompt_user_choice("Hybrid test failure", false)?;
+            match choice {
+                interaction::UserChoice::Continue => {
+                    println!(
+                        "{}",
+                        "Hybrid test failure accepted, stopping verification before commit."
+                            .yellow()
+                    );
+                    return Ok(());
+                }
+                interaction::UserChoice::ManualFix | interaction::UserChoice::Exit => {
+                    return Err(e).context("Hybrid test failed");
+                }
+            }
+        }
+    }
+
+    // X.6 验证通过提交
+    println!(
+        "\n{}",
+        format!("Step {}.6: Verification Passed - Committing", step_prefix)
+            .bright_cyan()
+            .bold()
+    );
+    git::git_commit(
+        &format!("{} for {}", commit_label, feature),
+        feature,
+    )?;
+    println!(
+        "{}",
+        "✓ Verification complete and committed".bright_green().bold()
+    );
+
+    Ok(())
+}
+
 /// 运行完整的门禁验证流程
 ///
 /// 包括：
@@ -219,59 +389,26 @@ pub fn gate_hybrid_test(feature: &str) -> Result<bool> {
 /// 5. 混合构建测试
 /// 6. 如果全部通过，提交到 git
 pub fn run_gate_verification(feature: &str, show_full_output: bool) -> Result<()> {
-    println!(
-        "\n{}",
-        "═══ Gate Verification (Post-Initialization) ═══"
-            .bright_magenta()
-            .bold()
-    );
-
-    // 2.1 Cargo Build
-    gate_cargo_build(feature, show_full_output)?;
-
-    // 2.2 代码分析同步
-    gate_code_analysis(feature)?;
-
-    // 2.3 混合构建清除
-    let hybrid_clean_ok = gate_hybrid_clean(feature)?;
-    if !hybrid_clean_ok {
-        println!("{}", "Hybrid clean gate reported a user-accepted failure, stopping gate verification before commit.".yellow());
-        return Ok(());
-    }
-
-    // 2.4 混合构建构建
-    let hybrid_build_ok = gate_hybrid_build(feature)?;
-    if !hybrid_build_ok {
-        println!("{}", "Hybrid build gate reported a user-accepted failure, stopping gate verification before commit.".yellow());
-        return Ok(());
-    }
-
-    // 2.5 混合构建测试
-    let hybrid_test_ok = gate_hybrid_test(feature)?;
-    if !hybrid_test_ok {
-        println!("{}", "Hybrid test gate reported a user-accepted failure, stopping gate verification before commit.".yellow());
-        return Ok(());
-    }
-
-    // 2.6 门禁通过提交
-    println!(
-        "\n{}",
-        "Step 2.6: Gate Verification Passed - Committing"
-            .bright_cyan()
-            .bold()
-    );
-    git::git_commit(
-        &format!("Gate verification passed for {}", feature),
+    run_verification_impl(
         feature,
-    )?;
-    println!(
-        "{}",
-        "✓ Gate verification complete and committed"
-            .bright_green()
-            .bold()
-    );
+        show_full_output,
+        "═══ Gate Verification (Post-Initialization) ═══",
+        "2",
+        "Gate verification passed",
+    )
+}
 
-    Ok(())
+/// 运行最终验证流程（合并后）
+///
+/// 与 `run_gate_verification` 使用相同的验证步骤，但使用 Step 6.x 标签，适用于合并后的最终验证。
+pub fn run_final_verification(feature: &str, show_full_output: bool) -> Result<()> {
+    run_verification_impl(
+        feature,
+        show_full_output,
+        "═══ Final Verification (Post-Merge) ═══",
+        "6",
+        "Final verification passed",
+    )
 }
 
 
@@ -317,5 +454,18 @@ mod tests {
         }
 
         assert_signature(run_gate_verification);
+    }
+
+    /// 确认 `run_final_verification` 的签名保持为 `fn(&str, bool) -> Result<()>`
+    #[test]
+    fn run_final_verification_has_expected_signature() {
+        fn assert_signature<F>(f: F)
+        where
+            F: Fn(&str, bool) -> Result<()>,
+        {
+            let _ = f;
+        }
+
+        assert_signature(run_final_verification);
     }
 }

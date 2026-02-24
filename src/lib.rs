@@ -212,7 +212,7 @@ fn step_6_merge_and_verify(feature: &str, show_full_output: bool) -> Result<()> 
 
     // 2. Run full verification (build + test), which commits on success
     println!("│");
-    initialization::run_gate_verification(feature, show_full_output)
+    initialization::run_final_verification(feature, show_full_output)
 }
 
 // ============================================================================
