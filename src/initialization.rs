@@ -302,7 +302,7 @@ pub fn run_final_verification(feature: &str, show_full_output: bool) -> Result<(
             println!("{}", "✓ Build successful!".bright_green().bold());
         }
         Err(e) => {
-            println!("{}", "✗ Build failed!".red().bold());
+            println!("{}", "✗ Final build failed!".red().bold());
             let choice = interaction::prompt_user_choice("Final build failure", false)?;
             match choice {
                 interaction::UserChoice::Continue => {
