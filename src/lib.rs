@@ -61,19 +61,30 @@ pub fn translate_feature(
     let (rust_dir, mut progress_state) = step_3_4_select_files_and_init_progress(feature)?;
 
     // Step 5: Execute translation loop
-    step_5_execute_translation_loop(
+    let mut stats = util::TranslationStats::new();
+    let step5_result = step_5_execute_translation_loop(
         feature,
         &rust_dir,
         &mut progress_state,
         allow_all,
         max_fix_attempts,
         show_full_output,
-    )?;
+        &mut stats,
+    );
+
+    // Print summary even if step 5 or step 6 fails, so progress is not lost
+    if let Err(e) = step5_result {
+        stats.print_summary();
+        return Err(e);
+    }
 
     // Step 6: Merge translated files and verify
-    step_6_merge_and_verify(feature, show_full_output)?;
+    let step6_result = step_6_merge_and_verify(feature, show_full_output);
 
-    Ok(())
+    // Print statistics summary (always, even on step 6 failure)
+    stats.print_summary();
+
+    step6_result
 }
 
 // ============================================================================
@@ -159,6 +170,7 @@ fn step_5_execute_translation_loop(
     allow_all: bool,
     max_fix_attempts: usize,
     show_full_output: bool,
+    stats: &mut util::TranslationStats,
 ) -> Result<()> {
     println!(
         "\n{}",
@@ -189,6 +201,7 @@ fn step_5_execute_translation_loop(
             progress_state,
             max_fix_attempts,
             show_full_output,
+            stats,
         )?;
     }
 
@@ -243,6 +256,7 @@ fn process_selected_files(
     progress_state: &mut util::ProgressState,
     max_fix_attempts: usize,
     show_full_output: bool,
+    stats: &mut util::TranslationStats,
 ) -> Result<()> {
     for &idx in selected_indices.iter() {
         let rs_file = &empty_rs_files[idx];
@@ -264,6 +278,7 @@ fn process_selected_files(
             total_count,
             max_fix_attempts,
             show_full_output,
+            stats,
         )?;
 
         progress_state.mark_processed();
@@ -327,8 +342,12 @@ fn process_rs_file(
     total_count: usize,
     max_fix_attempts: usize,
     show_full_output: bool,
+    stats: &mut util::TranslationStats,
 ) -> Result<()> {
     use util::MAX_TRANSLATION_ATTEMPTS;
+
+    let mut total_fix_attempts = 0usize;
+    let mut had_restart = false;
 
     for attempt_number in 1..=MAX_TRANSLATION_ATTEMPTS {
         let is_last_attempt = attempt_number == MAX_TRANSLATION_ATTEMPTS;
@@ -359,7 +378,7 @@ fn process_rs_file(
         translate_file(feature, file_type, rs_file, &format_progress, show_full_output)?;
 
         // Build and fix errors
-        let build_successful = verification::build_and_fix_loop(
+        let (build_successful, fix_attempts, did_restart) = verification::build_and_fix_loop(
             feature,
             file_type,
             rs_file,
@@ -371,10 +390,22 @@ fn process_rs_file(
             show_full_output,
         )?;
 
+        // These counters are cumulative across all translation attempts for this file.
+        // For example, if attempt 1 uses 5 fix attempts and attempt 2 uses 3, the recorded
+        // total_fix_attempts will be 8, and had_restart will be true if any attempt restarted.
+        total_fix_attempts += fix_attempts;
+        had_restart |= did_restart;
+
         if build_successful {
             let processing_complete =
                 complete_file_processing(feature, file_name, file_type, rs_file, &format_progress)?;
             if processing_complete {
+                stats.record_file_completion(
+                    file_name.to_string(),
+                    attempt_number,
+                    had_restart,
+                    total_fix_attempts,
+                );
                 return Ok(());
             }
             // If not complete, retry translation (loop continues)

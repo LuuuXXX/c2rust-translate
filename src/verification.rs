@@ -27,7 +27,10 @@ pub fn display_retry_directly_warning() {
 
 /// 在循环中构建并修复错误
 ///
-/// 返回 Ok(true) 如果构建成功，Ok(false) 如果需要重试翻译
+/// 返回 Ok((build_successful, fix_attempts, had_restart))：
+/// - build_successful: true 如果构建成功
+/// - fix_attempts: 本次循环中应用的修复次数
+/// - had_restart: true 如果用户选择了 RetryDirectly
 pub fn build_and_fix_loop<F>(
     feature: &str,
     file_type: &str,
@@ -38,10 +41,11 @@ pub fn build_and_fix_loop<F>(
     attempt_number: usize,
     max_fix_attempts: usize,
     show_full_output: bool,
-) -> Result<bool>
+) -> Result<(bool, usize, bool)>
 where
     F: Fn(&str) -> String,
 {
+    let mut fix_attempts = 0usize;
     for attempt in 1..=max_fix_attempts {
         println!("│");
         println!("│ {}", format_progress("Build").bright_magenta().bold());
@@ -58,11 +62,11 @@ where
         match builder::cargo_build(feature, show_full_output) {
             Ok(_) => {
                 println!("│ {}", "✓ Build successful!".bright_green().bold());
-                return Ok(true);
+                return Ok((true, fix_attempts, false));
             }
             Err(build_error) => {
                 if attempt == max_fix_attempts {
-                    return handle_max_fix_attempts_reached(
+                    let (build_successful, extra_fix_attempts, had_restart) = handle_max_fix_attempts_reached(
                         build_error,
                         file_name,
                         rs_file,
@@ -71,7 +75,9 @@ where
                         max_fix_attempts,
                         feature,
                         file_type,
-                    );
+                        show_full_output,
+                    )?;
+                    return Ok((build_successful, fix_attempts + extra_fix_attempts, had_restart));
                 } else {
                     // Use lib.rs apply_error_fix instead of local duplicate
                     crate::apply_error_fix(
@@ -82,6 +88,7 @@ where
                         format_progress,
                         show_full_output,
                     )?;
+                    fix_attempts += 1;
                 }
             }
         }
@@ -91,14 +98,14 @@ where
         println!("{}", "✓ Code analysis updated".bright_green());
     }
 
-    Ok(false)
+    Ok((false, fix_attempts, false))
 }
 
 /// 处理达到最大修复尝试次数的情况
 ///
-/// 返回:
-/// - Ok(true) 如果处理应继续而不重试翻译
-/// - Ok(false) 如果应重试翻译
+/// 返回 (build_successful, extra_fix_attempts, had_restart)：
+/// - Ok((true, _, _)) 如果处理应继续而不重试翻译
+/// - Ok((false, _, had_restart)) 如果应重试翻译
 fn handle_max_fix_attempts_reached(
     build_error: anyhow::Error,
     file_name: &str,
@@ -108,7 +115,8 @@ fn handle_max_fix_attempts_reached(
     max_fix_attempts: usize,
     feature: &str,
     file_type: &str,
-) -> Result<bool> {
+    show_full_output: bool,
+) -> Result<(bool, usize, bool)> {
     println!("│");
     println!("│ {}", "⚠ Maximum fix attempts reached!".red().bold());
     println!(
@@ -165,7 +173,7 @@ fn handle_max_fix_attempts_reached(
             attempt_number,
             file_name,
             max_fix_attempts,
-            false, // show_full_output: false for now, could be passed as parameter if needed
+            show_full_output,
         ),
         interaction::FailureChoice::ManualFix => handle_manual_fix(feature, file_type, rs_file),
         interaction::FailureChoice::Exit => Err(build_error).context(format!(
@@ -176,7 +184,7 @@ fn handle_max_fix_attempts_reached(
 }
 
 /// 处理直接重试选项
-fn handle_retry_directly(attempt_number: usize, is_last_attempt: bool) -> Result<bool> {
+fn handle_retry_directly(attempt_number: usize, is_last_attempt: bool) -> Result<(bool, usize, bool)> {
     use crate::util::MAX_TRANSLATION_ATTEMPTS;
 
     println!("│");
@@ -190,33 +198,37 @@ fn handle_retry_directly(attempt_number: usize, is_last_attempt: bool) -> Result
     // 清除旧建议
     suggestion::clear_suggestions()?;
 
-    // 重新翻译（清空并重新生成 rs 文件）
-    let remaining_retries = MAX_TRANSLATION_ATTEMPTS - attempt_number;
+    // 当这是最后一次翻译机会时，RetryDirectly 无法再次重新翻译，返回明确错误
     if is_last_attempt {
         println!(
             "│ {}",
-            "This is the last automatic retry attempt.".bright_yellow()
+            "✗ Cannot retry directly: this is the last translation attempt.".bright_red()
         );
         println!(
             "│ {}",
-            "Retrying translation from scratch one final time...".bright_cyan()
+            "No more translation retries are available.".yellow()
         );
-    } else {
-        println!(
-            "│ {}",
-            format!(
-                "Retrying translation from scratch... ({} retries remaining)",
-                remaining_retries
-            )
-            .bright_cyan()
+        anyhow::bail!(
+            "RetryDirectly selected on last translation attempt — no retries remaining"
         );
     }
+
+    // 重新翻译（清空并重新生成 rs 文件）
+    let remaining_retries = MAX_TRANSLATION_ATTEMPTS - attempt_number;
+    println!(
+        "│ {}",
+        format!(
+            "Retrying translation from scratch... ({} retries remaining)",
+            remaining_retries
+        )
+        .bright_cyan()
+    );
     println!(
         "│ {}",
         "Note: The translator will overwrite the existing file content.".bright_blue()
     );
     println!("│ {}", "✓ Retry scheduled".bright_green());
-    Ok(false) // 发出重试信号
+    Ok((false, 0, true)) // 发出重试信号，且使用了重来功能
 }
 
 /// 处理添加建议选项
@@ -230,7 +242,7 @@ fn handle_add_suggestion(
     file_name: &str,
     max_fix_attempts: usize,
     show_full_output: bool,
-) -> Result<bool> {
+) -> Result<(bool, usize, bool)> {
     use crate::util::MAX_TRANSLATION_ATTEMPTS;
 
     println!("│");
@@ -268,7 +280,7 @@ fn handle_add_suggestion(
             "Note: The translator will overwrite the existing file content.".bright_blue()
         );
         println!("│ {}", "✓ Retry scheduled".bright_green());
-        Ok(false) // 发出重试信号
+        Ok((false, 0, false)) // 发出重试信号，未使用重来功能
     } else {
         // 没有更多翻译重试，但用户输入了新建议
         // 不清空 .rs 文件，而是用新建议重新开始完整的修复循环
@@ -290,7 +302,8 @@ fn handle_add_suggestion(
         // 调用 build_and_fix_loop 重新开始完整的修复循环
         // 注意：这里传入 is_last_attempt=true 表示这是最后一次翻译机会
         // 但修复循环本身会有完整的 max_fix_attempts 次机会
-        let build_success = crate::verification::build_and_fix_loop(
+        // 第二个返回值是递归循环中消耗的 fix_attempts 次数，由调用方 process_rs_file 聚合统计。
+        let (build_successful, recursive_fix_attempts, had_restart) = crate::verification::build_and_fix_loop(
             feature,
             file_type,
             rs_file,
@@ -302,12 +315,12 @@ fn handle_add_suggestion(
             show_full_output,
         )?;
 
-        return Ok(build_success);
+        Ok((build_successful, recursive_fix_attempts, had_restart))
     }
 }
 
 /// 处理手动修复选项
-fn handle_manual_fix(feature: &str, file_type: &str, rs_file: &Path) -> Result<bool> {
+fn handle_manual_fix(feature: &str, file_type: &str, rs_file: &Path) -> Result<(bool, usize, bool)> {
     println!("│");
     println!("│ {}", "You chose: Manual fix".bright_cyan());
 
@@ -331,7 +344,7 @@ fn handle_manual_fix(feature: &str, file_type: &str, rs_file: &Path) -> Result<b
                                 .bright_green()
                                 .bold()
                         );
-                        return Ok(true);
+                        return Ok((true, 0, false));
                     }
                     Err(e) => {
                         println!(
