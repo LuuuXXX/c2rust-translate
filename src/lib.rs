@@ -94,7 +94,7 @@ pub fn translate_feature(
     if !should_merge {
         println!(
             "{}",
-            "跳过合并操作。翻译已完成，您可以稍后手动执行合并。".bright_yellow()
+            "│ 跳过合并操作。翻译已完成，您可以稍后手动执行合并。".bright_yellow()
         );
         stats.print_summary();
         return Ok(());
