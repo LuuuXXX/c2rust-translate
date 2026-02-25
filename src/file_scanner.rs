@@ -5,11 +5,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-/// 判断路径是否为需要翻译的文件（文件名以 var 或 fun 开头的 .rs 文件）
+/// 判断路径是否为需要翻译的文件（文件名以 var_ 或 fun_ 开头的 .rs 文件）
 fn is_translatable_rs_file(path: &Path) -> bool {
     path.file_stem()
         .and_then(|s| s.to_str())
-        .map(|name| name.starts_with("var") || name.starts_with("fun"))
+        .map(|name| name.starts_with("var_") || name.starts_with("fun_"))
         .unwrap_or(false)
 }
 
@@ -215,6 +215,10 @@ mod tests {
 
         // 创建一个不以 var/fun 开头的 .rs 文件（不应被计数）
         fs::File::create(temp_dir.path().join("other.rs")).unwrap();
+
+        // 创建以 var/fun 开头但不带下划线的文件（不应被计数，如 variable.rs、function.rs）
+        fs::File::create(temp_dir.path().join("variable.rs")).unwrap();
+        fs::File::create(temp_dir.path().join("function.rs")).unwrap();
 
         // 只统计以 var 或 fun 开头的 .rs 文件
         let total_count = count_all_rs_files(temp_dir.path()).unwrap();
