@@ -82,20 +82,35 @@ fn test_progress_numbering_across_rerun() {
     let rust_dir = temp_dir.path().join("rust");
     fs::create_dir(&rust_dir).unwrap();
 
-    // Simulate initial state: 10 .rs files total
+    // Simulate initial state: 10 translatable .rs files (var_/fun_ prefix)
     // First 6 are already processed (non-empty)
-    for i in 1..=6 {
-        let mut file = fs::File::create(rust_dir.join(format!("file{}.rs", i))).unwrap();
+    for i in 1..=3 {
+        let mut file = fs::File::create(rust_dir.join(format!("var_file{}.rs", i))).unwrap();
+        file.write_all(format!("// Processed file {}", i).as_bytes())
+            .unwrap();
+    }
+    for i in 4..=6 {
+        let mut file = fs::File::create(rust_dir.join(format!("fun_file{}.rs", i))).unwrap();
         file.write_all(format!("// Processed file {}", i).as_bytes())
             .unwrap();
     }
 
     // Remaining 4 are unprocessed (empty)
-    for i in 7..=10 {
-        fs::File::create(rust_dir.join(format!("file{}.rs", i))).unwrap();
+    for i in 7..=8 {
+        fs::File::create(rust_dir.join(format!("var_file{}.rs", i))).unwrap();
+    }
+    for i in 9..=10 {
+        fs::File::create(rust_dir.join(format!("fun_file{}.rs", i))).unwrap();
     }
 
-    // Count total .rs files and empty files
+    // Non-translatable files (no var_/fun_ prefix) should not be counted
+    fs::File::create(rust_dir.join("other.rs")).unwrap();
+    {
+        let mut f = fs::File::create(rust_dir.join("mod.rs")).unwrap();
+        f.write_all(b"// module file").unwrap();
+    }
+
+    // Count total translatable .rs files and empty translatable files
     let total_files = c2rust_translate::file_scanner::count_all_rs_files(&rust_dir).unwrap();
     let empty_files = c2rust_translate::file_scanner::find_empty_rs_files(&rust_dir).unwrap();
 
