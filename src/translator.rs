@@ -42,7 +42,7 @@ fn get_config_path() -> Result<PathBuf> {
     Ok(project_root.join(".c2rust/config.toml"))
 }
 
-/// 构조与给定 rs 文件对应的声明文件路径
+/// 构造与给定 rs 文件对应的声明文件路径
 ///
 /// 例如：`/path/to/var_counter.rs` → `/path/to/decl_counter.rs`
 /// 或：`/path/to/fun_get_name.rs` → `/path/to/decl_get_name.rs`
@@ -57,9 +57,9 @@ fn get_decl_file_path(rs_file: &Path) -> Option<PathBuf> {
 /// 从对应的声明文件中读取 rusttype
 ///
 /// 对于 `var_<name>.rs` 或 `fun_<name>.rs` 文件，
-/// 在同目录下查找 `decl_<name>.rs`，并将其全部内容作为 rusttype 字符串返回。
+/// 在同目录下查找 `decl_<name>.rs`，并将其内容去除首尾空白后作为 rusttype 字符串返回。
 ///
-/// 如果声明文件不存在或内容为空，返回 `None`（不报错）。
+/// 如果声明文件不存在，或去除首尾空白后内容为空，返回 `None`（不报错）。
 fn read_rusttype_from_decl_file(rs_file: &Path) -> Option<String> {
     let decl_path = get_decl_file_path(rs_file)?;
 
@@ -210,6 +210,8 @@ pub fn translate_c_to_rust(
 
     println!("│ {}", "Executing translation command:".bright_blue());
     if let Some(ref rt) = rusttype {
+        // Display rusttype with escaped newlines to preserve box formatting
+        let rt_display = rt.replace('\n', "\\n");
         println!(
             "│ {} python {} --config {} --type {} --c_code {} --output {} --rusttype {}",
             "→".bright_blue(),
@@ -218,7 +220,7 @@ pub fn translate_c_to_rust(
             file_type.bright_yellow(),
             c_file_str.bright_yellow(),
             rs_file_str.bright_yellow(),
-            rt.bright_cyan()
+            rt_display.bright_cyan()
         );
     } else {
         println!(
@@ -928,11 +930,19 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let decl_file = temp_dir.path().join("decl_value.rs");
         let mut f = std::fs::File::create(&decl_file).unwrap();
-        writeln!(f, "pub static mut VALUE: i64 = 0;").unwrap();
+        // Write multiple lines with leading/trailing whitespace around the whole content
+        write!(
+            f,
+            "  pub static mut VALUE: i64 = 0;\n   pub static mut OTHER: i64 = 1;   "
+        )
+        .unwrap();
 
         let rs_file = temp_dir.path().join("var_value.rs");
         let result = read_rusttype_from_decl_file(&rs_file);
-        assert_eq!(result, Some("pub static mut VALUE: i64 = 0;".to_string()));
+        assert_eq!(
+            result,
+            Some("pub static mut VALUE: i64 = 0;\n   pub static mut OTHER: i64 = 1;".to_string())
+        );
     }
 
     #[test]
