@@ -65,7 +65,9 @@ fn read_rusttype_from_decl_file(rs_file: &Path) -> Option<String> {
 
     match std::fs::read_to_string(&decl_path) {
         Ok(content) => {
-            let trimmed = content.trim().to_string();
+            // Normalize line endings to avoid embedded '\r' from CRLF files
+            let normalized = content.replace("\r\n", "\n").replace('\r', "");
+            let trimmed = normalized.trim().to_string();
             if trimmed.is_empty() { None } else { Some(trimmed) }
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
@@ -850,23 +852,32 @@ mod tests {
 
     #[test]
     fn test_get_decl_file_path_var_prefix() {
-        let rs_file = PathBuf::from("/project/rust/var_counter.rs");
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let rs_file = temp_dir.path().join("var_counter.rs");
         let result = get_decl_file_path(&rs_file);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), PathBuf::from("/project/rust/decl_counter.rs"));
+        assert_eq!(result.unwrap(), temp_dir.path().join("decl_counter.rs"));
     }
 
     #[test]
     fn test_get_decl_file_path_fun_prefix() {
-        let rs_file = PathBuf::from("/project/rust/fun_get_name.rs");
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let rs_file = temp_dir.path().join("fun_get_name.rs");
         let result = get_decl_file_path(&rs_file);
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), PathBuf::from("/project/rust/decl_get_name.rs"));
+        assert_eq!(result.unwrap(), temp_dir.path().join("decl_get_name.rs"));
     }
 
     #[test]
     fn test_get_decl_file_path_no_prefix() {
-        let rs_file = PathBuf::from("/project/rust/other_file.rs");
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let rs_file = temp_dir.path().join("other_file.rs");
         let result = get_decl_file_path(&rs_file);
         assert!(result.is_none());
     }
