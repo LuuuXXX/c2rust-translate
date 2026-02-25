@@ -42,6 +42,47 @@ fn get_config_path() -> Result<PathBuf> {
     Ok(project_root.join(".c2rust/config.toml"))
 }
 
+/// 构造与给定 rs 文件对应的声明文件路径
+///
+/// 例如：`/path/to/var_counter.rs` → `/path/to/decl_counter.rs`
+/// 或：`/path/to/fun_get_name.rs` → `/path/to/decl_get_name.rs`
+fn get_decl_file_path(rs_file: &Path) -> Option<PathBuf> {
+    let file_stem = rs_file.file_stem()?.to_str()?;
+    let name = file_stem
+        .strip_prefix("var_")
+        .or_else(|| file_stem.strip_prefix("fun_"))?;
+    Some(rs_file.parent()?.join(format!("decl_{}.rs", name)))
+}
+
+/// 从对应的声明文件中读取 rusttype
+///
+/// 对于 `var_<name>.rs` 或 `fun_<name>.rs` 文件，
+/// 在同目录下查找 `decl_<name>.rs`，并将其内容去除首尾空白后作为 rusttype 字符串返回。
+///
+/// 如果声明文件不存在，或去除首尾空白后内容为空，返回 `None`（不报错）。
+fn read_rusttype_from_decl_file(rs_file: &Path) -> Option<String> {
+    let decl_path = get_decl_file_path(rs_file)?;
+
+    match std::fs::read_to_string(&decl_path) {
+        Ok(content) => {
+            // Normalize line endings to avoid embedded '\r' from CRLF files
+            let normalized = content.replace("\r\n", "\n").replace('\r', "");
+            let trimmed = normalized.trim().to_string();
+            if trimmed.is_empty() { None } else { Some(trimmed) }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => {
+            eprintln!(
+                "{}: failed to read decl file '{}': {}",
+                "Warning".yellow(),
+                decl_path.display(),
+                e
+            );
+            None
+        }
+    }
+}
+
 /// 构建修复命令的参数列表
 ///
 /// 返回一个参数向量，传递给 translate_and_fix.py 用于修复错误。
@@ -166,30 +207,54 @@ pub fn translate_c_to_rust(
         .to_str()
         .with_context(|| format!("Non-UTF8 path: {}", rs_file.display()))?;
 
+    // 对于 var 和 fn 类型，从对应的声明文件中读取 rusttype
+    let rusttype = read_rusttype_from_decl_file(rs_file);
+
     println!("│ {}", "Executing translation command:".bright_blue());
-    println!(
-        "│ {} python {} --config {} --type {} --c_code {} --output {}",
-        "→".bright_blue(),
-        script_str.dimmed(),
-        config_str.dimmed(),
-        file_type.bright_yellow(),
-        c_file_str.bright_yellow(),
-        rs_file_str.bright_yellow()
-    );
+    if let Some(ref rt) = rusttype {
+        // Display rusttype with escaped newlines to preserve box formatting
+        let rt_display = rt.replace('\n', "\\n");
+        println!(
+            "│ {} python {} --config {} --type {} --c_code {} --output {} --rusttype {}",
+            "→".bright_blue(),
+            script_str.dimmed(),
+            config_str.dimmed(),
+            file_type.bright_yellow(),
+            c_file_str.bright_yellow(),
+            rs_file_str.bright_yellow(),
+            rt_display.bright_cyan()
+        );
+    } else {
+        println!(
+            "│ {} python {} --config {} --type {} --c_code {} --output {}",
+            "→".bright_blue(),
+            script_str.dimmed(),
+            config_str.dimmed(),
+            file_type.bright_yellow(),
+            c_file_str.bright_yellow(),
+            rs_file_str.bright_yellow()
+        );
+    }
     println!("│");
 
+    let mut args = vec![
+        script_str,
+        "--config",
+        config_str,
+        "--type",
+        file_type,
+        "--c_code",
+        c_file_str,
+        "--output",
+        rs_file_str,
+    ];
+    if let Some(ref rt) = rusttype {
+        args.push("--rusttype");
+        args.push(rt.as_str());
+    }
+
     let status = Command::new("python")
-        .args([
-            script_str,
-            "--config",
-            config_str,
-            "--type",
-            file_type,
-            "--c_code",
-            c_file_str,
-            "--output",
-            rs_file_str,
-        ])
+        .args(&args)
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .status()
@@ -783,5 +848,124 @@ mod tests {
             total_lines > display_lines,
             "Total lines should be greater than displayed lines"
         );
+    }
+
+    #[test]
+    fn test_get_decl_file_path_var_prefix() {
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let rs_file = temp_dir.path().join("var_counter.rs");
+        let result = get_decl_file_path(&rs_file);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), temp_dir.path().join("decl_counter.rs"));
+    }
+
+    #[test]
+    fn test_get_decl_file_path_fun_prefix() {
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let rs_file = temp_dir.path().join("fun_get_name.rs");
+        let result = get_decl_file_path(&rs_file);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), temp_dir.path().join("decl_get_name.rs"));
+    }
+
+    #[test]
+    fn test_get_decl_file_path_no_prefix() {
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let rs_file = temp_dir.path().join("other_file.rs");
+        let result = get_decl_file_path(&rs_file);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_read_rusttype_from_decl_file_var() {
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let decl_file = temp_dir.path().join("decl_counter.rs");
+        let mut f = std::fs::File::create(&decl_file).unwrap();
+        writeln!(f, "pub static COUNTER: i64 = 0;").unwrap();
+
+        let rs_file = temp_dir.path().join("var_counter.rs");
+        let result = read_rusttype_from_decl_file(&rs_file);
+        assert_eq!(result, Some("pub static COUNTER: i64 = 0;".to_string()));
+    }
+
+    #[test]
+    fn test_read_rusttype_from_decl_file_fn() {
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let decl_file = temp_dir.path().join("decl_get_name.rs");
+        let mut f = std::fs::File::create(&decl_file).unwrap();
+        writeln!(f, "pub fn get_name() -> *const u8;").unwrap();
+
+        let rs_file = temp_dir.path().join("fun_get_name.rs");
+        let result = read_rusttype_from_decl_file(&rs_file);
+        assert_eq!(result, Some("pub fn get_name() -> *const u8;".to_string()));
+    }
+
+    #[test]
+    fn test_read_rusttype_from_decl_file_not_found() {
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let rs_file = temp_dir.path().join("var_missing.rs");
+        // No decl file created
+        let result = read_rusttype_from_decl_file(&rs_file);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_read_rusttype_from_decl_file_no_prefix() {
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let rs_file = temp_dir.path().join("other_file.rs");
+        let result = read_rusttype_from_decl_file(&rs_file);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_read_rusttype_from_decl_file_multiline() {
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let decl_file = temp_dir.path().join("decl_value.rs");
+        let mut f = std::fs::File::create(&decl_file).unwrap();
+        // Write multiple lines with leading/trailing whitespace around the whole content
+        write!(
+            f,
+            "  pub static mut VALUE: i64 = 0;\n   pub static mut OTHER: i64 = 1;   "
+        )
+        .unwrap();
+
+        let rs_file = temp_dir.path().join("var_value.rs");
+        let result = read_rusttype_from_decl_file(&rs_file);
+        assert_eq!(
+            result,
+            Some("pub static mut VALUE: i64 = 0;\n   pub static mut OTHER: i64 = 1;".to_string())
+        );
+    }
+
+    #[test]
+    fn test_read_rusttype_from_decl_file_empty() {
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let decl_file = temp_dir.path().join("decl_empty.rs");
+        std::fs::File::create(&decl_file).unwrap();
+
+        let rs_file = temp_dir.path().join("var_empty.rs");
+        let result = read_rusttype_from_decl_file(&rs_file);
+        assert_eq!(result, None);
     }
 }
