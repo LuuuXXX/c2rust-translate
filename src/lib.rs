@@ -26,13 +26,12 @@ use std::path::Path;
 
 /// Main translation workflow for a feature
 ///
-/// Executes the complete C to Rust translation workflow in 6 steps:
+/// Executes the complete C to Rust translation workflow in 5 steps:
 /// 1. Find project root and initialize feature directory
 /// 2. Run gate verification (cargo build, code analysis, hybrid build/test)
 /// 3. Scan for files to translate and initialize progress tracking
 /// 4. Display current progress status
 /// 5. Execute translation loop (select and process files interactively or auto-all)
-/// 6. Merge translated files and run final verification
 ///
 /// # Arguments
 /// * `feature` - Feature name (must not contain path separators)
@@ -72,41 +71,14 @@ pub fn translate_feature(
         &mut stats,
     );
 
-    // Print summary even if step 5 or step 6 fails, so progress is not lost
+    // Print summary even if step 5 fails, so progress is not lost
     if let Err(e) = step5_result {
         stats.print_summary();
         return Err(e);
     }
 
-    // Prompt user before merging (unless allow_all is enabled)
-    let should_merge = if allow_all {
-        true
-    } else {
-        match interaction::prompt_merge_confirmation() {
-            Ok(value) => value,
-            Err(e) => {
-                stats.print_summary();
-                return Err(e);
-            }
-        }
-    };
-
-    if !should_merge {
-        println!(
-            "{}",
-            "│ 跳过合并操作。翻译已完成，您可以稍后手动执行合并。".bright_yellow()
-        );
-        stats.print_summary();
-        return Ok(());
-    }
-
-    // Step 6: Merge translated files and verify
-    let step6_result = step_6_merge_and_verify(feature, show_full_output);
-
-    // Print statistics summary (always, even on step 6 failure)
     stats.print_summary();
-
-    step6_result
+    Ok(())
 }
 
 // ============================================================================
@@ -228,26 +200,6 @@ fn step_5_execute_translation_loop(
     }
 
     Ok(())
-}
-
-/// Step 6: Merge translated files and run final verification
-fn step_6_merge_and_verify(feature: &str, show_full_output: bool) -> Result<()> {
-    println!(
-        "\n{}",
-        "Step 6: Merge Files and Final Verification"
-            .bright_cyan()
-            .bold()
-    );
-
-    // 1. Merge translated files
-    println!("│");
-    println!("│ {}", "Merging translated files...".bright_blue().bold());
-    analyzer::merge_code_analysis(feature)?;
-    println!("│ {}", "✓ Files merged successfully".bright_green());
-
-    // 2. Run full verification (build + test), which commits on success
-    println!("│");
-    initialization::run_gate_verification(feature, show_full_output)
 }
 
 // ============================================================================
