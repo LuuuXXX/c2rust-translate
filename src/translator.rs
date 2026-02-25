@@ -42,6 +42,116 @@ fn get_config_path() -> Result<PathBuf> {
     Ok(project_root.join(".c2rust/config.toml"))
 }
 
+/// 构造与给定 rs 文件对应的声明文件路径
+///
+/// 例如：`/path/to/var_counter.rs` → `/path/to/decl_counter.rs`
+/// 或：`/path/to/fun_get_name.rs` → `/path/to/decl_get_name.rs`
+fn get_decl_file_path(rs_file: &Path) -> Option<PathBuf> {
+    let file_stem = rs_file.file_stem()?.to_str()?;
+    let name = file_stem
+        .strip_prefix("var_")
+        .or_else(|| file_stem.strip_prefix("fun_"))?;
+    Some(rs_file.parent()?.join(format!("decl_{}.rs", name)))
+}
+
+/// 从 Rust 变量声明中提取类型注解
+///
+/// 处理如下形式：`pub static [mut] NAME: TYPE [= ...];`
+/// 或 `pub const NAME: TYPE [= ...];`
+fn extract_var_type(content: &str) -> Option<String> {
+    for line in content.lines() {
+        let line = line.trim();
+        if line.starts_with("pub static")
+            || line.starts_with("static")
+            || line.starts_with("pub const")
+            || line.starts_with("const")
+        {
+            if let Some(colon_pos) = line.find(':') {
+                let after_colon = line[colon_pos + 1..].trim_start();
+                let end = after_colon.find('=').or_else(|| after_colon.find(';'));
+                let type_str = if let Some(end_pos) = end {
+                    after_colon[..end_pos].trim()
+                } else {
+                    after_colon.trim()
+                };
+                if !type_str.is_empty() {
+                    return Some(type_str.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+/// 从 Rust 函数声明中提取返回类型
+///
+/// 处理如下形式：`[pub] [unsafe] [extern "C"] fn NAME(...) -> TYPE [;|{]`
+fn extract_fn_return_type(content: &str) -> Option<String> {
+    for line in content.lines() {
+        let line = line.trim();
+        if line.contains("fn ") {
+            if let Some(arrow_pos) = line.find("->") {
+                let after_arrow = line[arrow_pos + 2..].trim_start();
+                let end = after_arrow
+                    .find(';')
+                    .or_else(|| after_arrow.find('{'))
+                    .or_else(|| after_arrow.find('\n'));
+                let type_str = if let Some(end_pos) = end {
+                    after_arrow[..end_pos].trim()
+                } else {
+                    after_arrow.trim()
+                };
+                if !type_str.is_empty() {
+                    return Some(type_str.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+/// 从对应的声明文件中读取 rusttype
+///
+/// 对于 `var_<name>.rs` 或 `fun_<name>.rs` 文件，
+/// 在同目录下查找 `decl_<name>.rs` 并提取其中的类型信息。
+///
+/// 如果声明文件不存在或无法提取类型，返回 `None`（不报错）。
+fn read_rusttype_from_decl_file(rs_file: &Path, file_type: &str) -> Option<String> {
+    let decl_path = get_decl_file_path(rs_file)?;
+
+    let content = match std::fs::read_to_string(&decl_path) {
+        Ok(c) => c,
+        Err(e) => {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                println!(
+                    "│ {} Failed to read decl file {}: {}",
+                    "⚠".yellow(),
+                    decl_path.display(),
+                    e
+                );
+            }
+            return None;
+        }
+    };
+
+    let content = content.trim();
+    if content.is_empty() {
+        return None;
+    }
+
+    match file_type {
+        "var" => extract_var_type(content).or_else(|| {
+            // Fallback: treat first non-empty line as the type
+            content.lines().find(|l| !l.trim().is_empty()).map(|l| l.trim().to_string())
+        }),
+        "fn" => extract_fn_return_type(content).or_else(|| {
+            // Fallback: treat first non-empty line as the type
+            content.lines().find(|l| !l.trim().is_empty()).map(|l| l.trim().to_string())
+        }),
+        _ => None,
+    }
+}
+
 /// 构建修复命令的参数列表
 ///
 /// 返回一个参数向量，传递给 translate_and_fix.py 用于修复错误。
@@ -166,30 +276,52 @@ pub fn translate_c_to_rust(
         .to_str()
         .with_context(|| format!("Non-UTF8 path: {}", rs_file.display()))?;
 
+    // 对于 var 和 fn 类型，从对应的声明文件中读取 rusttype
+    let rusttype = read_rusttype_from_decl_file(rs_file, file_type);
+
     println!("│ {}", "Executing translation command:".bright_blue());
-    println!(
-        "│ {} python {} --config {} --type {} --c_code {} --output {}",
-        "→".bright_blue(),
-        script_str.dimmed(),
-        config_str.dimmed(),
-        file_type.bright_yellow(),
-        c_file_str.bright_yellow(),
-        rs_file_str.bright_yellow()
-    );
+    if let Some(ref rt) = rusttype {
+        println!(
+            "│ {} python {} --config {} --type {} --c_code {} --output {} --rusttype {}",
+            "→".bright_blue(),
+            script_str.dimmed(),
+            config_str.dimmed(),
+            file_type.bright_yellow(),
+            c_file_str.bright_yellow(),
+            rs_file_str.bright_yellow(),
+            rt.bright_cyan()
+        );
+    } else {
+        println!(
+            "│ {} python {} --config {} --type {} --c_code {} --output {}",
+            "→".bright_blue(),
+            script_str.dimmed(),
+            config_str.dimmed(),
+            file_type.bright_yellow(),
+            c_file_str.bright_yellow(),
+            rs_file_str.bright_yellow()
+        );
+    }
     println!("│");
 
+    let mut args = vec![
+        script_str,
+        "--config",
+        config_str,
+        "--type",
+        file_type,
+        "--c_code",
+        c_file_str,
+        "--output",
+        rs_file_str,
+    ];
+    if let Some(ref rt) = rusttype {
+        args.push("--rusttype");
+        args.push(rt.as_str());
+    }
+
     let status = Command::new("python")
-        .args([
-            script_str,
-            "--config",
-            config_str,
-            "--type",
-            file_type,
-            "--c_code",
-            c_file_str,
-            "--output",
-            rs_file_str,
-        ])
+        .args(&args)
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .status()
@@ -783,5 +915,154 @@ mod tests {
             total_lines > display_lines,
             "Total lines should be greater than displayed lines"
         );
+    }
+
+    #[test]
+    fn test_get_decl_file_path_var_prefix() {
+        let rs_file = PathBuf::from("/project/rust/var_counter.rs");
+        let result = get_decl_file_path(&rs_file);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), PathBuf::from("/project/rust/decl_counter.rs"));
+    }
+
+    #[test]
+    fn test_get_decl_file_path_fun_prefix() {
+        let rs_file = PathBuf::from("/project/rust/fun_get_name.rs");
+        let result = get_decl_file_path(&rs_file);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), PathBuf::from("/project/rust/decl_get_name.rs"));
+    }
+
+    #[test]
+    fn test_get_decl_file_path_no_prefix() {
+        let rs_file = PathBuf::from("/project/rust/other_file.rs");
+        let result = get_decl_file_path(&rs_file);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_extract_var_type_static() {
+        let content = "pub static COUNTER: i64 = 0;";
+        assert_eq!(extract_var_type(content), Some("i64".to_string()));
+    }
+
+    #[test]
+    fn test_extract_var_type_static_mut() {
+        let content = "pub static mut COUNTER: i64 = 0;";
+        assert_eq!(extract_var_type(content), Some("i64".to_string()));
+    }
+
+    #[test]
+    fn test_extract_var_type_const() {
+        let content = "pub const MAX_SIZE: usize = 100;";
+        assert_eq!(extract_var_type(content), Some("usize".to_string()));
+    }
+
+    #[test]
+    fn test_extract_var_type_no_initializer() {
+        let content = "pub static COUNTER: i64;";
+        assert_eq!(extract_var_type(content), Some("i64".to_string()));
+    }
+
+    #[test]
+    fn test_extract_var_type_with_comment() {
+        let content = "// C declaration: extern int counter;\npub static COUNTER: i32 = 0;";
+        assert_eq!(extract_var_type(content), Some("i32".to_string()));
+    }
+
+    #[test]
+    fn test_extract_var_type_not_found() {
+        let content = "fn some_function() {}";
+        assert_eq!(extract_var_type(content), None);
+    }
+
+    #[test]
+    fn test_extract_fn_return_type_simple() {
+        let content = "pub fn get_name() -> *const u8;";
+        assert_eq!(extract_fn_return_type(content), Some("*const u8".to_string()));
+    }
+
+    #[test]
+    fn test_extract_fn_return_type_unsafe() {
+        let content = "pub unsafe extern \"C\" fn compute() -> i64;";
+        assert_eq!(extract_fn_return_type(content), Some("i64".to_string()));
+    }
+
+    #[test]
+    fn test_extract_fn_return_type_with_body() {
+        let content = "pub fn calculate() -> f64 {";
+        assert_eq!(extract_fn_return_type(content), Some("f64".to_string()));
+    }
+
+    #[test]
+    fn test_extract_fn_return_type_no_return() {
+        let content = "pub fn do_something();";
+        assert_eq!(extract_fn_return_type(content), None);
+    }
+
+    #[test]
+    fn test_read_rusttype_from_decl_file_var() {
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let decl_file = temp_dir.path().join("decl_counter.rs");
+        let mut f = std::fs::File::create(&decl_file).unwrap();
+        writeln!(f, "pub static COUNTER: i64 = 0;").unwrap();
+
+        let rs_file = temp_dir.path().join("var_counter.rs");
+        let result = read_rusttype_from_decl_file(&rs_file, "var");
+        assert_eq!(result, Some("i64".to_string()));
+    }
+
+    #[test]
+    fn test_read_rusttype_from_decl_file_fn() {
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let decl_file = temp_dir.path().join("decl_get_name.rs");
+        let mut f = std::fs::File::create(&decl_file).unwrap();
+        writeln!(f, "pub fn get_name() -> *const u8;").unwrap();
+
+        let rs_file = temp_dir.path().join("fun_get_name.rs");
+        let result = read_rusttype_from_decl_file(&rs_file, "fn");
+        assert_eq!(result, Some("*const u8".to_string()));
+    }
+
+    #[test]
+    fn test_read_rusttype_from_decl_file_not_found() {
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let rs_file = temp_dir.path().join("var_missing.rs");
+        // No decl file created
+        let result = read_rusttype_from_decl_file(&rs_file, "var");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_read_rusttype_from_decl_file_no_prefix() {
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let rs_file = temp_dir.path().join("other_file.rs");
+        let result = read_rusttype_from_decl_file(&rs_file, "var");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_read_rusttype_from_decl_file_fallback_to_first_line() {
+        use std::io::Write;
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let decl_file = temp_dir.path().join("decl_value.rs");
+        let mut f = std::fs::File::create(&decl_file).unwrap();
+        writeln!(f, "i64").unwrap();
+
+        let rs_file = temp_dir.path().join("var_value.rs");
+        let result = read_rusttype_from_decl_file(&rs_file, "var");
+        assert_eq!(result, Some("i64".to_string()));
     }
 }
