@@ -82,7 +82,7 @@ fn test_progress_numbering_across_rerun() {
     let rust_dir = temp_dir.path().join("rust");
     fs::create_dir(&rust_dir).unwrap();
 
-    // Simulate initial state: 10 translatable .rs files (var/fun prefix)
+    // Simulate initial state: 10 translatable .rs files (var_/fun_ prefix)
     // First 6 are already processed (non-empty)
     for i in 1..=3 {
         let mut file = fs::File::create(rust_dir.join(format!("var_file{}.rs", i))).unwrap();
@@ -103,7 +103,7 @@ fn test_progress_numbering_across_rerun() {
         fs::File::create(rust_dir.join(format!("fun_file{}.rs", i))).unwrap();
     }
 
-    // Non-translatable files (no var/fun prefix) should not be counted
+    // Non-translatable files (no var_/fun_ prefix) should not be counted
     fs::File::create(rust_dir.join("other.rs")).unwrap();
     {
         let mut f = fs::File::create(rust_dir.join("mod.rs")).unwrap();

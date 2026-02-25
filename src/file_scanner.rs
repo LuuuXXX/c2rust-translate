@@ -13,14 +13,14 @@ fn is_translatable_rs_file(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-/// 统计给定目录中需要翻译的 .rs 文件（文件名以 var 或 fun 开头，包括空文件和非空文件）
+/// 统计给定目录中需要翻译的 .rs 文件（文件名以 var_ 或 fun_ 开头，包括空文件和非空文件）
 pub fn count_all_rs_files(rust_dir: &Path) -> Result<usize> {
     let mut count = 0;
 
     for entry in WalkDir::new(rust_dir) {
         let entry = entry?;
         let path = entry.path();
-        // 只统计扩展名为 .rs 且文件名以 var 或 fun 开头的常规文件，不包括目录
+        // 只统计扩展名为 .rs 且文件名以 var_ 或 fun_ 开头的常规文件，不包括目录
         if path.is_file()
             && path.extension().is_some_and(|ext| ext == "rs")
             && is_translatable_rs_file(path)
@@ -32,14 +32,14 @@ pub fn count_all_rs_files(rust_dir: &Path) -> Result<usize> {
     Ok(count)
 }
 
-/// 查找给定目录中需要翻译的空 .rs 文件（文件名以 var 或 fun 开头且内容为空）
+/// 查找给定目录中需要翻译的空 .rs 文件（文件名以 var_ 或 fun_ 开头且内容为空）
 pub fn find_empty_rs_files(rust_dir: &Path) -> Result<Vec<PathBuf>> {
     let mut empty_files = Vec::new();
 
     for entry in WalkDir::new(rust_dir) {
         let entry = entry?;
         let path = entry.path();
-        // 只检查扩展名为 .rs 且文件名以 var 或 fun 开头的常规文件，不包括目录
+        // 只检查扩展名为 .rs 且文件名以 var_ 或 fun_ 开头的常规文件，不包括目录
         if path.is_file()
             && path.extension().is_some_and(|ext| ext == "rs")
             && is_translatable_rs_file(path)
@@ -199,11 +199,11 @@ mod tests {
         // 创建临时目录
         let temp_dir = tempdir().unwrap();
 
-        // 创建空的 .rs 文件（有 var/fun 前缀，应被统计）
+        // 创建空的 .rs 文件（有 var_/fun_ 前缀，应被统计）
         fs::File::create(temp_dir.path().join("var_test1.rs")).unwrap();
         fs::File::create(temp_dir.path().join("fun_test2.rs")).unwrap();
 
-        // 创建非空的 .rs 文件（有 var/fun 前缀，应被统计）
+        // 创建非空的 .rs 文件（有 var_/fun_ 前缀，应被统计）
         let mut file1 = fs::File::create(temp_dir.path().join("var_test3.rs")).unwrap();
         file1.write_all(b"pub static TEST: i32 = 42;").unwrap();
 
@@ -213,18 +213,18 @@ mod tests {
         // 创建一个非 .rs 文件（不应被计数）
         fs::File::create(temp_dir.path().join("test.txt")).unwrap();
 
-        // 创建一个不以 var/fun 开头的 .rs 文件（不应被计数）
+        // 创建一个不以 var_/fun_ 开头的 .rs 文件（不应被计数）
         fs::File::create(temp_dir.path().join("other.rs")).unwrap();
 
         // 创建以 var/fun 开头但不带下划线的文件（不应被计数，如 variable.rs、function.rs）
         fs::File::create(temp_dir.path().join("variable.rs")).unwrap();
         fs::File::create(temp_dir.path().join("function.rs")).unwrap();
 
-        // 只统计以 var 或 fun 开头的 .rs 文件
+        // 只统计以 var_ 或 fun_ 开头的 .rs 文件
         let total_count = count_all_rs_files(temp_dir.path()).unwrap();
-        assert_eq!(total_count, 4); // 只统计有 var/fun 前缀的 .rs 文件
+        assert_eq!(total_count, 4); // 只统计有 var_/fun_ 前缀的 .rs 文件
 
-        // 验证空文件数（只统计有 var/fun 前缀的空文件）
+        // 验证空文件数（只统计有 var_/fun_ 前缀的空文件）
         let empty_count = find_empty_rs_files(temp_dir.path()).unwrap().len();
         assert_eq!(empty_count, 2);
     }
