@@ -42,33 +42,43 @@ fn get_config_path() -> Result<PathBuf> {
     Ok(project_root.join(".c2rust/config.toml"))
 }
 
-/// 构造与给定 rs 文件对应的声明文件路径
+/// 构조与给定 rs 文件对应的声明文件路径
 ///
 /// 例如：`/path/to/var_counter.rs` → `/path/to/decl_counter.rs`
-/// 或：`/path/to/fn_get_name.rs` → `/path/to/decl_get_name.rs`
+/// 或：`/path/to/fun_get_name.rs` → `/path/to/decl_get_name.rs`
 fn get_decl_file_path(rs_file: &Path) -> Option<PathBuf> {
     let file_stem = rs_file.file_stem()?.to_str()?;
     let name = file_stem
         .strip_prefix("var_")
-        .or_else(|| file_stem.strip_prefix("fn_"))?;
+        .or_else(|| file_stem.strip_prefix("fun_"))?;
     Some(rs_file.parent()?.join(format!("decl_{}.rs", name)))
 }
 
 /// 从对应的声明文件中读取 rusttype
 ///
-/// 对于 `var_<name>.rs` 或 `fn_<name>.rs` 文件，
+/// 对于 `var_<name>.rs` 或 `fun_<name>.rs` 文件，
 /// 在同目录下查找 `decl_<name>.rs`，并将其全部内容作为 rusttype 字符串返回。
 ///
 /// 如果声明文件不存在或内容为空，返回 `None`（不报错）。
 fn read_rusttype_from_decl_file(rs_file: &Path) -> Option<String> {
     let decl_path = get_decl_file_path(rs_file)?;
 
-    std::fs::read_to_string(&decl_path)
-        .ok()
-        .and_then(|content| {
+    match std::fs::read_to_string(&decl_path) {
+        Ok(content) => {
             let trimmed = content.trim().to_string();
             if trimmed.is_empty() { None } else { Some(trimmed) }
-        })
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => {
+            eprintln!(
+                "{}: failed to read decl file '{}': {}",
+                "Warning".yellow(),
+                decl_path.display(),
+                e
+            );
+            None
+        }
+    }
 }
 
 /// 构建修复命令的参数列表
@@ -845,8 +855,8 @@ mod tests {
     }
 
     #[test]
-    fn test_get_decl_file_path_fn_prefix() {
-        let rs_file = PathBuf::from("/project/rust/fn_get_name.rs");
+    fn test_get_decl_file_path_fun_prefix() {
+        let rs_file = PathBuf::from("/project/rust/fun_get_name.rs");
         let result = get_decl_file_path(&rs_file);
         assert!(result.is_some());
         assert_eq!(result.unwrap(), PathBuf::from("/project/rust/decl_get_name.rs"));
@@ -884,7 +894,7 @@ mod tests {
         let mut f = std::fs::File::create(&decl_file).unwrap();
         writeln!(f, "pub fn get_name() -> *const u8;").unwrap();
 
-        let rs_file = temp_dir.path().join("fn_get_name.rs");
+        let rs_file = temp_dir.path().join("fun_get_name.rs");
         let result = read_rusttype_from_decl_file(&rs_file);
         assert_eq!(result, Some("pub fn get_name() -> *const u8;".to_string()));
     }
