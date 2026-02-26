@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -19,7 +20,7 @@ pub const ERROR_PREVIEW_LINES: usize = 10;
 // Translation Statistics Tracking
 // ============================================================================
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileAttemptStat {
     /// 翻译尝试次数（1-3）
     pub translation_attempts: usize,
@@ -29,7 +30,7 @@ pub struct FileAttemptStat {
     pub had_restart: bool,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct TranslationStats {
     /// 总文件数
     pub total_files: usize,
@@ -217,6 +218,65 @@ impl TranslationStats {
         } else {
             (count as f64 / self.total_files as f64) * 100.0
         }
+    }
+
+    /// 获取统计文件路径
+    pub fn get_stats_file_path(feature: &str) -> Result<PathBuf> {
+        validate_feature_name(feature)?;
+        let project_root = find_project_root()?;
+        Ok(project_root
+            .join(".c2rust")
+            .join(feature)
+            .join("translation_stats.json"))
+    }
+
+    /// 从 JSON 文件加载统计数据
+    pub fn load_from_file(feature: &str) -> Result<Option<Self>> {
+        let path = Self::get_stats_file_path(feature)?;
+        match std::fs::read_to_string(&path) {
+            Ok(contents) => {
+                let stats: Self = serde_json::from_str(&contents)
+                    .with_context(|| format!("Failed to parse stats file: {}", path.display()))?;
+                Ok(Some(stats))
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(e).with_context(|| {
+                format!("Failed to read stats file: {}", path.display())
+            }),
+        }
+    }
+
+    /// 保存统计数据到 JSON 文件
+    pub fn save_to_file(&self, feature: &str) -> Result<()> {
+        let path = Self::get_stats_file_path(feature)?;
+        // Ensure parent directory exists
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).with_context(|| {
+                format!("Failed to create directory: {}", parent.display())
+            })?;
+        }
+        let contents = serde_json::to_string_pretty(self)
+            .context("Failed to serialize stats")?;
+        std::fs::write(&path, contents)
+            .with_context(|| format!("Failed to write stats file: {}", path.display()))?;
+        Ok(())
+    }
+
+    /// 清空统计文件（开始新会话）
+    pub fn clear_stats_file(feature: &str) -> Result<()> {
+        let path = Self::get_stats_file_path(feature)?;
+        match std::fs::remove_file(&path) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e).with_context(|| {
+                format!("Failed to remove stats file: {}", path.display())
+            }),
+        }
+    }
+
+    /// 获取已完成文件列表（用于跳过）
+    pub fn get_completed_files(&self) -> Vec<String> {
+        self.file_attempts.keys().cloned().collect()
     }
 }
 
@@ -618,5 +678,74 @@ mod tests {
         // Duplicate entries should not be added
         stats.record_file_skipped("foo.rs".to_string());
         assert_eq!(stats.skipped_files.len(), 2);
+    }
+
+    // ========================================================================
+    // TranslationStats Persistence Tests
+    // ========================================================================
+
+    #[test]
+    fn test_get_completed_files() {
+        let mut stats = TranslationStats::new();
+        assert!(stats.get_completed_files().is_empty());
+
+        stats.record_file_completion("a.rs".to_string(), 1, false, 0);
+        stats.record_file_completion("b.rs".to_string(), 2, true, 3);
+
+        let mut completed = stats.get_completed_files();
+        completed.sort();
+        assert_eq!(completed, vec!["a.rs", "b.rs"]);
+    }
+
+    #[test]
+    fn test_save_and_load_from_file() {
+        let temp_dir = tempdir().unwrap();
+        let c2rust_dir = temp_dir.path().join(".c2rust");
+        fs::create_dir(&c2rust_dir).unwrap();
+        let feature_dir = c2rust_dir.join("test_feature");
+        fs::create_dir(&feature_dir).unwrap();
+
+        // Build stats
+        let mut stats = TranslationStats::new();
+        stats.record_file_completion("src/foo.rs".to_string(), 1, false, 0);
+        stats.record_file_completion("src/bar.rs".to_string(), 2, true, 5);
+        stats.record_file_skipped("src/skip.rs".to_string());
+
+        // Save directly to the expected path (bypassing find_project_root)
+        let stats_path = feature_dir.join("translation_stats.json");
+        let contents = serde_json::to_string_pretty(&stats).unwrap();
+        fs::write(&stats_path, &contents).unwrap();
+
+        // Load back
+        let loaded: TranslationStats =
+            serde_json::from_str(&fs::read_to_string(&stats_path).unwrap()).unwrap();
+
+        assert_eq!(loaded.total_files, 2);
+        assert_eq!(loaded.success_first_try, 1);
+        assert_eq!(loaded.success_retry_1, 1);
+        assert_eq!(loaded.restart_count, 1);
+        assert_eq!(loaded.skipped_files, vec!["src/skip.rs"]);
+        assert!(loaded.file_attempts.contains_key("src/foo.rs"));
+        assert!(loaded.file_attempts.contains_key("src/bar.rs"));
+    }
+
+    #[test]
+    fn test_stats_json_roundtrip() {
+        let mut stats = TranslationStats::new();
+        stats.record_file_completion("x.rs".to_string(), 3, true, 7);
+        stats.record_file_skipped("y.rs".to_string());
+
+        let json = serde_json::to_string(&stats).unwrap();
+        let restored: TranslationStats = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(restored.total_files, 1);
+        assert_eq!(restored.success_retry_2, 1);
+        assert_eq!(restored.restart_count, 1);
+        assert_eq!(restored.skipped_files, vec!["y.rs"]);
+
+        let entry = restored.file_attempts.get("x.rs").unwrap();
+        assert_eq!(entry.translation_attempts, 3);
+        assert_eq!(entry.fix_attempts, 7);
+        assert!(entry.had_restart);
     }
 }
