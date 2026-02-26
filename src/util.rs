@@ -103,9 +103,11 @@ impl TranslationStats {
 
         if self.total_files == 0 {
             println!("\n{}", "No files were successfully translated.".yellow());
-            println!("\n{}", "═".repeat(80).bright_cyan());
-            return;
-        }
+            if self.skipped_files.is_empty() {
+                println!("\n{}", "═".repeat(80).bright_cyan());
+                return;
+            }
+        } else {
 
         // 总体统计
         println!("\n{}", "Overall Statistics:".bright_white().bold());
@@ -186,6 +188,7 @@ impl TranslationStats {
                 println!("  ... and {} more files", self.file_attempts.len() - 10);
             }
         }
+        } // close `else` from total_files != 0 check
 
         // 跳过的文件
         if !self.skipped_files.is_empty() {
