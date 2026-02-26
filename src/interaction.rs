@@ -55,7 +55,15 @@ pub enum FailureChoice {
     RetryDirectly, // 直接重试不输入建议
     AddSuggestion, // 添加建议后重试
     ManualFix,     // 手动修复
+    Skip,          // 跳过当前文件
     Exit,          // 退出
+}
+
+/// 跳过文件后的用户选择
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SkippedFilesChoice {
+    ProcessNow,   // 现在处理跳过的文件
+    ExitForLater, // 退出并稍后处理
 }
 
 /// 当达到最大尝试次数时提示用户选择
@@ -286,6 +294,7 @@ pub fn prompt_compile_failure_choice() -> Result<FailureChoice> {
         "Retry directly (⚠ Will clear .rs file, re-translate from C, and clear suggestions)",
         "Add fix suggestion for AI to modify",
         "Manual fix (edit the file with VIM)",
+        "Skip this file (process later)",
         "Exit (abort the translation process)",
     ];
 
@@ -303,7 +312,8 @@ pub fn prompt_compile_failure_choice() -> Result<FailureChoice> {
         0 => Ok(FailureChoice::RetryDirectly),
         1 => Ok(FailureChoice::AddSuggestion),
         2 => Ok(FailureChoice::ManualFix),
-        3 => Ok(FailureChoice::Exit),
+        3 => Ok(FailureChoice::Skip),
+        4 => Ok(FailureChoice::Exit),
         _ => unreachable!("Invalid selection index"),
     }
 }
@@ -343,6 +353,41 @@ pub fn prompt_build_failure_choice() -> Result<FailureChoice> {
     }
 }
 
+/// 在所有文件处理完成后提示用户如何处理跳过的文件
+pub fn prompt_skipped_files_choice(skipped_files: &[String]) -> Result<SkippedFilesChoice> {
+    println!("\n{}", "┌─────────────────────────────────────────────┐".bright_cyan());
+    println!("{}", "│ Translation complete!".bright_cyan());
+    println!("{}", "│".bright_cyan());
+    println!("{}", "│ Some files were skipped:".bright_yellow());
+    for (idx, file_name) in skipped_files.iter().enumerate() {
+        println!("{}", format!("│   {}. {}", idx + 1, file_name).bright_yellow());
+    }
+    println!("{}", "│".bright_cyan());
+    println!("{}", "│ Would you like to:".bright_cyan());
+    println!("{}", "└─────────────────────────────────────────────┘".bright_cyan());
+
+    let options = vec![
+        "Process skipped files now",
+        "Exit and process them later",
+    ];
+
+    let choice = Select::new("Select an option:", options.clone())
+        .with_vim_mode(true)
+        .prompt()
+        .context("Failed to get user selection")?;
+
+    let choice_index = options
+        .iter()
+        .position(|&o| o == choice)
+        .context("Unexpected selection value")?;
+
+    match choice_index {
+        0 => Ok(SkippedFilesChoice::ProcessNow),
+        1 => Ok(SkippedFilesChoice::ExitForLater),
+        _ => unreachable!("Invalid selection index"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -376,9 +421,11 @@ mod tests {
         assert_eq!(FailureChoice::RetryDirectly, FailureChoice::RetryDirectly);
         assert_eq!(FailureChoice::AddSuggestion, FailureChoice::AddSuggestion);
         assert_eq!(FailureChoice::ManualFix, FailureChoice::ManualFix);
+        assert_eq!(FailureChoice::Skip, FailureChoice::Skip);
         assert_eq!(FailureChoice::Exit, FailureChoice::Exit);
         assert_ne!(FailureChoice::RetryDirectly, FailureChoice::Exit);
         assert_ne!(FailureChoice::AddSuggestion, FailureChoice::Exit);
+        assert_ne!(FailureChoice::Skip, FailureChoice::Exit);
     }
 
     #[test]

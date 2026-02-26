@@ -683,6 +683,7 @@ pub(crate) fn handle_build_failure_interactive(
                                                         current_error = e;
                                                         continue;
                                                     }
+                                                    interaction::FailureChoice::Skip => unreachable!("Skip is not offered in this context"),
                                                     interaction::FailureChoice::Exit => {
                                                         return Err(e).context("Build failed after manual fix and user chose to exit");
                                                     }
@@ -705,6 +706,7 @@ pub(crate) fn handle_build_failure_interactive(
                                     }
                                 }
                             }
+                            interaction::FailureChoice::Skip => unreachable!("Skip is not offered in this context"),
                             interaction::FailureChoice::Exit => {
                                 return Err(current_error)
                                     .context("Build failed and user chose to exit");
@@ -779,6 +781,7 @@ pub(crate) fn handle_build_failure_interactive(
                                             feature, file_type, rs_file, e,
                                         );
                                     }
+                                    interaction::FailureChoice::Skip => unreachable!("Skip is not offered in this context"),
                                     interaction::FailureChoice::Exit => {
                                         return Err(e).context(
                                             "Build failed after manual fix and user chose to exit",
@@ -799,6 +802,7 @@ pub(crate) fn handle_build_failure_interactive(
                 }
             }
         }
+        interaction::FailureChoice::Skip => unreachable!("Skip is not offered in this context"),
         interaction::FailureChoice::Exit => {
             println!("│");
             println!("│ {}", "You chose: Exit".yellow());
@@ -1009,6 +1013,7 @@ pub(crate) fn handle_test_failure_interactive(
                                     }
                                 }
                             }
+                            interaction::FailureChoice::Skip => unreachable!("Skip is not offered in this context"),
                             interaction::FailureChoice::Exit => {
                                 return Err(current_error)
                                     .context("Tests failed and user chose to exit");
@@ -1076,6 +1081,7 @@ pub(crate) fn handle_test_failure_interactive(
                                         );
                                         return Err(e).context("Tests still failing after manual fix; user chose to add a suggestion");
                                     }
+                                    interaction::FailureChoice::Skip => unreachable!("Skip is not offered in this context"),
                                     interaction::FailureChoice::Exit => {
                                         return Err(e).context(
                                             "Tests failed after manual fix and user chose to exit",
@@ -1096,6 +1102,7 @@ pub(crate) fn handle_test_failure_interactive(
                 }
             }
         }
+        interaction::FailureChoice::Skip => unreachable!("Skip is not offered in this context"),
         interaction::FailureChoice::Exit => {
             println!("│");
             println!("│ {}", "You chose: Exit".yellow());

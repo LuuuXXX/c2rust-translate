@@ -174,11 +174,27 @@ fn step_5_execute_translation_loop(
     );
 
     loop {
-        // Scan for empty .rs files
-        let empty_rs_files = file_scanner::find_empty_rs_files(rust_dir)?;
+        // Scan for empty .rs files, then exclude any that have already been skipped
+        // by the user so they are only offered again via handle_skipped_files_loop.
+        let all_empty_rs_files = file_scanner::find_empty_rs_files(rust_dir)?;
+        let skipped_set: std::collections::HashSet<&str> =
+            stats.skipped_files.iter().map(|s| s.as_str()).collect();
+        let empty_rs_files: Vec<_> = all_empty_rs_files
+            .into_iter()
+            .filter(|p| {
+                let rel = p
+                    .strip_prefix(rust_dir)
+                    .ok()
+                    .and_then(|r| r.to_str())
+                    .unwrap_or("");
+                !skipped_set.contains(rel)
+            })
+            .collect();
 
         if empty_rs_files.is_empty() {
-            print_completion_message();
+            if stats.skipped_files.is_empty() {
+                print_completion_message();
+            }
             break;
         }
 
@@ -192,11 +208,87 @@ fn step_5_execute_translation_loop(
             feature,
             &empty_rs_files,
             &selected_indices,
+            rust_dir,
             progress_state,
             max_fix_attempts,
             show_full_output,
             stats,
         )?;
+    }
+
+    // Handle skipped files after the main translation loop
+    handle_skipped_files_loop(
+        feature,
+        rust_dir,
+        progress_state,
+        max_fix_attempts,
+        show_full_output,
+        stats,
+    )?;
+
+    Ok(())
+}
+
+/// After the main translation loop, repeatedly offer to process any skipped files.
+///
+/// If the user selects "Process skipped files now", all currently-skipped files are
+/// processed.  If any of those are skipped again the loop repeats, giving the user
+/// another chance.  Selecting "Exit and process them later" (or having no skipped
+/// files at all) breaks out of the loop.
+fn handle_skipped_files_loop(
+    feature: &str,
+    rust_dir: &Path,
+    progress_state: &mut util::ProgressState,
+    max_fix_attempts: usize,
+    show_full_output: bool,
+    stats: &mut util::TranslationStats,
+) -> Result<()> {
+    loop {
+        if stats.skipped_files.is_empty() {
+            break;
+        }
+
+        let choice = interaction::prompt_skipped_files_choice(&stats.skipped_files)?;
+
+        match choice {
+            interaction::SkippedFilesChoice::ProcessNow => {
+                // Drain the skipped list so we can iterate and re-populate it with any
+                // files that get skipped again during this pass.
+                let files_to_process = std::mem::take(&mut stats.skipped_files);
+                let total = files_to_process.len();
+                let mut iter = files_to_process.into_iter().enumerate();
+                while let Some((idx, file_name)) = iter.next() {
+                    let rs_file = rust_dir.join(&file_name);
+                    let pos = idx + 1;
+                    print_file_processing_header(pos, total, &file_name);
+                    if let Err(e) = process_rs_file(
+                        feature,
+                        &rs_file,
+                        &file_name,
+                        pos,
+                        total,
+                        max_fix_attempts,
+                        show_full_output,
+                        stats,
+                    ) {
+                        if e.downcast_ref::<verification::SkipFileSignal>().is_some() {
+                            // File was re-skipped; already re-recorded in process_rs_file.
+                            continue;
+                        }
+                        // On real error, re-add the current and all remaining files so they are not lost.
+                        stats.record_file_skipped(file_name);
+                        for (_, remaining_file) in iter {
+                            stats.record_file_skipped(remaining_file);
+                        }
+                        return Err(e);
+                    }
+                    progress_state.mark_processed();
+                }
+                // Loop again: if any files were skipped during this pass they are now
+                // in stats.skipped_files and the user will be prompted again.
+            }
+            interaction::SkippedFilesChoice::ExitForLater => break,
+        }
     }
 
     Ok(())
@@ -227,6 +319,7 @@ fn process_selected_files(
     feature: &str,
     empty_rs_files: &[std::path::PathBuf],
     selected_indices: &[usize],
+    rust_dir: &Path,
     progress_state: &mut util::ProgressState,
     max_fix_attempts: usize,
     show_full_output: bool,
@@ -238,13 +331,16 @@ fn process_selected_files(
         let total_count = progress_state.get_total_count();
 
         let file_name = rs_file
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("<unknown>");
+            .strip_prefix(rust_dir)
+            .ok()
+            .and_then(|p| p.to_str())
+            .unwrap_or_else(|| {
+                rs_file.file_name().and_then(|s| s.to_str()).unwrap_or("<unknown>")
+            });
 
         print_file_processing_header(current_position, total_count, file_name);
 
-        process_rs_file(
+        if let Err(e) = process_rs_file(
             feature,
             rs_file,
             file_name,
@@ -253,9 +349,14 @@ fn process_selected_files(
             max_fix_attempts,
             show_full_output,
             stats,
-        )?;
-
-        progress_state.mark_processed();
+        ) {
+            if e.downcast_ref::<verification::SkipFileSignal>().is_none() {
+                return Err(e);
+            }
+            // File was skipped; already recorded in process_rs_file. Don't mark as processed.
+        } else {
+            progress_state.mark_processed();
+        }
     }
     Ok(())
 }
@@ -352,7 +453,7 @@ fn process_rs_file(
         translate_file(feature, file_type, rs_file, &format_progress, show_full_output)?;
 
         // Build and fix errors
-        let (build_successful, fix_attempts, did_restart) = verification::build_and_fix_loop(
+        let build_loop_result = verification::build_and_fix_loop(
             feature,
             file_type,
             rs_file,
@@ -362,7 +463,21 @@ fn process_rs_file(
             attempt_number,
             max_fix_attempts,
             show_full_output,
-        )?;
+        );
+
+        // Check if the user chose to skip this file
+        if let Err(ref e) = build_loop_result {
+            if e.downcast_ref::<verification::SkipFileSignal>().is_some() {
+                println!(
+                    "│ {}",
+                    format!("Skipping file: {}", file_name).bright_yellow()
+                );
+                stats.record_file_skipped(file_name.to_string());
+                return Err(verification::SkipFileSignal.into());
+            }
+        }
+
+        let (build_successful, fix_attempts, did_restart) = build_loop_result?;
 
         // These counters are cumulative across all translation attempts for this file.
         // For example, if attempt 1 uses 5 fix attempts and attempt 2 uses 3, the recorded

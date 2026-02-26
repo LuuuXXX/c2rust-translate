@@ -3,6 +3,21 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use std::path::Path;
 
+/// Signal type returned when the user chooses to skip the current file.
+///
+/// This type is used as an `anyhow::Error` payload so that callers can
+/// distinguish a deliberate skip from a genuine build failure.
+#[derive(Debug)]
+pub struct SkipFileSignal;
+
+impl std::fmt::Display for SkipFileSignal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "File skipped by user")
+    }
+}
+
+impl std::error::Error for SkipFileSignal {}
+
 /// Display warning message about retry directly operation
 pub fn display_retry_directly_warning() {
     println!("│");
@@ -176,6 +191,14 @@ fn handle_max_fix_attempts_reached(
             show_full_output,
         ),
         interaction::FailureChoice::ManualFix => handle_manual_fix(feature, file_type, rs_file),
+        interaction::FailureChoice::Skip => {
+            println!("│ {}", "You chose: Skip this file".bright_cyan());
+            println!(
+                "│ {}",
+                "File will be skipped and can be processed later.".yellow()
+            );
+            Err(anyhow::Error::from(SkipFileSignal))
+        }
         interaction::FailureChoice::Exit => Err(build_error).context(format!(
             "Build failed after {} fix attempts for file {}",
             max_fix_attempts, file_name
