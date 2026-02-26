@@ -174,11 +174,27 @@ fn step_5_execute_translation_loop(
     );
 
     loop {
-        // Scan for empty .rs files
-        let empty_rs_files = file_scanner::find_empty_rs_files(rust_dir)?;
+        // Scan for empty .rs files, then exclude any that have already been skipped
+        // by the user so they are only offered again via handle_skipped_files_loop.
+        let all_empty_rs_files = file_scanner::find_empty_rs_files(rust_dir)?;
+        let skipped_set: std::collections::HashSet<&str> =
+            stats.skipped_files.iter().map(|s| s.as_str()).collect();
+        let empty_rs_files: Vec<_> = all_empty_rs_files
+            .into_iter()
+            .filter(|p| {
+                let rel = p
+                    .strip_prefix(rust_dir)
+                    .ok()
+                    .and_then(|r| r.to_str())
+                    .unwrap_or("");
+                !skipped_set.contains(rel)
+            })
+            .collect();
 
         if empty_rs_files.is_empty() {
-            print_completion_message();
+            if stats.skipped_files.is_empty() {
+                print_completion_message();
+            }
             break;
         }
 
