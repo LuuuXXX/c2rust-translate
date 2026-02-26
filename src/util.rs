@@ -45,6 +45,8 @@ pub struct TranslationStats {
     pub restart_count: usize,
     /// 每个文件的详细统计（文件名 -> 尝试次数）
     pub file_attempts: HashMap<String, FileAttemptStat>,
+    /// 被用户跳过的文件列表（文件名）
+    pub skipped_files: Vec<String>,
 }
 
 impl TranslationStats {
@@ -82,6 +84,11 @@ impl TranslationStats {
                 had_restart,
             },
         );
+    }
+
+    /// 记录文件被跳过
+    pub fn record_file_skipped(&mut self, file_name: String) {
+        self.skipped_files.push(file_name);
     }
 
     /// 打印统计报告
@@ -176,6 +183,18 @@ impl TranslationStats {
             if self.file_attempts.len() > 10 {
                 println!("  ... and {} more files", self.file_attempts.len() - 10);
             }
+        }
+
+        // 跳过的文件
+        if !self.skipped_files.is_empty() {
+            println!("\n{}", "Skipped Files:".bright_yellow().bold());
+            for (idx, file_name) in self.skipped_files.iter().enumerate() {
+                println!("  {}. {}", idx + 1, file_name.bright_yellow());
+            }
+            println!(
+                "  {}",
+                format!("Total skipped: {}", self.skipped_files.len()).bright_yellow()
+            );
         }
 
         println!("\n{}", "═".repeat(80).bright_cyan());
@@ -483,6 +502,7 @@ mod tests {
         assert_eq!(stats.success_retry_3_plus, 0);
         assert_eq!(stats.restart_count, 0);
         assert!(stats.file_attempts.is_empty());
+        assert!(stats.skipped_files.is_empty());
     }
 
     #[test]
@@ -575,5 +595,19 @@ mod tests {
         assert_eq!(stats.success_retry_2, 1);
         assert_eq!(stats.restart_count, 1);
         assert_eq!(stats.file_attempts.len(), 3);
+    }
+
+    #[test]
+    fn test_record_file_skipped() {
+        let mut stats = TranslationStats::new();
+        assert!(stats.skipped_files.is_empty());
+
+        stats.record_file_skipped("foo.rs".to_string());
+        assert_eq!(stats.skipped_files.len(), 1);
+        assert_eq!(stats.skipped_files[0], "foo.rs");
+
+        stats.record_file_skipped("bar.rs".to_string());
+        assert_eq!(stats.skipped_files.len(), 2);
+        assert_eq!(stats.skipped_files[1], "bar.rs");
     }
 }
