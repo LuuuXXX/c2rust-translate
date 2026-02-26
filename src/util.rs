@@ -88,7 +88,9 @@ impl TranslationStats {
 
     /// 记录文件被跳过
     pub fn record_file_skipped(&mut self, file_name: String) {
-        self.skipped_files.push(file_name);
+        if !self.skipped_files.contains(&file_name) {
+            self.skipped_files.push(file_name);
+        }
     }
 
     /// 打印统计报告
@@ -609,5 +611,9 @@ mod tests {
         stats.record_file_skipped("bar.rs".to_string());
         assert_eq!(stats.skipped_files.len(), 2);
         assert_eq!(stats.skipped_files[1], "bar.rs");
+
+        // Duplicate entries should not be added
+        stats.record_file_skipped("foo.rs".to_string());
+        assert_eq!(stats.skipped_files.len(), 2);
     }
 }

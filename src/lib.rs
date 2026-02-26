@@ -239,21 +239,34 @@ fn handle_skipped_files_loop(
                 // files that get skipped again during this pass.
                 let files_to_process = std::mem::take(&mut stats.skipped_files);
                 let total = files_to_process.len();
-                for (idx, file_name) in files_to_process.iter().enumerate() {
-                    let rs_file = rust_dir.join(file_name);
+                let mut iter = files_to_process.into_iter().enumerate();
+                while let Some((idx, file_name)) = iter.next() {
+                    let rs_file = rust_dir.join(&file_name);
                     let pos = idx + 1;
-                    print_file_processing_header(pos, total, file_name);
-                    process_rs_file(
+                    print_file_processing_header(pos, total, &file_name);
+                    let skipped_before = stats.skipped_files.len();
+                    if let Err(e) = process_rs_file(
                         feature,
                         &rs_file,
-                        file_name,
+                        &file_name,
                         pos,
                         total,
                         max_fix_attempts,
                         show_full_output,
                         stats,
-                    )?;
-                    progress_state.mark_processed();
+                    ) {
+                        // On error, re-add the current and all remaining files so they are not lost.
+                        stats.skipped_files.push(file_name);
+                        for (_, remaining_file) in iter {
+                            stats.skipped_files.push(remaining_file);
+                        }
+                        return Err(e);
+                    }
+                    // Only mark as processed if the file was not skipped again
+                    let was_skipped_again = stats.skipped_files.len() > skipped_before;
+                    if !was_skipped_again {
+                        progress_state.mark_processed();
+                    }
                 }
                 // Loop again: if any files were skipped during this pass they are now
                 // in stats.skipped_files and the user will be prompted again.
