@@ -177,11 +177,7 @@ fn step_3_4_select_files_and_init_progress(
     // Calculate progress
     let total_rs_files = file_scanner::count_all_rs_files(&rust_dir)?;
     let initial_empty_count = file_scanner::find_empty_rs_files(&rust_dir)?.len();
-    // Also count files completed in a previous session that may still appear empty on disk
-    let completed_in_stats = stats.get_completed_files().len();
-    let already_processed = total_rs_files
-        .saturating_sub(initial_empty_count)
-        .max(completed_in_stats);
+    let already_processed = total_rs_files.saturating_sub(initial_empty_count);
 
     let progress_state =
         util::ProgressState::with_initial_progress(total_rs_files, already_processed);
@@ -234,12 +230,11 @@ fn step_5_execute_translation_loop(
     loop {
         // Scan for empty .rs files, then exclude any that have already been skipped
         // by the user so they are only offered again via handle_skipped_files_loop.
-        // Also exclude files that were completed in a previous session.
+        // Completed files are already excluded because successfully translated files are
+        // non-empty on disk (the existing file-content-based resume mechanism).
         let all_empty_rs_files = file_scanner::find_empty_rs_files(rust_dir)?;
         let skipped_set: std::collections::HashSet<&str> =
             stats.skipped_files.iter().map(|s| s.as_str()).collect();
-        let completed_set: std::collections::HashSet<String> =
-            stats.get_completed_files().into_iter().collect();
         let empty_rs_files: Vec<_> = all_empty_rs_files
             .into_iter()
             .filter(|p| {
@@ -248,7 +243,7 @@ fn step_5_execute_translation_loop(
                     .ok()
                     .and_then(|r| r.to_str())
                     .unwrap_or("");
-                !skipped_set.contains(rel) && !completed_set.contains(rel)
+                !skipped_set.contains(rel)
             })
             .collect();
 
