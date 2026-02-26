@@ -398,7 +398,7 @@ pub fn prompt_skipped_files_choice(skipped_files: &[String]) -> Result<SkippedFi
 /// 询问用户是否继续之前的翻译进度或开始新的会话
 pub fn prompt_continue_or_restart() -> Result<ContinueChoice> {
     let options = vec![
-        "Continue previous progress (skip completed files)",
+        "Continue previous progress (resume from where you left off)",
         "Start fresh (clear all progress)",
     ];
 
@@ -407,7 +407,11 @@ pub fn prompt_continue_or_restart() -> Result<ContinueChoice> {
         .prompt()
         .context("Failed to get user selection")?;
 
-    match options.iter().position(|&o| o == choice).unwrap() {
+    match options
+        .iter()
+        .position(|&o| o == choice)
+        .context("Unexpected selection value")?
+    {
         0 => Ok(ContinueChoice::Continue),
         1 => Ok(ContinueChoice::Restart),
         _ => unreachable!(),

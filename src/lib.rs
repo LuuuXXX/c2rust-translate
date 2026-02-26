@@ -114,7 +114,6 @@ fn step_2_gate_verification(feature: &str, show_full_output: bool) -> Result<()>
 fn step_2_5_load_or_create_stats(feature: &str) -> Result<util::TranslationStats> {
     match util::TranslationStats::load_from_file(feature)? {
         Some(existing_stats) => {
-            use colored::Colorize;
             println!(
                 "\n{}",
                 "Found previous translation progress!".bright_yellow().bold()
@@ -150,7 +149,6 @@ fn step_2_5_load_or_create_stats(feature: &str) -> Result<util::TranslationStats
             }
         }
         None => {
-            use colored::Colorize;
             println!(
                 "{}",
                 "Starting new translation session...".bright_cyan()
@@ -163,7 +161,7 @@ fn step_2_5_load_or_create_stats(feature: &str) -> Result<util::TranslationStats
 /// Steps 3 & 4: Scan for files to translate and initialize progress tracking
 fn step_3_4_select_files_and_init_progress(
     feature: &str,
-    stats: &util::TranslationStats,
+    _stats: &util::TranslationStats,
 ) -> Result<(std::path::PathBuf, util::ProgressState)> {
     println!(
         "\n{}",

@@ -274,7 +274,12 @@ impl TranslationStats {
         }
     }
 
-    /// 获取已完成文件列表（用于跳过）
+    /// Returns the names of all files that have been attempted (including successfully translated ones).
+    ///
+    /// Note: the main translation loop relies on disk-based empty-file detection
+    /// (`find_empty_rs_files`) to skip already-translated files, so this method is
+    /// not called directly in the current workflow. It is kept as part of the public
+    /// statistics API for future use (e.g., progress visualisation, report generation).
     pub fn get_completed_files(&self) -> Vec<String> {
         self.file_attempts.keys().cloned().collect()
     }
