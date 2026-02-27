@@ -112,6 +112,7 @@ where
                             format_progress,
                             show_full_output,
                         )?;
+                        fix_attempts += 1;
                     } else {
                         // Fix each identified file in order of appearance in the error
                         for file_to_fix in &files_to_fix {
@@ -130,8 +131,9 @@ where
                                 show_full_output,
                             )?;
                         }
+                        // Count each file fix as a separate fix attempt
+                        fix_attempts += files_to_fix.len();
                     }
-                    fix_attempts += 1;
                 }
             }
         }

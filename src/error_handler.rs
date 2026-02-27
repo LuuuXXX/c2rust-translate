@@ -108,33 +108,56 @@ pub(crate) fn parse_error_for_files_ordered(
 }
 
 /// 从错误消息中提取与特定文件相关的部分
-/// 将错误按空行分割成块，返回包含该文件名引用的块
+/// 将错误按空行分割成块，返回包含该文件路径引用的块（使用最精确的路径后缀匹配）
 /// 如果没有找到匹配的块，则返回完整的错误消息
 pub(crate) fn extract_error_for_file(error_msg: &str, file_path: &std::path::Path) -> String {
-    let file_name = file_path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("");
+    // Normalize line endings for cross-platform reliability (\r\n and \r -> \n)
+    let normalized_msg = error_msg.replace("\r\n", "\n").replace('\r', "\n");
 
-    if file_name.is_empty() {
-        return error_msg.to_string();
+    // Build path suffix candidates (most-specific to least) from normal path components.
+    // E.g. for /abs/root/rust/src/a/mod.rs → ["src/a/mod.rs", "a/mod.rs", "mod.rs"]
+    // This avoids false matches when multiple files share the same basename (e.g. mod.rs).
+    let components: Vec<&str> = file_path
+        .components()
+        .filter_map(|c| match c {
+            std::path::Component::Normal(s) => s.to_str(),
+            _ => None,
+        })
+        .collect();
+
+    if components.is_empty() {
+        return normalized_msg;
     }
 
-    // 按空行分割错误消息为块，保留包含 --> 文件引用指示符的块
-    let blocks: Vec<&str> = error_msg.split("\n\n").collect();
+    // Choose the longest suffix that actually appears in a --> location line
+    let match_pattern = (0..components.len())
+        .map(|start| components[start..].join("/"))
+        .find(|pattern| {
+            normalized_msg
+                .lines()
+                .any(|line| line.contains("-->") && line.contains(pattern.as_str()))
+        });
+
+    let pattern = match match_pattern {
+        Some(ref p) => p.as_str(),
+        None => return normalized_msg,
+    };
+
+    // Split into blank-line-separated blocks and keep those whose --> line
+    // references our file path pattern
+    let blocks: Vec<&str> = normalized_msg.split("\n\n").collect();
     let relevant: Vec<&str> = blocks
         .iter()
         .filter(|block| {
-            // 只匹配包含 Rust 编译器文件位置指示符（-->）的块
             block
                 .lines()
-                .any(|line| line.contains("-->") && line.contains(file_name))
+                .any(|line| line.contains("-->") && line.contains(pattern))
         })
         .copied()
         .collect();
 
     if relevant.is_empty() {
-        error_msg.to_string()
+        normalized_msg
     } else {
         relevant.join("\n\n")
     }
@@ -615,8 +638,9 @@ note: note about same file
         let file_path = std::path::Path::new("src/other_file.rs");
         let result = extract_error_for_file(error_msg, file_path);
 
-        // Should return the full error message as fallback
-        assert_eq!(result, error_msg, "Should return full error when no match found");
+        // Should return the full error message as fallback (with normalized line endings)
+        let normalized = error_msg.replace("\r\n", "\n").replace('\r', "\n");
+        assert_eq!(result, normalized, "Should return full error when no match found");
     }
 
     #[test]
@@ -624,7 +648,40 @@ note: note about same file
         let error_msg = "some error message";
         let file_path = std::path::Path::new("");
         let result = extract_error_for_file(error_msg, file_path);
-        assert_eq!(result, error_msg, "Should return full error for empty filename");
+        // Empty path yields no components → returns normalized full message
+        let normalized = error_msg.replace("\r\n", "\n").replace('\r', "\n");
+        assert_eq!(result, normalized, "Should return full error for empty path");
+    }
+
+    #[test]
+    fn test_extract_error_for_file_crlf_normalization() {
+        // Simulate Windows CRLF line endings in compiler output
+        let error_msg = "error[E0308]: mismatched types\r\n   --> src/var_test.rs:10:5\r\n    |\r\n\r\nerror[E0425]: cannot find value `y`\r\n  --> src/fun_helper.rs:20:9";
+
+        let file_path = std::path::Path::new("src/var_test.rs");
+        let result = extract_error_for_file(error_msg, file_path);
+
+        assert!(result.contains("var_test.rs"), "Should find file even with CRLF line endings");
+        assert!(!result.contains("fun_helper.rs"), "Should not contain other file");
+        assert!(!result.contains('\r'), "Result should not contain carriage returns");
+    }
+
+    #[test]
+    fn test_extract_error_for_file_path_suffix_matching() {
+        // Two files with the same basename in different directories
+        let error_msg = "error[E0425]: undeclared\n   --> src/a/mod.rs:5:3\n    |\n5   |   foo();\n\nerror[E0308]: mismatch\n   --> src/b/mod.rs:10:5\n    |\n10  |   bar();";
+
+        // Match the file in src/a/
+        let file_a = std::path::Path::new("src/a/mod.rs");
+        let result_a = extract_error_for_file(error_msg, file_a);
+        assert!(result_a.contains("a/mod.rs"), "Should match src/a/mod.rs");
+        assert!(!result_a.contains("b/mod.rs"), "Should not match src/b/mod.rs");
+
+        // Match the file in src/b/
+        let file_b = std::path::Path::new("src/b/mod.rs");
+        let result_b = extract_error_for_file(error_msg, file_b);
+        assert!(result_b.contains("b/mod.rs"), "Should match src/b/mod.rs");
+        assert!(!result_b.contains("a/mod.rs"), "Should not match src/a/mod.rs");
     }
 
     #[test]
