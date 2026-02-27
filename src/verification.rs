@@ -40,6 +40,113 @@ pub fn display_retry_directly_warning() {
     println!("│");
 }
 
+/// Group messages (errors or warnings) by file and apply a fix to each affected file.
+///
+/// This is the shared logic used by both `build_and_fix_loop` (errors) and
+/// `build_and_fix_warnings_loop` (warnings). `is_warning` controls whether
+/// `apply_warning_fix` (true) or `apply_error_fix` (false) is called for each fix.
+///
+/// Returns the number of fixes applied in this call.
+fn apply_fixes_for_messages<F>(
+    message: &str,
+    fallback_error: &anyhow::Error,
+    feature: &str,
+    file_type: &str,
+    rs_file: &Path,
+    format_progress: &F,
+    show_full_output: bool,
+    is_warning: bool,
+) -> Result<usize>
+where
+    F: Fn(&str) -> String,
+{
+    let mut count = 0usize;
+
+    let file_messages = match crate::error_handler::group_errors_by_file(message, feature) {
+        Ok(v) => v,
+        Err(e) => {
+            println!(
+                "│ {}",
+                format!("⚠ Failed to group messages by file: {}", e).yellow()
+            );
+            vec![]
+        }
+    };
+
+    if !file_messages.is_empty() {
+        if file_messages.len() > 1 && !is_warning {
+            println!(
+                "│ {}",
+                format!(
+                    "Found errors in {} file(s), fixing each in order...",
+                    file_messages.len()
+                )
+                .bright_yellow()
+            );
+        }
+        for (msg_file, file_msg) in &file_messages {
+            let Some(file_stem) = msg_file.file_stem().and_then(|s| s.to_str()) else {
+                println!(
+                    "│ {}",
+                    format!(
+                        "⚠ Skipping file with invalid name: {}",
+                        msg_file.display()
+                    )
+                    .yellow()
+                );
+                continue;
+            };
+            let (msg_file_type, _) =
+                crate::file_scanner::extract_file_type(file_stem).unwrap_or((file_type, ""));
+            let msg_error = anyhow::anyhow!("{}", file_msg);
+            if is_warning {
+                crate::apply_warning_fix(
+                    feature,
+                    msg_file_type,
+                    msg_file,
+                    &msg_error,
+                    format_progress,
+                    show_full_output,
+                )?;
+            } else {
+                crate::apply_error_fix(
+                    feature,
+                    msg_file_type,
+                    msg_file,
+                    &msg_error,
+                    format_progress,
+                    show_full_output,
+                )?;
+            }
+            count += 1;
+        }
+    } else {
+        // Fall back to single-file fix
+        if is_warning {
+            crate::apply_warning_fix(
+                feature,
+                file_type,
+                rs_file,
+                fallback_error,
+                format_progress,
+                show_full_output,
+            )?;
+        } else {
+            crate::apply_error_fix(
+                feature,
+                file_type,
+                rs_file,
+                fallback_error,
+                format_progress,
+                show_full_output,
+            )?;
+        }
+        count += 1;
+    }
+
+    Ok(count)
+}
+
 /// 在循环中构建并修复错误
 ///
 /// 返回 Ok((build_successful, fix_attempts, had_restart))：
@@ -94,77 +201,17 @@ where
                     )?;
                     return Ok((build_successful, fix_attempts + extra_fix_attempts, had_restart));
                 } else {
-                    // 尝试按文件分组错误，对多文件错误按顺序修复
-                    let file_errors = match crate::error_handler::group_errors_by_file(
+                    // Apply fixes using the shared helper (error phase, is_warning=false)
+                    fix_attempts += apply_fixes_for_messages(
                         &build_error.to_string(),
+                        &build_error,
                         feature,
-                    ) {
-                        Ok(v) => v,
-                        Err(e) => {
-                            // 无法解析文件分组（例如特性名称无效或 I/O 错误）；
-                            // 记录警告并退回到针对当前文件的单文件修复行为。
-                            println!(
-                                "│ {}",
-                                format!("⚠ Failed to group errors by file: {}", e).yellow()
-                            );
-                            vec![]
-                        }
-                    };
-
-                    if !file_errors.is_empty() {
-                        if file_errors.len() > 1 {
-                            println!(
-                                "│ {}",
-                                format!(
-                                    "Found errors in {} file(s), fixing each in order...",
-                                    file_errors.len()
-                                )
-                                .bright_yellow()
-                            );
-                        }
-                        // 按出现顺序对每个受影响的文件应用修复，使用各文件独立的错误信息。
-                        // 如果某个文件的修复失败则提前返回（快速失败），后续文件不再尝试。
-                        for (error_file, file_error_msg) in &file_errors {
-                            let Some(file_stem) = error_file
-                                .file_stem()
-                                .and_then(|s| s.to_str())
-                            else {
-                                println!(
-                                    "│ {}",
-                                    format!(
-                                        "⚠ Skipping file with invalid name: {}",
-                                        error_file.display()
-                                    )
-                                    .yellow()
-                                );
-                                continue;
-                            };
-                            let (error_file_type, _) =
-                                crate::file_scanner::extract_file_type(file_stem)
-                                    .unwrap_or((file_type, ""));
-                            let error_for_file = anyhow::anyhow!("{}", file_error_msg);
-                            crate::apply_error_fix(
-                                feature,
-                                error_file_type,
-                                error_file,
-                                &error_for_file,
-                                format_progress,
-                                show_full_output,
-                            )?;
-                            fix_attempts += 1;
-                        }
-                    } else {
-                        // 无法从错误中解析出任何文件 — 沿用原有的单文件修复行为
-                        crate::apply_error_fix(
-                            feature,
-                            file_type,
-                            rs_file,
-                            &build_error,
-                            format_progress,
-                            show_full_output,
-                        )?;
-                        fix_attempts += 1;
-                    }
+                        file_type,
+                        rs_file,
+                        format_progress,
+                        show_full_output,
+                        false,
+                    )?;
                 }
             }
         }
@@ -181,6 +228,10 @@ where
 ///
 /// 在所有错误都已修复后运行（build_and_fix_loop 成功后），
 /// 此函数运行不带 -A warnings 的构建并修复剩余的警告。
+///
+/// 此函数为非致命性的：
+/// - 如果修复超过 max_fix_attempts 次仍有剩余警告，继续并返回已应用的修复次数
+/// - 如果警告阶段出现意外构建错误，记录日志后继续（不中断文件处理）
 ///
 /// 返回 Ok(fix_attempts)：警告修复阶段中应用的修复次数
 pub fn build_and_fix_warnings_loop<F>(
@@ -216,69 +267,25 @@ where
             }
             Ok(Some(warnings)) => {
                 let warning_error = anyhow::anyhow!("{}", warnings);
-                let file_warnings = match crate::error_handler::group_errors_by_file(
+                fix_attempts += apply_fixes_for_messages(
                     &warnings,
+                    &warning_error,
                     feature,
-                ) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        println!(
-                            "│ {}",
-                            format!("⚠ Failed to group warnings by file: {}", e).yellow()
-                        );
-                        vec![]
-                    }
-                };
-
-                if !file_warnings.is_empty() {
-                    for (warning_file, file_warning_msg) in &file_warnings {
-                        let Some(file_stem) = warning_file
-                            .file_stem()
-                            .and_then(|s| s.to_str())
-                        else {
-                            println!(
-                                "│ {}",
-                                format!(
-                                    "⚠ Skipping file with invalid name: {}",
-                                    warning_file.display()
-                                )
-                                .yellow()
-                            );
-                            continue;
-                        };
-                        let (warning_file_type, _) =
-                            crate::file_scanner::extract_file_type(file_stem)
-                                .unwrap_or((file_type, ""));
-                        let warning_for_file = anyhow::anyhow!("{}", file_warning_msg);
-                        crate::apply_error_fix(
-                            feature,
-                            warning_file_type,
-                            warning_file,
-                            &warning_for_file,
-                            format_progress,
-                            show_full_output,
-                        )?;
-                        fix_attempts += 1;
-                    }
-                } else {
-                    crate::apply_error_fix(
-                        feature,
-                        file_type,
-                        rs_file,
-                        &warning_error,
-                        format_progress,
-                        show_full_output,
-                    )?;
-                    fix_attempts += 1;
-                }
+                    file_type,
+                    rs_file,
+                    format_progress,
+                    show_full_output,
+                    true,
+                )?;
             }
             Err(e) => {
-                // Build failed during warning phase - unexpected since errors were already fixed
+                // Build failed during warning phase -- unexpected since errors were already fixed.
+                // Treat as non-fatal: log and stop the warning loop but do not abort file processing.
                 println!(
                     "│ {}",
                     format!("✗ Unexpected build error during warning phase: {}", e).red()
                 );
-                return Err(e);
+                return Ok(fix_attempts);
             }
         }
 
@@ -598,5 +605,66 @@ fn handle_manual_fix(feature: &str, file_type: &str, rs_file: &Path) -> Result<(
                 rs_file.display()
             ))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Test that apply_fixes_for_messages returns Err when the file does not exist.
+    /// An invalid-path feature name causes validate_feature_name to reject it before
+    /// reaching the file system, surfacing as an Err from apply_fixes_for_messages.
+    #[test]
+    fn test_apply_fixes_for_messages_nonexistent_file_returns_err() {
+        let result = apply_fixes_for_messages(
+            "warning: unused\n  --> src/foo.rs:1:1",
+            &anyhow::anyhow!("dummy"),
+            "invalid_feature_with_no_dir", // valid name but no directory on disk
+            "var",
+            std::path::Path::new("/nonexistent/foo.rs"),
+            &|op: &str| op.to_string(),
+            false,
+            true,
+        );
+        // group_errors_by_file will find no matching files (the paths don't exist),
+        // so the fallback single-file fix runs and fails because the file doesn't exist.
+        assert!(result.is_err());
+    }
+
+    /// Test that build_and_fix_warnings_loop returns Ok(0) when
+    /// cargo_build_check_warnings is not available (feature not found
+    /// means build dir doesn't exist, so it will fail).
+    /// The loop should return the error propagated from the build.
+    #[test]
+    #[serial_test::serial]
+    fn test_build_and_fix_warnings_loop_build_failure_is_nonfatal() {
+        use std::env;
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().unwrap();
+        let orig = env::current_dir().unwrap();
+        env::set_current_dir(tmp.path()).unwrap();
+
+        // Create minimal .c2rust dir so find_project_root works
+        std::fs::create_dir_all(tmp.path().join(".c2rust")).unwrap();
+
+        // feature directory does NOT exist → cargo_build_check_warnings will fail
+        // build_and_fix_warnings_loop should catch that and return Ok(0)
+        let result = build_and_fix_warnings_loop(
+            "nonexistent_feature",
+            "var",
+            std::path::Path::new("/nonexistent/var_foo.rs"),
+            "var_foo.rs",
+            &|op: &str| op.to_string(),
+            1, // max_fix_attempts
+            false,
+        );
+
+        env::set_current_dir(orig).unwrap();
+
+        // Build error during warning phase should be non-fatal → Ok(0)
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 0);
     }
 }

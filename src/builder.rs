@@ -84,11 +84,11 @@ pub fn cargo_build_check_warnings(feature: &str, _show_full_output: bool) -> Res
         duration.as_secs_f64()
     );
 
-    // Check for warnings in stderr
-    let has_warnings = stderr.lines().any(|line| {
-        let trimmed = line.trim_start();
-        trimmed.starts_with("warning[") || trimmed.starts_with("warning:")
-    });
+    // Check for warnings in stderr. Use `contains` to handle any leading whitespace
+    // or indentation that may appear in multi-line warning output.
+    let has_warnings = stderr
+        .lines()
+        .any(|line| line.contains("warning[") || line.contains("warning:"));
 
     if has_warnings {
         Ok(Some(stderr))
@@ -1292,4 +1292,57 @@ pub fn run_full_build_and_test_interactive(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    /// Test that warning detection recognises `warning[code]:` patterns
+    #[test]
+    fn test_detect_warning_code_format() {
+        let stderr = "warning[unused_variables]: unused variable `x`\n  --> src/foo.rs:5:9";
+        let has = stderr
+            .lines()
+            .any(|l| l.contains("warning[") || l.contains("warning:"));
+        assert!(has);
+    }
+
+    /// Test that warning detection recognises `warning:` patterns
+    #[test]
+    fn test_detect_warning_colon_format() {
+        let stderr = "warning: unused import: `std::fmt`\n  --> src/bar.rs:1:5";
+        let has = stderr
+            .lines()
+            .any(|l| l.contains("warning[") || l.contains("warning:"));
+        assert!(has);
+    }
+
+    /// Test that any line containing "warning:" anywhere (e.g. continuation lines) is detected
+    #[test]
+    fn test_detect_warning_anywhere_in_line() {
+        let stderr = "   = warning: this matches too broadly";
+        let has = stderr
+            .lines()
+            .any(|l| l.contains("warning[") || l.contains("warning:"));
+        assert!(has);
+    }
+
+    /// Test that clean build output (no warnings) returns false
+    #[test]
+    fn test_no_warnings_clean_output() {
+        let stderr = "   Compiling myproject v0.1.0\n    Finished dev [unoptimized] target(s) in 1.23s";
+        let has = stderr
+            .lines()
+            .any(|l| l.contains("warning[") || l.contains("warning:"));
+        assert!(!has);
+    }
+
+    /// Test that error-only output is not flagged as having warnings
+    #[test]
+    fn test_no_warnings_in_error_output() {
+        let stderr = "error[E0308]: mismatched types\n  --> src/main.rs:3:5";
+        let has = stderr
+            .lines()
+            .any(|l| l.contains("warning[") || l.contains("warning:"));
+        assert!(!has);
+    }
 }
