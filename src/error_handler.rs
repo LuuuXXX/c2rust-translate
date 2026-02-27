@@ -82,16 +82,8 @@ pub(crate) fn extract_errors_for_file(error_msg: &str, file_path: &PathBuf) -> S
     {
         Ok(re) => re,
         Err(_) => {
-            // 正则表达式构建失败时退回到简单字符串匹配
-            let matching_blocks: Vec<&str> = error_msg
-                .split("\n\n")
-                .filter(|block| block.contains(file_name))
-                .collect();
-            return if matching_blocks.is_empty() {
-                error_msg.to_string()
-            } else {
-                matching_blocks.join("\n\n")
-            };
+            // 正则表达式构建失败时返回完整错误消息，以避免不正确的子字符串匹配
+            return error_msg.to_string();
         }
     };
 

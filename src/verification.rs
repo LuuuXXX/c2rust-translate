@@ -125,10 +125,20 @@ where
                         // 按出现顺序对每个受影响的文件应用修复，使用各文件独立的错误信息。
                         // 如果某个文件的修复失败则提前返回（快速失败），后续文件不再尝试。
                         for (error_file, file_error_msg) in &file_errors {
-                            let file_stem = error_file
+                            let Some(file_stem) = error_file
                                 .file_stem()
                                 .and_then(|s| s.to_str())
-                                .unwrap_or(file_name);
+                            else {
+                                println!(
+                                    "│ {}",
+                                    format!(
+                                        "⚠ Skipping file with invalid name: {}",
+                                        error_file.display()
+                                    )
+                                    .yellow()
+                                );
+                                continue;
+                            };
                             let (error_file_type, _) =
                                 crate::file_scanner::extract_file_type(file_stem)
                                     .unwrap_or((file_type, ""));
