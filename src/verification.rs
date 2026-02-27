@@ -634,6 +634,10 @@ mod tests {
             .join("src");
         std::fs::create_dir_all(&feature_src_dir).unwrap();
 
+        // Create the companion .c file so fix_translation_error passes its C-file
+        // existence check, ensuring the error originates from the missing .rs file.
+        std::fs::write(feature_src_dir.join("nonexistent.c"), "").unwrap();
+
         // Point rs_file at a path under the feature src dir that does NOT exist.
         let rs_file = feature_src_dir.join("nonexistent.rs");
 
