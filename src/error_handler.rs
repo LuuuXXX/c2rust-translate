@@ -58,6 +58,115 @@ pub(crate) fn parse_error_for_files(error_msg: &str, feature: &str) -> Result<Ve
     Ok(result)
 }
 
+/// 解析错误消息以提取 Rust 文件路径，按首次出现的顺序返回
+/// 与 parse_error_for_files 不同，该函数保留文件在错误信息中首次出现的顺序
+pub(crate) fn parse_error_for_files_ordered(
+    error_msg: &str,
+    feature: &str,
+) -> Result<Vec<PathBuf>> {
+    util::validate_feature_name(feature)?;
+
+    lazy_static::lazy_static! {
+        static ref ERROR_PATH_RE: regex::Regex =
+            regex::Regex::new(r"(?:-->|at)\s+([^\s:]+\.rs)(?::\d+:\d+)?")
+                .expect("Failed to compile error path regex");
+    }
+
+    let project_root = util::find_project_root()?;
+    let feature_path = project_root.join(".c2rust").join(feature);
+    let rust_dir = feature_path.join("rust");
+
+    // Canonicalize rust_dir once, before iterating over captured paths
+    let rust_canonical = match rust_dir.canonicalize() {
+        Ok(p) => p,
+        Err(_) => return Ok(Vec::new()),
+    };
+
+    let mut seen = HashSet::new();
+    let mut ordered_paths = Vec::new();
+
+    for cap in ERROR_PATH_RE.captures_iter(error_msg) {
+        if let Some(path_match) = cap.get(1) {
+            let path_str = path_match.as_str();
+            let path = PathBuf::from(path_str);
+
+            // 尝试原样路径和相对于 rust_dir 的路径
+            let candidates = vec![path.clone(), rust_dir.join(&path)];
+
+            for candidate in candidates {
+                if candidate.exists() && candidate.is_file() {
+                    if let Ok(canonical) = candidate.canonicalize() {
+                        if canonical.starts_with(&rust_canonical)
+                            && seen.insert(canonical.clone())
+                        {
+                            ordered_paths.push(canonical);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(ordered_paths)
+}
+
+/// 从错误消息中提取与特定文件相关的部分
+/// 将错误按空行分割成块，返回包含该文件路径引用的块（使用最精确的路径后缀匹配）
+/// 如果没有找到匹配的块，则返回完整的错误消息
+pub(crate) fn extract_error_for_file(error_msg: &str, file_path: &std::path::Path) -> String {
+    // Normalize line endings for cross-platform reliability (\r\n and \r -> \n)
+    let normalized_msg = error_msg.replace("\r\n", "\n").replace('\r', "\n");
+
+    // Build path suffix candidates (most-specific to least) from normal path components.
+    // E.g. for /abs/root/rust/src/a/mod.rs → ["src/a/mod.rs", "a/mod.rs", "mod.rs"]
+    // This avoids false matches when multiple files share the same basename (e.g. mod.rs).
+    let components: Vec<&str> = file_path
+        .components()
+        .filter_map(|c| match c {
+            std::path::Component::Normal(s) => s.to_str(),
+            _ => None,
+        })
+        .collect();
+
+    if components.is_empty() {
+        return normalized_msg;
+    }
+
+    // Choose the longest suffix that actually appears in a --> location line
+    let match_pattern = (0..components.len())
+        .map(|start| components[start..].join("/"))
+        .find(|pattern| {
+            normalized_msg
+                .lines()
+                .any(|line| line.contains("-->") && line.contains(pattern.as_str()))
+        });
+
+    let pattern = match match_pattern {
+        Some(ref p) => p.as_str(),
+        None => return normalized_msg,
+    };
+
+    // Split into blank-line-separated blocks and keep those whose --> line
+    // references our file path pattern
+    let blocks: Vec<&str> = normalized_msg.split("\n\n").collect();
+    let relevant: Vec<&str> = blocks
+        .iter()
+        .filter(|block| {
+            block
+                .lines()
+                .any(|line| line.contains("-->") && line.contains(pattern))
+        })
+        .copied()
+        .collect();
+
+    if relevant.is_empty() {
+        normalized_msg
+    } else {
+        relevant.join("\n\n")
+    }
+}
+
 /// 当可以定位文件时处理启动测试失败
 #[allow(dead_code)]
 pub(crate) fn handle_startup_test_failure_with_files(
@@ -307,6 +416,24 @@ pub(crate) fn handle_startup_test_failure_with_files(
 mod tests {
     use super::*;
 
+    /// RAII guard that restores the process working directory when dropped.
+    /// Ensures CWD is restored even if the test panics.
+    struct DirGuard {
+        original: std::path::PathBuf,
+    }
+    impl DirGuard {
+        fn new() -> Self {
+            Self {
+                original: std::env::current_dir().expect("Failed to get current dir"),
+            }
+        }
+    }
+    impl Drop for DirGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.original);
+        }
+    }
+
     #[test]
     fn test_parse_error_pattern_extraction() {
         // 测试我们可以从错误消息中提取文件路径
@@ -391,7 +518,7 @@ note: expected signature from here
         let project_root = temp_dir.path();
 
         // 将当前目录设置为临时目录，以便 find_project_root 可以工作
-        let original_dir = env::current_dir().unwrap();
+        let _guard = DirGuard::new();
         env::set_current_dir(project_root).unwrap();
 
         // 创建特性目录结构
@@ -433,9 +560,6 @@ note: some note about outside file
 
         let result = parse_error_for_files(error_msg, feature).unwrap();
 
-        // 恢复原始目录
-        env::set_current_dir(&original_dir).unwrap();
-
         // 应该准确找到 2 个文件（不包括 outside.rs）
         assert_eq!(result.len(), 2);
 
@@ -466,7 +590,7 @@ note: some note about outside file
         let temp_dir = tempdir().unwrap();
         let project_root = temp_dir.path();
 
-        let original_dir = env::current_dir().unwrap();
+        let _guard = DirGuard::new();
         env::set_current_dir(project_root).unwrap();
 
         fs::create_dir(project_root.join(".git")).unwrap();
@@ -493,8 +617,6 @@ note: note about same file
 
         let result = parse_error_for_files(error_msg, feature).unwrap();
 
-        env::set_current_dir(&original_dir).unwrap();
-
         // 尽管多次提及，但应该只有 1 个文件
         assert_eq!(result.len(), 1);
         assert!(result[0].ends_with("var_test.rs"));
@@ -511,5 +633,125 @@ note: note about same file
 
         let result = parse_error_for_files(error_msg, "good/bad");
         assert!(result.is_err(), "Should reject feature name with /");
+    }
+
+    #[test]
+    fn test_extract_error_for_file_single_file() {
+        let error_msg = "error[E0308]: mismatched types\n   --> src/var_test.rs:10:5\n    |\n10  |     let x: i32 = \"hello\";\n    |     ^^^^^^ expected `i32`, found `&str`\n\nerror[E0425]: cannot find value `y` in this scope\n  --> src/fun_helper.rs:20:9\n   |\n20 |         y\n   |         ^ not found in this scope";
+
+        let file_path = std::path::Path::new("src/var_test.rs");
+        let result = extract_error_for_file(error_msg, file_path);
+
+        assert!(result.contains("var_test.rs"), "Should contain the target file reference");
+        assert!(result.contains("E0308"), "Should contain the error for var_test.rs");
+        assert!(!result.contains("fun_helper.rs"), "Should not contain the other file");
+    }
+
+    #[test]
+    fn test_extract_error_for_file_fallback_on_no_match() {
+        let error_msg = "error[E0308]: mismatched types\n   --> src/var_test.rs:10:5\n    |\n10  |     let x: i32 = \"hello\";";
+
+        // File that doesn't appear in the error
+        let file_path = std::path::Path::new("src/other_file.rs");
+        let result = extract_error_for_file(error_msg, file_path);
+
+        // Should return the full error message as fallback (with normalized line endings)
+        let normalized = error_msg.replace("\r\n", "\n").replace('\r', "\n");
+        assert_eq!(result, normalized, "Should return full error when no match found");
+    }
+
+    #[test]
+    fn test_extract_error_for_file_empty_filename() {
+        let error_msg = "some error message";
+        let file_path = std::path::Path::new("");
+        let result = extract_error_for_file(error_msg, file_path);
+        // Empty path yields no components → returns normalized full message
+        let normalized = error_msg.replace("\r\n", "\n").replace('\r', "\n");
+        assert_eq!(result, normalized, "Should return full error for empty path");
+    }
+
+    #[test]
+    fn test_extract_error_for_file_crlf_normalization() {
+        // Simulate Windows CRLF line endings in compiler output
+        let error_msg = "error[E0308]: mismatched types\r\n   --> src/var_test.rs:10:5\r\n    |\r\n\r\nerror[E0425]: cannot find value `y`\r\n  --> src/fun_helper.rs:20:9";
+
+        let file_path = std::path::Path::new("src/var_test.rs");
+        let result = extract_error_for_file(error_msg, file_path);
+
+        assert!(result.contains("var_test.rs"), "Should find file even with CRLF line endings");
+        assert!(!result.contains("fun_helper.rs"), "Should not contain other file");
+        assert!(!result.contains('\r'), "Result should not contain carriage returns");
+    }
+
+    #[test]
+    fn test_extract_error_for_file_path_suffix_matching() {
+        // Two files with the same basename in different directories
+        let error_msg = "error[E0425]: undeclared\n   --> src/a/mod.rs:5:3\n    |\n5   |   foo();\n\nerror[E0308]: mismatch\n   --> src/b/mod.rs:10:5\n    |\n10  |   bar();";
+
+        // Match the file in src/a/
+        let file_a = std::path::Path::new("src/a/mod.rs");
+        let result_a = extract_error_for_file(error_msg, file_a);
+        assert!(result_a.contains("a/mod.rs"), "Should match src/a/mod.rs");
+        assert!(!result_a.contains("b/mod.rs"), "Should not match src/b/mod.rs");
+
+        // Match the file in src/b/
+        let file_b = std::path::Path::new("src/b/mod.rs");
+        let result_b = extract_error_for_file(error_msg, file_b);
+        assert!(result_b.contains("b/mod.rs"), "Should match src/b/mod.rs");
+        assert!(!result_b.contains("a/mod.rs"), "Should not match src/a/mod.rs");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_parse_error_for_files_ordered_preserves_order() {
+        use std::env;
+        use std::fs;
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let project_root = temp_dir.path();
+
+        let _guard = DirGuard::new();
+        env::set_current_dir(project_root).unwrap();
+
+        let feature = "test_feature_order";
+        let rust_dir = project_root.join(".c2rust").join(feature).join("rust");
+        let src_dir = rust_dir.join("src");
+        fs::create_dir_all(&src_dir).unwrap();
+
+        // 创建测试文件 (fun_helper.rs 出现在 var_test.rs 之前)
+        let file_a = src_dir.join("fun_helper.rs");
+        fs::write(&file_a, "// helper").unwrap();
+
+        let file_b = src_dir.join("var_test.rs");
+        fs::write(&file_b, "// test").unwrap();
+
+        // fun_helper.rs 先出现，var_test.rs 后出现
+        let error_msg = "error[E0425]: cannot find value `y` in this scope
+  --> src/fun_helper.rs:20:9
+   |
+20 |         y
+   |         ^ not found in this scope
+
+error[E0308]: mismatched types
+   --> src/var_test.rs:10:5
+    |
+10  |     let x: i32 = \"hello\";
+    |     ^^^^^^ expected `i32`, found `&str`";
+
+        let result = parse_error_for_files_ordered(error_msg, feature).unwrap();
+
+        assert_eq!(result.len(), 2, "Should find 2 files");
+        // fun_helper.rs 应该排在第一位（首先出现）
+        assert!(result[0].ends_with("fun_helper.rs"), "fun_helper.rs should be first");
+        assert!(result[1].ends_with("var_test.rs"), "var_test.rs should be second");
+    }
+
+    #[test]
+    fn test_parse_error_for_files_ordered_validates_feature_name() {
+        let error_msg = "error: --> src/test.rs:1:1";
+
+        let result = parse_error_for_files_ordered(error_msg, "../bad");
+        assert!(result.is_err(), "Should reject feature name with ..");
     }
 }
