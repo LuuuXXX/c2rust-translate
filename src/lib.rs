@@ -408,6 +408,14 @@ fn process_selected_files(
 
         print_file_processing_header(current_position, total_count, file_name);
 
+        if let Err(e) = check_c_file_exists(rs_file) {
+            println!("│ {}", format!("✗ Skipping file: {}", e).red());
+            println!("│ {}", "Continuing to next file...".yellow());
+            stats.record_file_skipped(file_name.to_string());
+            save_stats_or_warn(stats, feature);
+            continue;
+        }
+
         if let Err(e) = process_rs_file(
             feature,
             rs_file,

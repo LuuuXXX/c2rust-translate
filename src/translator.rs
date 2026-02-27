@@ -345,20 +345,6 @@ pub fn fix_translation_error(
     // 从 Rust 文件路径派生 C 源文件路径
     // 示例：var_example.rs -> var_example.c
     let c_file = rs_file.with_extension("c");
-    if let Err(e) = std::fs::metadata(&c_file) {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            anyhow::bail!(
-                "Corresponding C source file not found: {}. Expected a .c file with the same name as the .rs file.",
-                c_file.display()
-            );
-        } else {
-            anyhow::bail!(
-                "Failed to access corresponding C source file {}: {}",
-                c_file.display(),
-                e
-            );
-        }
-    }
 
     // 检查建议文件是否存在
     let suggestion_path = crate::suggestion::get_suggestion_file_path()?;
