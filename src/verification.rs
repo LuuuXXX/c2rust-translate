@@ -94,16 +94,77 @@ where
                     )?;
                     return Ok((build_successful, fix_attempts + extra_fix_attempts, had_restart));
                 } else {
-                    // Use lib.rs apply_error_fix instead of local duplicate
-                    crate::apply_error_fix(
+                    // 尝试按文件分组错误，对多文件错误按顺序修复
+                    let file_errors = match crate::error_handler::group_errors_by_file(
+                        &build_error.to_string(),
                         feature,
-                        file_type,
-                        rs_file,
-                        &build_error,
-                        format_progress,
-                        show_full_output,
-                    )?;
-                    fix_attempts += 1;
+                    ) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            // 无法解析文件分组（例如特性名称无效或 I/O 错误）；
+                            // 记录警告并退回到针对当前文件的单文件修复行为。
+                            println!(
+                                "│ {}",
+                                format!("⚠ Failed to group errors by file: {}", e).yellow()
+                            );
+                            vec![]
+                        }
+                    };
+
+                    if !file_errors.is_empty() {
+                        if file_errors.len() > 1 {
+                            println!(
+                                "│ {}",
+                                format!(
+                                    "Found errors in {} file(s), fixing each in order...",
+                                    file_errors.len()
+                                )
+                                .bright_yellow()
+                            );
+                        }
+                        // 按出现顺序对每个受影响的文件应用修复，使用各文件独立的错误信息。
+                        // 如果某个文件的修复失败则提前返回（快速失败），后续文件不再尝试。
+                        for (error_file, file_error_msg) in &file_errors {
+                            let Some(file_stem) = error_file
+                                .file_stem()
+                                .and_then(|s| s.to_str())
+                            else {
+                                println!(
+                                    "│ {}",
+                                    format!(
+                                        "⚠ Skipping file with invalid name: {}",
+                                        error_file.display()
+                                    )
+                                    .yellow()
+                                );
+                                continue;
+                            };
+                            let (error_file_type, _) =
+                                crate::file_scanner::extract_file_type(file_stem)
+                                    .unwrap_or((file_type, ""));
+                            let error_for_file = anyhow::anyhow!("{}", file_error_msg);
+                            crate::apply_error_fix(
+                                feature,
+                                error_file_type,
+                                error_file,
+                                &error_for_file,
+                                format_progress,
+                                show_full_output,
+                            )?;
+                            fix_attempts += 1;
+                        }
+                    } else {
+                        // 无法从错误中解析出任何文件 — 沿用原有的单文件修复行为
+                        crate::apply_error_fix(
+                            feature,
+                            file_type,
+                            rs_file,
+                            &build_error,
+                            format_progress,
+                            show_full_output,
+                        )?;
+                        fix_attempts += 1;
+                    }
                 }
             }
         }
