@@ -177,6 +177,124 @@ where
     Ok((false, fix_attempts, false))
 }
 
+/// 在循环中构建并修复警告（第二阶段）
+///
+/// 在所有错误都已修复后运行（build_and_fix_loop 成功后），
+/// 此函数运行不带 -A warnings 的构建并修复剩余的警告。
+///
+/// 返回 Ok(fix_attempts)：警告修复阶段中应用的修复次数
+pub fn build_and_fix_warnings_loop<F>(
+    feature: &str,
+    file_type: &str,
+    rs_file: &Path,
+    _file_name: &str,
+    format_progress: &F,
+    max_fix_attempts: usize,
+    show_full_output: bool,
+) -> Result<usize>
+where
+    F: Fn(&str) -> String,
+{
+    let mut fix_attempts = 0usize;
+    for attempt in 1..=max_fix_attempts {
+        println!("│");
+        println!("│ {}", format_progress("Warning Check").bright_magenta().bold());
+        println!(
+            "│ {}",
+            format!(
+                "Checking for warnings (attempt {}/{})",
+                attempt, max_fix_attempts
+            )
+            .bright_blue()
+            .bold()
+        );
+
+        match builder::cargo_build_check_warnings(feature, show_full_output) {
+            Ok(None) => {
+                println!("│ {}", "✓ No warnings found!".bright_green().bold());
+                return Ok(fix_attempts);
+            }
+            Ok(Some(warnings)) => {
+                let warning_error = anyhow::anyhow!("{}", warnings);
+                let file_warnings = match crate::error_handler::group_errors_by_file(
+                    &warnings,
+                    feature,
+                ) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        println!(
+                            "│ {}",
+                            format!("⚠ Failed to group warnings by file: {}", e).yellow()
+                        );
+                        vec![]
+                    }
+                };
+
+                if !file_warnings.is_empty() {
+                    for (warning_file, file_warning_msg) in &file_warnings {
+                        let Some(file_stem) = warning_file
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                        else {
+                            println!(
+                                "│ {}",
+                                format!(
+                                    "⚠ Skipping file with invalid name: {}",
+                                    warning_file.display()
+                                )
+                                .yellow()
+                            );
+                            continue;
+                        };
+                        let (warning_file_type, _) =
+                            crate::file_scanner::extract_file_type(file_stem)
+                                .unwrap_or((file_type, ""));
+                        let warning_for_file = anyhow::anyhow!("{}", file_warning_msg);
+                        crate::apply_error_fix(
+                            feature,
+                            warning_file_type,
+                            warning_file,
+                            &warning_for_file,
+                            format_progress,
+                            show_full_output,
+                        )?;
+                        fix_attempts += 1;
+                    }
+                } else {
+                    crate::apply_error_fix(
+                        feature,
+                        file_type,
+                        rs_file,
+                        &warning_error,
+                        format_progress,
+                        show_full_output,
+                    )?;
+                    fix_attempts += 1;
+                }
+            }
+            Err(e) => {
+                // Build failed during warning phase - unexpected since errors were already fixed
+                println!(
+                    "│ {}",
+                    format!("✗ Unexpected build error during warning phase: {}", e).red()
+                );
+                return Err(e);
+            }
+        }
+
+        println!("{}", "Updating code analysis...".bright_blue());
+        analyzer::update_code_analysis(feature)?;
+        println!("{}", "✓ Code analysis updated".bright_green());
+    }
+
+    println!(
+        "│ {}",
+        "⚠ Maximum warning fix attempts reached, continuing with remaining warnings."
+            .yellow()
+    );
+    Ok(fix_attempts)
+}
+
 /// 处理达到最大修复尝试次数的情况
 ///
 /// 返回 (build_successful, extra_fix_attempts, had_restart)：

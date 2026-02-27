@@ -48,6 +48,55 @@ pub fn cargo_build(feature: &str, _show_full_output: bool) -> Result<()> {
     Ok(())
 }
 
+/// 运行 cargo build 不抑制警告，捕获并返回警告信息
+///
+/// 与 cargo_build 不同，此函数不设置 RUSTFLAGS="-A warnings"，
+/// 因此编译器会输出所有警告信息。
+///
+/// - 如果构建成功且存在警告，返回 Ok(Some(warnings_text))
+/// - 如果构建成功且无警告，返回 Ok(None)
+/// - 如果构建失败（存在错误），返回 Err
+pub fn cargo_build_check_warnings(feature: &str, _show_full_output: bool) -> Result<Option<String>> {
+    util::validate_feature_name(feature)?;
+
+    let project_root = util::find_project_root()?;
+    let build_dir = project_root.join(".c2rust").join(feature).join("rust");
+
+    let start_time = Instant::now();
+
+    let output = Command::new("cargo")
+        .arg("build")
+        .current_dir(&build_dir)
+        .output()
+        .context("Failed to execute cargo build")?;
+
+    let duration = start_time.elapsed();
+
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    if !output.status.success() {
+        anyhow::bail!("Build error: {}", stderr);
+    }
+
+    println!(
+        "  {} (took {:.2}s)",
+        "Build completed".bright_green(),
+        duration.as_secs_f64()
+    );
+
+    // Check for warnings in stderr
+    let has_warnings = stderr.lines().any(|line| {
+        let trimmed = line.trim_start();
+        trimmed.starts_with("warning[") || trimmed.starts_with("warning:")
+    });
+
+    if has_warnings {
+        Ok(Some(stderr))
+    } else {
+        Ok(None)
+    }
+}
+
 /// 从 c2rust-config 获取特定的配置值
 fn get_config_value(key: &str, feature: &str) -> Result<String> {
     let project_root = util::find_project_root()?;

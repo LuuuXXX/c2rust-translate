@@ -558,6 +558,25 @@ fn process_rs_file(
         had_restart |= did_restart;
 
         if build_successful {
+            // Phase 2: Fix warnings after all errors are resolved
+            println!("│");
+            println!(
+                "│ {}",
+                "Phase 2: Checking and fixing warnings..."
+                    .bright_blue()
+                    .bold()
+            );
+            let warning_fix_attempts = verification::build_and_fix_warnings_loop(
+                feature,
+                file_type,
+                rs_file,
+                file_name,
+                &format_progress,
+                max_fix_attempts,
+                show_full_output,
+            )?;
+            total_fix_attempts += warning_fix_attempts;
+
             let processing_complete =
                 complete_file_processing(feature, file_name, file_type, rs_file, &format_progress)?;
             if processing_complete {
