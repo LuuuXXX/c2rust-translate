@@ -91,6 +91,13 @@ pub fn translate_feature(
             max_fix_attempts,
             show_full_output,
         )?;
+    } else {
+        println!(
+            "{}",
+            "⚠ Skipping warning fix phase because some files were not translated."
+                .bright_yellow()
+                .bold()
+        );
     }
 
     Ok(())

@@ -90,7 +90,7 @@ pub enum WarningFixChoice {
 - `prompt_compile_success_choice()` - 成功测试的 4 选项提示
 - `prompt_test_failure_choice()` - 测试失败的 3 选项提示
 - `prompt_compile_failure_choice()` - 构建失败的 3 选项提示
-- `prompt_warning_fix_choice()` - 翻译完成后询问是否进入告警修复阶段的 y/n 提示
+- `prompt_warning_fix_choice()` - 翻译完成后以列表选择器（方向键选择）询问是否进入告警修复阶段
 - `is_auto_accept_mode()` - 检查自动接受状态
 - `enable_auto_accept_mode()` - 启用批处理
 - `disable_auto_accept_mode()` - 禁用批处理
