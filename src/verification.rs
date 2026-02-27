@@ -612,30 +612,52 @@ fn handle_manual_fix(feature: &str, file_type: &str, rs_file: &Path) -> Result<(
 mod tests {
     use super::*;
 
-    /// Test that apply_fixes_for_messages returns Err when the file does not exist.
-    /// An invalid-path feature name causes validate_feature_name to reject it before
-    /// reaching the file system, surfacing as an Err from apply_fixes_for_messages.
+    /// Test that apply_fixes_for_messages returns Err when the target Rust file
+    /// does not exist within an otherwise valid project root and feature tree.
     #[test]
+    #[serial_test::serial]
     fn test_apply_fixes_for_messages_nonexistent_file_returns_err() {
+        use std::env;
+        use tempfile::TempDir;
+
+        // Set up a temporary project root with a valid .c2rust/<feature>/rust/src tree.
+        let tmp = TempDir::new().unwrap();
+        let orig_dir = env::current_dir().unwrap();
+        env::set_current_dir(tmp.path()).unwrap();
+
+        let feature = "test_feature";
+        let feature_src_dir = tmp
+            .path()
+            .join(".c2rust")
+            .join(feature)
+            .join("rust")
+            .join("src");
+        std::fs::create_dir_all(&feature_src_dir).unwrap();
+
+        // Point rs_file at a path under the feature src dir that does NOT exist.
+        let rs_file = feature_src_dir.join("nonexistent.rs");
+
         let result = apply_fixes_for_messages(
             "warning: unused\n  --> src/foo.rs:1:1",
             &anyhow::anyhow!("dummy"),
-            "invalid_feature_with_no_dir", // valid name but no directory on disk
+            feature,
             "var",
-            std::path::Path::new("/nonexistent/foo.rs"),
+            &rs_file,
             &|op: &str| op.to_string(),
             false,
             true,
         );
-        // group_errors_by_file will find no matching files (the paths don't exist),
-        // so the fallback single-file fix runs and fails because the file doesn't exist.
+
+        env::set_current_dir(orig_dir).unwrap();
+
+        // With a valid project root and feature tree the error comes from the
+        // missing target file, not from a missing project root.
         assert!(result.is_err());
     }
 
-    /// Test that build_and_fix_warnings_loop returns Ok(0) when
-    /// cargo_build_check_warnings is not available (feature not found
-    /// means build dir doesn't exist, so it will fail).
-    /// The loop should return the error propagated from the build.
+    /// Test that build_and_fix_warnings_loop returns Ok(0) when the build fails
+    /// during the warning phase (e.g. the feature build directory does not exist).
+    /// The loop should treat this as non-fatal and return Ok(0).
     #[test]
     #[serial_test::serial]
     fn test_build_and_fix_warnings_loop_build_failure_is_nonfatal() {
@@ -646,15 +668,17 @@ mod tests {
         let orig = env::current_dir().unwrap();
         env::set_current_dir(tmp.path()).unwrap();
 
-        // Create minimal .c2rust dir so find_project_root works
+        // Create minimal .c2rust dir so find_project_root works, but do NOT create
+        // the feature build directory so cargo_build_check_warnings will fail.
         std::fs::create_dir_all(tmp.path().join(".c2rust")).unwrap();
 
-        // feature directory does NOT exist → cargo_build_check_warnings will fail
-        // build_and_fix_warnings_loop should catch that and return Ok(0)
+        // Use a path inside tmp so it is portable and clearly non-existent.
+        let rs_file = tmp.path().join("var_foo.rs");
+
         let result = build_and_fix_warnings_loop(
             "nonexistent_feature",
             "var",
-            std::path::Path::new("/nonexistent/var_foo.rs"),
+            &rs_file,
             "var_foo.rs",
             &|op: &str| op.to_string(),
             1, // max_fix_attempts

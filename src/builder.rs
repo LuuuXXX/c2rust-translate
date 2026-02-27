@@ -48,14 +48,17 @@ pub fn cargo_build(feature: &str, _show_full_output: bool) -> Result<()> {
     Ok(())
 }
 
-/// 运行 cargo build 不抑制警告，捕获并返回警告信息
+/// Run cargo build without suppressing warnings, capture and return warning output.
 ///
-/// 与 cargo_build 不同，此函数不设置 RUSTFLAGS="-A warnings"，
-/// 因此编译器会输出所有警告信息。
+/// Unlike `cargo_build`, this function does not set `RUSTFLAGS="-A warnings"`,
+/// so the compiler emits all warnings.
 ///
-/// - 如果构建成功且存在警告，返回 Ok(Some(warnings_text))
-/// - 如果构建成功且无警告，返回 Ok(None)
-/// - 如果构建失败（存在错误），返回 Err
+/// - Returns `Ok(Some(warnings_text))` if the build succeeds and warnings are present.
+/// - Returns `Ok(None)` if the build succeeds with no warnings.
+/// - Returns `Err` if the build fails (errors present).
+///
+/// Note: `_show_full_output` is not currently used; it is kept for API consistency
+/// with other build functions and for potential future use.
 pub fn cargo_build_check_warnings(feature: &str, _show_full_output: bool) -> Result<Option<String>> {
     util::validate_feature_name(feature)?;
 
