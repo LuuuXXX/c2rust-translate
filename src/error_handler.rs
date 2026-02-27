@@ -61,6 +61,7 @@ pub(crate) fn parse_error_for_files(error_msg: &str, feature: &str) -> Result<Ve
 /// 从错误消息中提取特定文件的错误块
 ///
 /// 将错误消息拆分为由空行分隔的块，并返回引用指定文件的块。
+/// 匹配时使用路径分隔符或行首/行尾边界，避免 "test.rs" 误匹配 "my_test.rs"。
 /// 如果没有找到匹配的块，则返回完整的错误消息作为后备。
 pub(crate) fn extract_errors_for_file(error_msg: &str, file_path: &PathBuf) -> String {
     let file_name = match file_path.file_name().and_then(|n| n.to_str()) {
@@ -68,11 +69,36 @@ pub(crate) fn extract_errors_for_file(error_msg: &str, file_path: &PathBuf) -> S
         None => return error_msg.to_string(),
     };
 
-    // 将错误消息拆分为由空行分隔的块
-    // 保留包含该文件名的块
+    // 构建一个能精确匹配文件名的正则表达式：
+    // 文件名前必须是路径分隔符、空白或行首，后必须是非字母数字下划线字符或行尾。
+    // 这可以防止 "test.rs" 误匹配 "my_test.rs"。
+    let pattern = format!(
+        r"(?:^|[/\\\s]){}\b",
+        regex::escape(file_name)
+    );
+    let file_re = match regex::RegexBuilder::new(&pattern)
+        .multi_line(true)
+        .build()
+    {
+        Ok(re) => re,
+        Err(_) => {
+            // 正则表达式构建失败时退回到简单字符串匹配
+            let matching_blocks: Vec<&str> = error_msg
+                .split("\n\n")
+                .filter(|block| block.contains(file_name))
+                .collect();
+            return if matching_blocks.is_empty() {
+                error_msg.to_string()
+            } else {
+                matching_blocks.join("\n\n")
+            };
+        }
+    };
+
+    // 将错误消息拆分为由空行分隔的块，保留包含该文件名的块
     let matching_blocks: Vec<&str> = error_msg
         .split("\n\n")
-        .filter(|block| block.contains(file_name))
+        .filter(|block| file_re.is_match(block))
         .collect();
 
     if matching_blocks.is_empty() {
@@ -723,5 +749,28 @@ error[E0425]: not found
 
         let result = group_errors_by_file(error_msg, "good/bad");
         assert!(result.is_err(), "Should reject feature name with /");
+    }
+
+    #[test]
+    fn test_extract_errors_for_file_no_substring_false_positive() {
+        // 错误信息同时包含 test.rs 和 my_test.rs，过滤 test.rs 时不应匹配只包含 my_test.rs 的块
+        let error_msg = "error[E0001]: some error
+   --> src/test.rs:10:5
+    |
+10  | let x: i32 = 1;
+
+error[E0002]: another error
+   --> src/my_test.rs:20:5
+    |
+20  | let y = 2;";
+
+        let file = PathBuf::from("/project/src/test.rs");
+        let result = extract_errors_for_file(error_msg, &file);
+
+        // 只应包含与 test.rs 相关的错误块，不应误匹配 my_test.rs
+        assert!(result.contains("E0001"));
+        assert!(result.contains("src/test.rs"));
+        assert!(!result.contains("E0002"));
+        assert!(!result.contains("my_test.rs"));
     }
 }

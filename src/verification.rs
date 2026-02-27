@@ -95,21 +95,35 @@ where
                     return Ok((build_successful, fix_attempts + extra_fix_attempts, had_restart));
                 } else {
                     // 尝试按文件分组错误，对多文件错误按顺序修复
-                    let file_errors = crate::error_handler::group_errors_by_file(
+                    let file_errors = match crate::error_handler::group_errors_by_file(
                         &build_error.to_string(),
                         feature,
-                    )
-                    .unwrap_or_default();
+                    ) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            // 无法解析文件分组（例如特性名称无效或 I/O 错误）；
+                            // 记录警告并退回到针对当前文件的单文件修复行为。
+                            println!(
+                                "│ {}",
+                                format!("⚠ Failed to group errors by file: {}", e).yellow()
+                            );
+                            vec![]
+                        }
+                    };
 
-                    if file_errors.len() > 1 {
-                        println!(
-                            "│ {}",
-                            format!(
-                                "Found errors in {} file(s), fixing each in order...",
-                                file_errors.len()
-                            )
-                            .bright_yellow()
-                        );
+                    if !file_errors.is_empty() {
+                        if file_errors.len() > 1 {
+                            println!(
+                                "│ {}",
+                                format!(
+                                    "Found errors in {} file(s), fixing each in order...",
+                                    file_errors.len()
+                                )
+                                .bright_yellow()
+                            );
+                        }
+                        // 按出现顺序对每个受影响的文件应用修复，使用各文件独立的错误信息。
+                        // 如果某个文件的修复失败则提前返回（快速失败），后续文件不再尝试。
                         for (error_file, file_error_msg) in &file_errors {
                             let file_stem = error_file
                                 .file_stem()
@@ -127,9 +141,10 @@ where
                                 format_progress,
                                 show_full_output,
                             )?;
+                            fix_attempts += 1;
                         }
                     } else {
-                        // 单文件错误或无法解析 — 沿用原有行为
+                        // 无法从错误中解析出任何文件 — 沿用原有的单文件修复行为
                         crate::apply_error_fix(
                             feature,
                             file_type,
@@ -138,8 +153,8 @@ where
                             format_progress,
                             show_full_output,
                         )?;
+                        fix_attempts += 1;
                     }
-                    fix_attempts += 1;
                 }
             }
         }
