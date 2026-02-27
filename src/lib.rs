@@ -82,13 +82,16 @@ pub fn translate_feature(
 
     stats.print_summary();
 
-    // Step 6: Warning fix phase (after all translations complete)
-    step_6_warning_fix_phase(
-        feature,
-        &rust_dir,
-        max_fix_attempts,
-        show_full_output,
-    )?;
+    // Step 6: Warning fix phase — only run when all translations are complete
+    // (i.e. no files were left in the skipped list).
+    if stats.skipped_files.is_empty() {
+        step_6_warning_fix_phase(
+            feature,
+            &rust_dir,
+            max_fix_attempts,
+            show_full_output,
+        )?;
+    }
 
     Ok(())
 }
@@ -122,7 +125,13 @@ fn step_2_gate_verification(feature: &str, show_full_output: bool) -> Result<()>
 /// Step 6: Warning fix phase - run after all translations complete
 ///
 /// Prompts the user whether to enter the warning fix phase.
-/// If confirmed, iterates through all translated .rs files and fixes warnings.
+/// If confirmed, runs a single crate-level build-and-fix-warnings loop so that
+/// cargo only needs to be invoked once per fix attempt (not once per translated
+/// file). The first translated file is used as the fallback `rs_file` / `file_type`
+/// for the rare case where `group_errors_by_file` cannot map a warning to a
+/// specific file; in the normal case `apply_fixes_for_messages` routes each
+/// warning to the correct file automatically.
+/// After all fixes are applied the changes are committed to git.
 fn step_6_warning_fix_phase(
     feature: &str,
     rust_dir: &Path,
@@ -157,58 +166,70 @@ fn step_6_warning_fix_phase(
         return Ok(());
     }
 
-    let total = all_rs_files.len();
     println!(
         "{}",
-        format!("Checking warnings for {} file(s)...", total).cyan()
+        format!(
+            "Running crate-level warning fix pass ({} file(s) translated)...",
+            all_rs_files.len()
+        )
+        .cyan()
     );
 
-    for (idx, rs_file) in all_rs_files.iter().enumerate() {
-        let pos = idx + 1;
-        let file_name = rs_file
-            .strip_prefix(rust_dir)
-            .ok()
-            .and_then(|p| p.to_str())
-            .unwrap_or_else(|| {
-                rs_file.file_name().and_then(|s| s.to_str()).unwrap_or("<unknown>")
-            });
-
+    // cargo_build_check_warnings builds the entire feature crate, so a single
+    // crate-level loop is sufficient – warnings for all files are returned in
+    // one build, and apply_fixes_for_messages / group_errors_by_file routes
+    // each fix to the correct file automatically.  We pick the first translated
+    // file whose type is recognizable as a fallback for the rare case where
+    // group_errors_by_file returns no per-file mapping.
+    let Some((fallback_file, fallback_type)) = all_rs_files.iter().find_map(|f| {
+        let stem = f.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+        file_scanner::extract_file_type(stem).map(|(ft, _)| (f, ft))
+    }) else {
         println!(
-            "\n{}",
-            format!("[{}/{}] Warning fix: {}", pos, total, file_name)
-                .bright_magenta()
-                .bold()
+            "│ {}",
+            "⚠ Skipping warning fix: no translated file with a recognized type (var_/fun_) found."
+                .yellow()
         );
-
-        let file_stem = rs_file
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("");
-        let file_type = file_scanner::extract_file_type(file_stem)
-            .map(|(ft, _)| ft)
-            .unwrap_or("fun");
-
-        let format_progress = |operation: &str| {
-            format!("[{}/{}] {} - {}", pos, total, file_name, operation)
-        };
-
-        verification::build_and_fix_warnings_loop(
-            feature,
-            file_type,
-            rs_file,
-            file_name,
-            &format_progress,
-            max_fix_attempts,
-            show_full_output,
-        )
-        .unwrap_or_else(|e| {
-            println!(
-                "│ {}",
-                format!("⚠ Warning phase encountered an error for {}: {}", file_name, e).yellow()
-            );
-            0
+        return Ok(());
+    };
+    let fallback_name = fallback_file
+        .strip_prefix(rust_dir)
+        .ok()
+        .and_then(|p| p.to_str())
+        .unwrap_or_else(|| {
+            fallback_file
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("<unknown>")
         });
-    }
+
+    let format_progress = |operation: &str| format!("[Step 6] {}", operation);
+
+    verification::build_and_fix_warnings_loop(
+        feature,
+        fallback_type,
+        fallback_file,
+        fallback_name,
+        &format_progress,
+        max_fix_attempts,
+        show_full_output,
+    )
+    .unwrap_or_else(|e| {
+        println!(
+            "│ {}",
+            format!("⚠ Warning phase encountered an error: {}", e).yellow()
+        );
+        0
+    });
+
+    // Commit any changes produced during the warning-fix phase so the feature
+    // repository is left in a clean, consistent state.
+    println!("{}", "Committing warning fix changes...".bright_blue());
+    git::git_commit(
+        &format!("Apply automated Rust warning fixes (feature: {})", feature),
+        feature,
+    )?;
+    println!("{}", "✓ Warning fix changes committed.".bright_green());
 
     println!(
         "\n{}",

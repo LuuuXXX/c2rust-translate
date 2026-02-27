@@ -434,11 +434,11 @@ pub fn prompt_warning_fix_choice() -> Result<WarningFixChoice> {
     println!("{}", "└─────────────────────────────────────────────┘".bright_cyan());
 
     let options = vec![
-        "y - 是，进入告警修复阶段",
-        "n - 否，跳过告警修复",
+        "是，进入告警修复阶段",
+        "否，跳过告警修复",
     ];
 
-    let choice = Select::new("请选择 (y/n):", options.clone())
+    let choice = Select::new("请选择操作：", options.clone())
         .with_vim_mode(true)
         .prompt()
         .context("Failed to get user selection")?;

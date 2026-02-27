@@ -297,6 +297,69 @@ mod tests {
     }
 
     #[test]
+    fn test_find_all_non_empty_rs_files() {
+        let temp_dir = tempdir().unwrap();
+
+        // Non-empty var_ file — should be returned
+        let non_empty_var = temp_dir.path().join("var_alpha.rs");
+        let mut f = fs::File::create(&non_empty_var).unwrap();
+        f.write_all(b"pub static A: i32 = 1;").unwrap();
+
+        // Non-empty fun_ file — should be returned
+        let non_empty_fun = temp_dir.path().join("fun_beta.rs");
+        let mut f = fs::File::create(&non_empty_fun).unwrap();
+        f.write_all(b"pub fn beta() {}").unwrap();
+
+        // Empty var_ file — must be excluded
+        fs::File::create(temp_dir.path().join("var_empty.rs")).unwrap();
+
+        // Empty fun_ file — must be excluded
+        fs::File::create(temp_dir.path().join("fun_empty.rs")).unwrap();
+
+        // Non-empty file without var_/fun_ prefix — must be excluded
+        let mut other = fs::File::create(temp_dir.path().join("other.rs")).unwrap();
+        other.write_all(b"fn other() {}").unwrap();
+
+        // Non-.rs file — must be excluded
+        fs::File::create(temp_dir.path().join("var_data.txt")).unwrap();
+
+        let result = find_all_non_empty_rs_files(temp_dir.path()).unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert!(result[0].ends_with("fun_beta.rs"), "expected fun_beta.rs first (sorted)");
+        assert!(result[1].ends_with("var_alpha.rs"), "expected var_alpha.rs second (sorted)");
+    }
+
+    #[test]
+    fn test_find_all_non_empty_rs_files_sorted() {
+        let temp_dir = tempdir().unwrap();
+
+        // Create files in non-alphabetical order
+        let mut f = fs::File::create(temp_dir.path().join("var_zebra.rs")).unwrap();
+        f.write_all(b"pub static Z: i32 = 0;").unwrap();
+
+        let mut f = fs::File::create(temp_dir.path().join("fun_alpha.rs")).unwrap();
+        f.write_all(b"pub fn alpha() {}").unwrap();
+
+        let mut f = fs::File::create(temp_dir.path().join("var_middle.rs")).unwrap();
+        f.write_all(b"pub static M: i32 = 0;").unwrap();
+
+        let result = find_all_non_empty_rs_files(temp_dir.path()).unwrap();
+
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].file_name().unwrap(), "fun_alpha.rs");
+        assert_eq!(result[1].file_name().unwrap(), "var_middle.rs");
+        assert_eq!(result[2].file_name().unwrap(), "var_zebra.rs");
+    }
+
+    #[test]
+    fn test_find_all_non_empty_rs_files_empty_dir() {
+        let temp_dir = tempdir().unwrap();
+        let result = find_all_non_empty_rs_files(temp_dir.path()).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
     fn test_extract_file_type_var() {
         let (file_type, name) = extract_file_type("var_counter").unwrap();
         assert_eq!(file_type, "var");
