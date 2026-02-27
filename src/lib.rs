@@ -524,7 +524,14 @@ fn process_rs_file(
         // Translate C to Rust
         translate_file(feature, file_type, rs_file, &format_progress, show_full_output)?;
 
-        // Build and fix errors
+        // Phase 1: Build and fix errors (warnings suppressed via RUSTFLAGS="-A warnings")
+        println!("│");
+        println!(
+            "│ {}",
+            "Phase 1: Building and fixing errors..."
+                .bright_blue()
+                .bold()
+        );
         let build_loop_result = verification::build_and_fix_loop(
             feature,
             file_type,
@@ -558,6 +565,32 @@ fn process_rs_file(
         had_restart |= did_restart;
 
         if build_successful {
+            // Phase 2: Fix warnings after all errors are resolved
+            println!("│");
+            println!(
+                "│ {}",
+                "Phase 2: Checking and fixing warnings..."
+                    .bright_blue()
+                    .bold()
+            );
+            let warning_fix_attempts = verification::build_and_fix_warnings_loop(
+                feature,
+                file_type,
+                rs_file,
+                file_name,
+                &format_progress,
+                max_fix_attempts,
+                show_full_output,
+            )
+            .unwrap_or_else(|e| {
+                println!(
+                    "│ {}",
+                    format!("⚠ Warning phase encountered an error: {}", e).yellow()
+                );
+                0
+            });
+            total_fix_attempts += warning_fix_attempts;
+
             let processing_complete =
                 complete_file_processing(feature, file_name, file_type, rs_file, &format_progress)?;
             if processing_complete {
@@ -732,6 +765,51 @@ where
     }
     
     println!("│ {}", "✓ Fix applied".bright_green());
+
+    Ok(())
+}
+
+/// Apply warning fix to translated file
+///
+/// Similar to `apply_error_fix` but used during Phase 2 (warning fixing).
+/// The build has not failed -- warnings were surfaced by running without `-A warnings`.
+pub(crate) fn apply_warning_fix<F>(
+    feature: &str,
+    file_type: &str,
+    rs_file: &Path,
+    warning_msg: &anyhow::Error,
+    format_progress: &F,
+    show_full_output: bool,
+) -> Result<()>
+where
+    F: Fn(&str) -> String,
+{
+    println!(
+        "│ {}",
+        "⚠ Warnings detected, attempting to fix..."
+            .yellow()
+            .bold()
+    );
+    println!("│");
+    println!("│ {}", format_progress("Warning Fix").bright_magenta().bold());
+
+    // Fix using the same translation tool, passing warnings as the "error" message
+    translator::fix_translation_error(
+        feature,
+        file_type,
+        rs_file,
+        &warning_msg.to_string(),
+        show_full_output,
+        true,
+    )?;
+
+    // Verify fix produced output
+    let metadata = std::fs::metadata(rs_file)?;
+    if metadata.len() == 0 {
+        anyhow::bail!("Warning fix failed: output file is empty");
+    }
+
+    println!("│ {}", "✓ Warning fix applied".bright_green());
 
     Ok(())
 }

@@ -48,6 +48,58 @@ pub fn cargo_build(feature: &str, _show_full_output: bool) -> Result<()> {
     Ok(())
 }
 
+/// Run cargo build without suppressing warnings, capture and return warning output.
+///
+/// Unlike `cargo_build`, this function does not set `RUSTFLAGS="-A warnings"`,
+/// so the compiler emits all warnings.
+///
+/// - Returns `Ok(Some(warnings_text))` if the build succeeds and warnings are present.
+/// - Returns `Ok(None)` if the build succeeds with no warnings.
+/// - Returns `Err` if the build fails (errors present).
+///
+/// Note: `_show_full_output` is not currently used; it is kept for API consistency
+/// with other build functions and for potential future use.
+pub fn cargo_build_check_warnings(feature: &str, _show_full_output: bool) -> Result<Option<String>> {
+    util::validate_feature_name(feature)?;
+
+    let project_root = util::find_project_root()?;
+    let build_dir = project_root.join(".c2rust").join(feature).join("rust");
+
+    let start_time = Instant::now();
+
+    let output = Command::new("cargo")
+        .arg("build")
+        .current_dir(&build_dir)
+        .output()
+        .context("Failed to execute cargo build")?;
+
+    let duration = start_time.elapsed();
+
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    if !output.status.success() {
+        anyhow::bail!("Build error: {}", stderr);
+    }
+
+    println!(
+        "  {} (took {:.2}s)",
+        "Build completed".bright_green(),
+        duration.as_secs_f64()
+    );
+
+    // Check for warnings in stderr. Use `contains` to handle any leading whitespace
+    // or indentation that may appear in multi-line warning output.
+    let has_warnings = stderr
+        .lines()
+        .any(|line| line.contains("warning[") || line.contains("warning:"));
+
+    if has_warnings {
+        Ok(Some(stderr))
+    } else {
+        Ok(None)
+    }
+}
+
 /// 从 c2rust-config 获取特定的配置值
 fn get_config_value(key: &str, feature: &str) -> Result<String> {
     let project_root = util::find_project_root()?;
@@ -1243,4 +1295,57 @@ pub fn run_full_build_and_test_interactive(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    /// Test that warning detection recognises `warning[code]:` patterns
+    #[test]
+    fn test_detect_warning_code_format() {
+        let stderr = "warning[unused_variables]: unused variable `x`\n  --> src/foo.rs:5:9";
+        let has = stderr
+            .lines()
+            .any(|l| l.contains("warning[") || l.contains("warning:"));
+        assert!(has);
+    }
+
+    /// Test that warning detection recognises `warning:` patterns
+    #[test]
+    fn test_detect_warning_colon_format() {
+        let stderr = "warning: unused import: `std::fmt`\n  --> src/bar.rs:1:5";
+        let has = stderr
+            .lines()
+            .any(|l| l.contains("warning[") || l.contains("warning:"));
+        assert!(has);
+    }
+
+    /// Test that any line containing "warning:" anywhere (e.g. continuation lines) is detected
+    #[test]
+    fn test_detect_warning_anywhere_in_line() {
+        let stderr = "   = warning: this matches too broadly";
+        let has = stderr
+            .lines()
+            .any(|l| l.contains("warning[") || l.contains("warning:"));
+        assert!(has);
+    }
+
+    /// Test that clean build output (no warnings) returns false
+    #[test]
+    fn test_no_warnings_clean_output() {
+        let stderr = "   Compiling myproject v0.1.0\n    Finished dev [unoptimized] target(s) in 1.23s";
+        let has = stderr
+            .lines()
+            .any(|l| l.contains("warning[") || l.contains("warning:"));
+        assert!(!has);
+    }
+
+    /// Test that error-only output is not flagged as having warnings
+    #[test]
+    fn test_no_warnings_in_error_output() {
+        let stderr = "error[E0308]: mismatched types\n  --> src/main.rs:3:5";
+        let has = stderr
+            .lines()
+            .any(|l| l.contains("warning[") || l.contains("warning:"));
+        assert!(!has);
+    }
 }
