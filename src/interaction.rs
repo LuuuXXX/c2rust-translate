@@ -73,6 +73,13 @@ pub enum ContinueChoice {
     Restart,  // 开始新的翻译会话
 }
 
+/// 翻译完成后是否进入告警修复阶段的用户选择
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum WarningFixChoice {
+    Yes, // 进入告警修复阶段
+    No,  // 跳过告警修复
+}
+
 /// 当达到最大尝试次数时提示用户选择
 pub fn prompt_user_choice(failure_type: &str, require_suggestion: bool) -> Result<UserChoice> {
     println!("│");
@@ -418,6 +425,36 @@ pub fn prompt_continue_or_restart() -> Result<ContinueChoice> {
     }
 }
 
+/// 翻译完成后提示用户是否进入告警修复阶段
+pub fn prompt_warning_fix_choice() -> Result<WarningFixChoice> {
+    println!("\n{}", "┌─────────────────────────────────────────────┐".bright_cyan());
+    println!("{}", "│ 翻译已完成！".bright_green().bold());
+    println!("{}", "│".bright_cyan());
+    println!("{}", "│ 是否进入告警修复阶段？".bright_cyan());
+    println!("{}", "└─────────────────────────────────────────────┘".bright_cyan());
+
+    let options = vec![
+        "y - 是，进入告警修复阶段",
+        "n - 否，跳过告警修复",
+    ];
+
+    let choice = Select::new("请选择 (y/n):", options.clone())
+        .with_vim_mode(true)
+        .prompt()
+        .context("Failed to get user selection")?;
+
+    let choice_index = options
+        .iter()
+        .position(|&o| o == choice)
+        .context("Unexpected selection value")?;
+
+    match choice_index {
+        0 => Ok(WarningFixChoice::Yes),
+        1 => Ok(WarningFixChoice::No),
+        _ => unreachable!("Invalid selection index"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -463,6 +500,13 @@ mod tests {
         assert_eq!(ContinueChoice::Continue, ContinueChoice::Continue);
         assert_eq!(ContinueChoice::Restart, ContinueChoice::Restart);
         assert_ne!(ContinueChoice::Continue, ContinueChoice::Restart);
+    }
+
+    #[test]
+    fn test_warning_fix_choice_variants() {
+        assert_eq!(WarningFixChoice::Yes, WarningFixChoice::Yes);
+        assert_eq!(WarningFixChoice::No, WarningFixChoice::No);
+        assert_ne!(WarningFixChoice::Yes, WarningFixChoice::No);
     }
 
     #[test]

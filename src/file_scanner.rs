@@ -57,6 +57,29 @@ pub fn find_empty_rs_files(rust_dir: &Path) -> Result<Vec<PathBuf>> {
     Ok(empty_files)
 }
 
+/// 查找给定目录中已翻译的非空 .rs 文件（文件名以 var_ 或 fun_ 开头且内容非空）
+pub fn find_all_non_empty_rs_files(rust_dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut non_empty_files = Vec::new();
+
+    for entry in WalkDir::new(rust_dir) {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_file()
+            && path.extension().is_some_and(|ext| ext == "rs")
+            && is_translatable_rs_file(path)
+        {
+            let metadata = fs::metadata(path)?;
+            if metadata.len() > 0 {
+                non_empty_files.push(path.to_path_buf());
+            }
+        }
+    }
+
+    non_empty_files.sort();
+
+    Ok(non_empty_files)
+}
+
 /// 从文件名中提取文件类型（var_ 或 fun_ 前缀）
 pub fn extract_file_type(filename: &str) -> Option<(&'static str, &str)> {
     if let Some(stripped) = filename.strip_prefix("var_") {

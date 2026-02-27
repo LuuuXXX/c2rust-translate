@@ -81,6 +81,15 @@ pub fn translate_feature(
     }
 
     stats.print_summary();
+
+    // Step 6: Warning fix phase (after all translations complete)
+    step_6_warning_fix_phase(
+        feature,
+        &rust_dir,
+        max_fix_attempts,
+        show_full_output,
+    )?;
+
     Ok(())
 }
 
@@ -108,6 +117,105 @@ fn step_1_initialize(feature: &str) -> Result<()> {
 /// Step 2: Run gate verification
 fn step_2_gate_verification(feature: &str, show_full_output: bool) -> Result<()> {
     initialization::run_gate_verification(feature, show_full_output)
+}
+
+/// Step 6: Warning fix phase - run after all translations complete
+///
+/// Prompts the user whether to enter the warning fix phase.
+/// If confirmed, iterates through all translated .rs files and fixes warnings.
+fn step_6_warning_fix_phase(
+    feature: &str,
+    rust_dir: &Path,
+    max_fix_attempts: usize,
+    show_full_output: bool,
+) -> Result<()> {
+    let choice = interaction::prompt_warning_fix_choice()?;
+
+    match choice {
+        interaction::WarningFixChoice::No => {
+            println!(
+                "{}",
+                "✓ Skipping warning fix phase.".bright_yellow()
+            );
+            return Ok(());
+        }
+        interaction::WarningFixChoice::Yes => {
+            println!(
+                "\n{}",
+                "Step 6: Warning Fix Phase".bright_cyan().bold()
+            );
+        }
+    }
+
+    // Find all non-empty .rs files (already translated)
+    let all_rs_files = file_scanner::find_all_non_empty_rs_files(rust_dir)?;
+    if all_rs_files.is_empty() {
+        println!(
+            "{}",
+            "No translated files found for warning fix.".yellow()
+        );
+        return Ok(());
+    }
+
+    let total = all_rs_files.len();
+    println!(
+        "{}",
+        format!("Checking warnings for {} file(s)...", total).cyan()
+    );
+
+    for (idx, rs_file) in all_rs_files.iter().enumerate() {
+        let pos = idx + 1;
+        let file_name = rs_file
+            .strip_prefix(rust_dir)
+            .ok()
+            .and_then(|p| p.to_str())
+            .unwrap_or_else(|| {
+                rs_file.file_name().and_then(|s| s.to_str()).unwrap_or("<unknown>")
+            });
+
+        println!(
+            "\n{}",
+            format!("[{}/{}] Warning fix: {}", pos, total, file_name)
+                .bright_magenta()
+                .bold()
+        );
+
+        let file_stem = rs_file
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+        let file_type = file_scanner::extract_file_type(file_stem)
+            .map(|(ft, _)| ft)
+            .unwrap_or("fun");
+
+        let format_progress = |operation: &str| {
+            format!("[{}/{}] {} - {}", pos, total, file_name, operation)
+        };
+
+        verification::build_and_fix_warnings_loop(
+            feature,
+            file_type,
+            rs_file,
+            file_name,
+            &format_progress,
+            max_fix_attempts,
+            show_full_output,
+        )
+        .unwrap_or_else(|e| {
+            println!(
+                "│ {}",
+                format!("⚠ Warning phase encountered an error for {}: {}", file_name, e).yellow()
+            );
+            0
+        });
+    }
+
+    println!(
+        "\n{}",
+        "✓ Warning fix phase complete.".bright_green().bold()
+    );
+
+    Ok(())
 }
 
 /// Step 2.5: Check for existing stats file and load or create stats
@@ -565,32 +673,6 @@ fn process_rs_file(
         had_restart |= did_restart;
 
         if build_successful {
-            // Phase 2: Fix warnings after all errors are resolved
-            println!("│");
-            println!(
-                "│ {}",
-                "Phase 2: Checking and fixing warnings..."
-                    .bright_blue()
-                    .bold()
-            );
-            let warning_fix_attempts = verification::build_and_fix_warnings_loop(
-                feature,
-                file_type,
-                rs_file,
-                file_name,
-                &format_progress,
-                max_fix_attempts,
-                show_full_output,
-            )
-            .unwrap_or_else(|e| {
-                println!(
-                    "│ {}",
-                    format!("⚠ Warning phase encountered an error: {}", e).yellow()
-                );
-                0
-            });
-            total_fix_attempts += warning_fix_attempts;
-
             let processing_complete =
                 complete_file_processing(feature, file_name, file_type, rs_file, &format_progress)?;
             if processing_complete {
