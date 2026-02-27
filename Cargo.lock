@@ -83,6 +83,7 @@ dependencies = [
  "inquire",
  "lazy_static",
  "regex",
+ "scopeguard",
  "serde",
  "serde_json",
  "serial_test",

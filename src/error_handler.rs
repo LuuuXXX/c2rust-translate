@@ -856,6 +856,10 @@ error[E0425]: cannot find value `y` in this scope
 
         let original_dir = env::current_dir().unwrap();
         env::set_current_dir(project_root).unwrap();
+        // 确保当前目录在测试结束时（包括 panic 情况下）被恢复
+        let _restore = scopeguard::guard(original_dir.clone(), |dir| {
+            let _ = env::set_current_dir(dir);
+        });
 
         let feature = "test_feature";
         let rust_dir = project_root.join(".c2rust").join(feature).join("rust");
