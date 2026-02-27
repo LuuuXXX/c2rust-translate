@@ -66,6 +66,13 @@ pub enum SkippedFilesChoice {
     ExitForLater, // 退出并稍后处理
 }
 
+/// 发现已有翻译进度时的用户选择
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ContinueChoice {
+    Continue, // 继续之前的进度
+    Restart,  // 开始新的翻译会话
+}
+
 /// 当达到最大尝试次数时提示用户选择
 pub fn prompt_user_choice(failure_type: &str, require_suggestion: bool) -> Result<UserChoice> {
     println!("│");
@@ -388,6 +395,29 @@ pub fn prompt_skipped_files_choice(skipped_files: &[String]) -> Result<SkippedFi
     }
 }
 
+/// 询问用户是否继续之前的翻译进度或开始新的会话
+pub fn prompt_continue_or_restart() -> Result<ContinueChoice> {
+    let options = vec![
+        "Continue previous progress (resume from where you left off)",
+        "Start fresh (clear all progress)",
+    ];
+
+    let choice = Select::new("What would you like to do?", options.clone())
+        .with_vim_mode(true)
+        .prompt()
+        .context("Failed to get user selection")?;
+
+    match options
+        .iter()
+        .position(|&o| o == choice)
+        .context("Unexpected selection value")?
+    {
+        0 => Ok(ContinueChoice::Continue),
+        1 => Ok(ContinueChoice::Restart),
+        _ => unreachable!(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -426,6 +456,13 @@ mod tests {
         assert_ne!(FailureChoice::RetryDirectly, FailureChoice::Exit);
         assert_ne!(FailureChoice::AddSuggestion, FailureChoice::Exit);
         assert_ne!(FailureChoice::Skip, FailureChoice::Exit);
+    }
+
+    #[test]
+    fn test_continue_choice_variants() {
+        assert_eq!(ContinueChoice::Continue, ContinueChoice::Continue);
+        assert_eq!(ContinueChoice::Restart, ContinueChoice::Restart);
+        assert_ne!(ContinueChoice::Continue, ContinueChoice::Restart);
     }
 
     #[test]
