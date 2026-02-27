@@ -94,15 +94,51 @@ where
                     )?;
                     return Ok((build_successful, fix_attempts + extra_fix_attempts, had_restart));
                 } else {
-                    // Use lib.rs apply_error_fix instead of local duplicate
-                    crate::apply_error_fix(
+                    // 尝试按文件分组错误，对多文件错误按顺序修复
+                    let file_errors = crate::error_handler::group_errors_by_file(
+                        &build_error.to_string(),
                         feature,
-                        file_type,
-                        rs_file,
-                        &build_error,
-                        format_progress,
-                        show_full_output,
-                    )?;
+                    )
+                    .unwrap_or_default();
+
+                    if file_errors.len() > 1 {
+                        println!(
+                            "│ {}",
+                            format!(
+                                "Found errors in {} file(s), fixing each in order...",
+                                file_errors.len()
+                            )
+                            .bright_yellow()
+                        );
+                        for (error_file, file_error_msg) in &file_errors {
+                            let file_stem = error_file
+                                .file_stem()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or(file_name);
+                            let (error_file_type, _) =
+                                crate::file_scanner::extract_file_type(file_stem)
+                                    .unwrap_or((file_type, ""));
+                            let error_for_file = anyhow::anyhow!("{}", file_error_msg);
+                            crate::apply_error_fix(
+                                feature,
+                                error_file_type,
+                                error_file,
+                                &error_for_file,
+                                format_progress,
+                                show_full_output,
+                            )?;
+                        }
+                    } else {
+                        // 单文件错误或无法解析 — 沿用原有行为
+                        crate::apply_error_fix(
+                            feature,
+                            file_type,
+                            rs_file,
+                            &build_error,
+                            format_progress,
+                            show_full_output,
+                        )?;
+                    }
                     fix_attempts += 1;
                 }
             }
