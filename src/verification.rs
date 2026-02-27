@@ -94,10 +94,12 @@ where
                     )?;
                     return Ok((build_successful, fix_attempts + extra_fix_attempts, had_restart));
                 } else {
+                    // Compute the error string once to avoid repeated allocations
+                    let build_error_str = build_error.to_string();
                     // Parse the error to find which files need fixing
                     let files_to_fix =
                         crate::error_handler::parse_error_for_files_ordered(
-                            &build_error.to_string(),
+                            &build_error_str,
                             feature,
                         )
                         .unwrap_or_default();
@@ -118,7 +120,7 @@ where
                         for file_to_fix in &files_to_fix {
                             let file_error_str =
                                 crate::error_handler::extract_error_for_file(
-                                    &build_error.to_string(),
+                                    &build_error_str,
                                     file_to_fix,
                                 );
                             let file_error = anyhow::anyhow!("{}", file_error_str);

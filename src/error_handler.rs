@@ -76,6 +76,12 @@ pub(crate) fn parse_error_for_files_ordered(
     let feature_path = project_root.join(".c2rust").join(feature);
     let rust_dir = feature_path.join("rust");
 
+    // Canonicalize rust_dir once, before iterating over captured paths
+    let rust_canonical = match rust_dir.canonicalize() {
+        Ok(p) => p,
+        Err(_) => return Ok(Vec::new()),
+    };
+
     let mut seen = HashSet::new();
     let mut ordered_paths = Vec::new();
 
@@ -90,13 +96,11 @@ pub(crate) fn parse_error_for_files_ordered(
             for candidate in candidates {
                 if candidate.exists() && candidate.is_file() {
                     if let Ok(canonical) = candidate.canonicalize() {
-                        if let Ok(rust_canonical) = rust_dir.canonicalize() {
-                            if canonical.starts_with(&rust_canonical)
-                                && seen.insert(canonical.clone())
-                            {
-                                ordered_paths.push(canonical);
-                                break;
-                            }
+                        if canonical.starts_with(&rust_canonical)
+                            && seen.insert(canonical.clone())
+                        {
+                            ordered_paths.push(canonical);
+                            break;
                         }
                     }
                 }
@@ -412,6 +416,24 @@ pub(crate) fn handle_startup_test_failure_with_files(
 mod tests {
     use super::*;
 
+    /// RAII guard that restores the process working directory when dropped.
+    /// Ensures CWD is restored even if the test panics.
+    struct DirGuard {
+        original: std::path::PathBuf,
+    }
+    impl DirGuard {
+        fn new() -> Self {
+            Self {
+                original: std::env::current_dir().expect("Failed to get current dir"),
+            }
+        }
+    }
+    impl Drop for DirGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.original);
+        }
+    }
+
     #[test]
     fn test_parse_error_pattern_extraction() {
         // 测试我们可以从错误消息中提取文件路径
@@ -496,7 +518,7 @@ note: expected signature from here
         let project_root = temp_dir.path();
 
         // 将当前目录设置为临时目录，以便 find_project_root 可以工作
-        let original_dir = env::current_dir().unwrap();
+        let _guard = DirGuard::new();
         env::set_current_dir(project_root).unwrap();
 
         // 创建特性目录结构
@@ -538,9 +560,6 @@ note: some note about outside file
 
         let result = parse_error_for_files(error_msg, feature).unwrap();
 
-        // 恢复原始目录
-        env::set_current_dir(&original_dir).unwrap();
-
         // 应该准确找到 2 个文件（不包括 outside.rs）
         assert_eq!(result.len(), 2);
 
@@ -571,7 +590,7 @@ note: some note about outside file
         let temp_dir = tempdir().unwrap();
         let project_root = temp_dir.path();
 
-        let original_dir = env::current_dir().unwrap();
+        let _guard = DirGuard::new();
         env::set_current_dir(project_root).unwrap();
 
         fs::create_dir(project_root.join(".git")).unwrap();
@@ -597,8 +616,6 @@ note: note about same file
    --> src/var_test.rs:20:1";
 
         let result = parse_error_for_files(error_msg, feature).unwrap();
-
-        env::set_current_dir(&original_dir).unwrap();
 
         // 尽管多次提及，但应该只有 1 个文件
         assert_eq!(result.len(), 1);
@@ -694,7 +711,7 @@ note: note about same file
         let temp_dir = tempdir().unwrap();
         let project_root = temp_dir.path();
 
-        let original_dir = env::current_dir().unwrap();
+        let _guard = DirGuard::new();
         env::set_current_dir(project_root).unwrap();
 
         let feature = "test_feature_order";
@@ -723,8 +740,6 @@ error[E0308]: mismatched types
     |     ^^^^^^ expected `i32`, found `&str`";
 
         let result = parse_error_for_files_ordered(error_msg, feature).unwrap();
-
-        env::set_current_dir(&original_dir).unwrap();
 
         assert_eq!(result.len(), 2, "Should find 2 files");
         // fun_helper.rs 应该排在第一位（首先出现）
