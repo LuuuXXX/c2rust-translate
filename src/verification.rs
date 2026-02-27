@@ -94,15 +94,43 @@ where
                     )?;
                     return Ok((build_successful, fix_attempts + extra_fix_attempts, had_restart));
                 } else {
-                    // Use lib.rs apply_error_fix instead of local duplicate
-                    crate::apply_error_fix(
-                        feature,
-                        file_type,
-                        rs_file,
-                        &build_error,
-                        format_progress,
-                        show_full_output,
-                    )?;
+                    // Parse the error to find which files need fixing
+                    let files_to_fix =
+                        crate::error_handler::parse_error_for_files_ordered(
+                            &build_error.to_string(),
+                            feature,
+                        )
+                        .unwrap_or_default();
+
+                    if files_to_fix.is_empty() {
+                        // No files identified in error, fix the current file
+                        crate::apply_error_fix(
+                            feature,
+                            file_type,
+                            rs_file,
+                            &build_error,
+                            format_progress,
+                            show_full_output,
+                        )?;
+                    } else {
+                        // Fix each identified file in order of appearance in the error
+                        for file_to_fix in &files_to_fix {
+                            let file_error_str =
+                                crate::error_handler::extract_error_for_file(
+                                    &build_error.to_string(),
+                                    file_to_fix,
+                                );
+                            let file_error = anyhow::anyhow!("{}", file_error_str);
+                            crate::apply_error_fix(
+                                feature,
+                                file_type,
+                                file_to_fix,
+                                &file_error,
+                                format_progress,
+                                show_full_output,
+                            )?;
+                        }
+                    }
                     fix_attempts += 1;
                 }
             }

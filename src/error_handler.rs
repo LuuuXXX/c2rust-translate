@@ -58,6 +58,88 @@ pub(crate) fn parse_error_for_files(error_msg: &str, feature: &str) -> Result<Ve
     Ok(result)
 }
 
+/// 解析错误消息以提取 Rust 文件路径，按首次出现的顺序返回
+/// 与 parse_error_for_files 不同，该函数保留文件在错误信息中首次出现的顺序
+pub(crate) fn parse_error_for_files_ordered(
+    error_msg: &str,
+    feature: &str,
+) -> Result<Vec<PathBuf>> {
+    util::validate_feature_name(feature)?;
+
+    lazy_static::lazy_static! {
+        static ref ERROR_PATH_RE: regex::Regex =
+            regex::Regex::new(r"(?:-->|at)\s+([^\s:]+\.rs)(?::\d+:\d+)?")
+                .expect("Failed to compile error path regex");
+    }
+
+    let project_root = util::find_project_root()?;
+    let feature_path = project_root.join(".c2rust").join(feature);
+    let rust_dir = feature_path.join("rust");
+
+    let mut seen = HashSet::new();
+    let mut ordered_paths = Vec::new();
+
+    for cap in ERROR_PATH_RE.captures_iter(error_msg) {
+        if let Some(path_match) = cap.get(1) {
+            let path_str = path_match.as_str();
+            let path = PathBuf::from(path_str);
+
+            // 尝试原样路径和相对于 rust_dir 的路径
+            let candidates = vec![path.clone(), rust_dir.join(&path)];
+
+            for candidate in candidates {
+                if candidate.exists() && candidate.is_file() {
+                    if let Ok(canonical) = candidate.canonicalize() {
+                        if let Ok(rust_canonical) = rust_dir.canonicalize() {
+                            if canonical.starts_with(&rust_canonical)
+                                && seen.insert(canonical.clone())
+                            {
+                                ordered_paths.push(canonical);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(ordered_paths)
+}
+
+/// 从错误消息中提取与特定文件相关的部分
+/// 将错误按空行分割成块，返回包含该文件名引用的块
+/// 如果没有找到匹配的块，则返回完整的错误消息
+pub(crate) fn extract_error_for_file(error_msg: &str, file_path: &std::path::Path) -> String {
+    let file_name = file_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
+
+    if file_name.is_empty() {
+        return error_msg.to_string();
+    }
+
+    // 按空行分割错误消息为块，保留包含 --> 文件引用指示符的块
+    let blocks: Vec<&str> = error_msg.split("\n\n").collect();
+    let relevant: Vec<&str> = blocks
+        .iter()
+        .filter(|block| {
+            // 只匹配包含 Rust 编译器文件位置指示符（-->）的块
+            block
+                .lines()
+                .any(|line| line.contains("-->") && line.contains(file_name))
+        })
+        .copied()
+        .collect();
+
+    if relevant.is_empty() {
+        error_msg.to_string()
+    } else {
+        relevant.join("\n\n")
+    }
+}
+
 /// 当可以定位文件时处理启动测试失败
 #[allow(dead_code)]
 pub(crate) fn handle_startup_test_failure_with_files(
@@ -511,5 +593,93 @@ note: note about same file
 
         let result = parse_error_for_files(error_msg, "good/bad");
         assert!(result.is_err(), "Should reject feature name with /");
+    }
+
+    #[test]
+    fn test_extract_error_for_file_single_file() {
+        let error_msg = "error[E0308]: mismatched types\n   --> src/var_test.rs:10:5\n    |\n10  |     let x: i32 = \"hello\";\n    |     ^^^^^^ expected `i32`, found `&str`\n\nerror[E0425]: cannot find value `y` in this scope\n  --> src/fun_helper.rs:20:9\n   |\n20 |         y\n   |         ^ not found in this scope";
+
+        let file_path = std::path::Path::new("src/var_test.rs");
+        let result = extract_error_for_file(error_msg, file_path);
+
+        assert!(result.contains("var_test.rs"), "Should contain the target file reference");
+        assert!(result.contains("E0308"), "Should contain the error for var_test.rs");
+        assert!(!result.contains("fun_helper.rs"), "Should not contain the other file");
+    }
+
+    #[test]
+    fn test_extract_error_for_file_fallback_on_no_match() {
+        let error_msg = "error[E0308]: mismatched types\n   --> src/var_test.rs:10:5\n    |\n10  |     let x: i32 = \"hello\";";
+
+        // File that doesn't appear in the error
+        let file_path = std::path::Path::new("src/other_file.rs");
+        let result = extract_error_for_file(error_msg, file_path);
+
+        // Should return the full error message as fallback
+        assert_eq!(result, error_msg, "Should return full error when no match found");
+    }
+
+    #[test]
+    fn test_extract_error_for_file_empty_filename() {
+        let error_msg = "some error message";
+        let file_path = std::path::Path::new("");
+        let result = extract_error_for_file(error_msg, file_path);
+        assert_eq!(result, error_msg, "Should return full error for empty filename");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_parse_error_for_files_ordered_preserves_order() {
+        use std::env;
+        use std::fs;
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let project_root = temp_dir.path();
+
+        let original_dir = env::current_dir().unwrap();
+        env::set_current_dir(project_root).unwrap();
+
+        let feature = "test_feature_order";
+        let rust_dir = project_root.join(".c2rust").join(feature).join("rust");
+        let src_dir = rust_dir.join("src");
+        fs::create_dir_all(&src_dir).unwrap();
+
+        // 创建测试文件 (fun_helper.rs 出现在 var_test.rs 之前)
+        let file_a = src_dir.join("fun_helper.rs");
+        fs::write(&file_a, "// helper").unwrap();
+
+        let file_b = src_dir.join("var_test.rs");
+        fs::write(&file_b, "// test").unwrap();
+
+        // fun_helper.rs 先出现，var_test.rs 后出现
+        let error_msg = "error[E0425]: cannot find value `y` in this scope
+  --> src/fun_helper.rs:20:9
+   |
+20 |         y
+   |         ^ not found in this scope
+
+error[E0308]: mismatched types
+   --> src/var_test.rs:10:5
+    |
+10  |     let x: i32 = \"hello\";
+    |     ^^^^^^ expected `i32`, found `&str`";
+
+        let result = parse_error_for_files_ordered(error_msg, feature).unwrap();
+
+        env::set_current_dir(&original_dir).unwrap();
+
+        assert_eq!(result.len(), 2, "Should find 2 files");
+        // fun_helper.rs 应该排在第一位（首先出现）
+        assert!(result[0].ends_with("fun_helper.rs"), "fun_helper.rs should be first");
+        assert!(result[1].ends_with("var_test.rs"), "var_test.rs should be second");
+    }
+
+    #[test]
+    fn test_parse_error_for_files_ordered_validates_feature_name() {
+        let error_msg = "error: --> src/test.rs:1:1";
+
+        let result = parse_error_for_files_ordered(error_msg, "../bad");
+        assert!(result.is_err(), "Should reject feature name with ..");
     }
 }
