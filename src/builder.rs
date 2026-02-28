@@ -1165,10 +1165,10 @@ pub(crate) fn handle_test_failure_interactive(
 }
 
 /// 执行完整的构建和测试流程
-/// 顺序：cargo_build → c2rust_clean → c2rust_build → c2rust_test
+/// 顺序：update_code_analysis → cargo_build → c2rust_clean → c2rust_build → c2rust_test
 /// 这是主流程中的标准验证流程
 ///
-/// 注意：此函数会多次调用 `update_code_analysis`（在 clean、build、test 步骤中各一次），
+/// 注意：此函数会多次调用 `update_code_analysis`（在 cargo_build 之前以及 clean、build、test 步骤中各一次），
 /// 这会略微降低性能。未来可以优化为只更新一次分析。
 pub fn run_full_build_and_test(feature: &str) -> Result<()> {
     println!("│");
@@ -1177,14 +1177,14 @@ pub fn run_full_build_and_test(feature: &str) -> Result<()> {
         "Running full build and test flow...".bright_blue().bold()
     );
 
-    // 1. 先构建 Rust 代码
+    // 1. 更新代码分析，然后构建 Rust 代码
     println!(
         "│ {}",
-        "→ Step 1/4: Building Rust code (cargo build)...".bright_blue()
+        "→ Step 1/4: Updating code analysis and building Rust code (cargo build)...".bright_blue()
     );
-    println!("{}", "Updating code analysis...".bright_blue());
+    println!("│ {}", "Updating code analysis...".bright_blue());
     analyzer::update_code_analysis(feature)?;
-    println!("{}", "✓ Code analysis updated".bright_green());
+    println!("│ {}", "✓ Code analysis updated".bright_green());
     cargo_build(feature, true)?;
     println!("│ {}", "  ✓ Rust build successful".bright_green());
 
@@ -1209,14 +1209,14 @@ pub fn run_full_build_and_test(feature: &str) -> Result<()> {
 }
 
 /// 执行完整的构建和测试流程
-/// 顺序：cargo_build → c2rust_clean → c2rust_build → c2rust_test
+/// 顺序：update_code_analysis → cargo_build → c2rust_clean → c2rust_build → c2rust_test
 ///
 /// 注意：此函数不提供交互式错误处理，任何步骤失败时都会直接返回错误。
 /// 调用方负责处理错误并提供交互式修复选项（如需要）。
 ///
 /// 参数 `_file_type` 和 `_rs_file` 保留用于 API 兼容性，当前未使用。
 ///
-/// 性能提示：此函数会多次调用 `update_code_analysis`（在 clean、build、test 步骤中各一次），
+/// 性能提示：此函数会多次调用 `update_code_analysis`（在 cargo_build 之前以及 clean、build、test 步骤中各一次），
 /// 这会略微降低性能。未来可以优化为只更新一次分析。
 pub fn run_full_build_and_test_interactive(
     feature: &str,
@@ -1229,14 +1229,14 @@ pub fn run_full_build_and_test_interactive(
         "Running full build and test flow...".bright_blue().bold()
     );
 
-    // 1. 先构建 Rust 代码
+    // 1. 更新代码分析，然后构建 Rust 代码
     println!(
         "│ {}",
-        "→ Step 1/4: Building Rust code (cargo build)...".bright_blue()
+        "→ Step 1/4: Updating code analysis and building Rust code (cargo build)...".bright_blue()
     );
-    println!("{}", "Updating code analysis...".bright_blue());
+    println!("│ {}", "Updating code analysis...".bright_blue());
     analyzer::update_code_analysis(feature)?;
-    println!("{}", "✓ Code analysis updated".bright_green());
+    println!("│ {}", "✓ Code analysis updated".bright_green());
     match cargo_build(feature, true) {
         Ok(_) => {
             println!("│ {}", "  ✓ Rust build successful".bright_green());
