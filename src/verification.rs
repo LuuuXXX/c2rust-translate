@@ -21,10 +21,7 @@ impl std::error::Error for SkipFileSignal {}
 /// Display warning message about retry directly operation
 pub fn display_retry_directly_warning() {
     println!("│");
-    println!(
-        "│ {}",
-        "⚠ Warning: This will:".bright_yellow().bold()
-    );
+    println!("│ {}", "⚠ Warning: This will:".bright_yellow().bold());
     println!(
         "│ {}",
         "  • Clear the current .rs file content".bright_yellow()
@@ -33,10 +30,7 @@ pub fn display_retry_directly_warning() {
         "│ {}",
         "  • Re-translate from C source completely".bright_yellow()
     );
-    println!(
-        "│ {}",
-        "  • Clear all previous suggestions".bright_yellow()
-    );
+    println!("│ {}", "  • Clear all previous suggestions".bright_yellow());
     println!("│");
 }
 
@@ -88,11 +82,7 @@ where
             let Some(file_stem) = msg_file.file_stem().and_then(|s| s.to_str()) else {
                 println!(
                     "│ {}",
-                    format!(
-                        "⚠ Skipping file with invalid name: {}",
-                        msg_file.display()
-                    )
-                    .yellow()
+                    format!("⚠ Skipping file with invalid name: {}", msg_file.display()).yellow()
                 );
                 continue;
             };
@@ -103,8 +93,7 @@ where
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or(file_stem);
-            let msg_format_progress =
-                |op: &str| format!("Fixing {} - {}", msg_file_name, op);
+            let msg_format_progress = |op: &str| format!("Fixing {} - {}", msg_file_name, op);
             if is_warning {
                 crate::apply_warning_fix(
                     feature,
@@ -197,18 +186,23 @@ where
             }
             Err(build_error) => {
                 if attempt == max_fix_attempts {
-                    let (build_successful, extra_fix_attempts, had_restart) = handle_max_fix_attempts_reached(
-                        build_error,
-                        file_name,
-                        rs_file,
-                        is_last_attempt,
-                        attempt_number,
-                        max_fix_attempts,
-                        feature,
-                        file_type,
-                        show_full_output,
-                    )?;
-                    return Ok((build_successful, fix_attempts + extra_fix_attempts, had_restart));
+                    let (build_successful, extra_fix_attempts, had_restart) =
+                        handle_max_fix_attempts_reached(
+                            build_error,
+                            file_name,
+                            rs_file,
+                            is_last_attempt,
+                            attempt_number,
+                            max_fix_attempts,
+                            feature,
+                            file_type,
+                            show_full_output,
+                        )?;
+                    return Ok((
+                        build_successful,
+                        fix_attempts + extra_fix_attempts,
+                        had_restart,
+                    ));
                 } else {
                     // Apply fixes using the shared helper (error phase, is_warning=false)
                     fix_attempts += apply_fixes_for_messages(
@@ -258,7 +252,10 @@ where
     let mut fix_attempts = 0usize;
     for attempt in 1..=max_fix_attempts {
         println!("│");
-        println!("│ {}", format_progress("Warning Check").bright_magenta().bold());
+        println!(
+            "│ {}",
+            format_progress("Warning Check").bright_magenta().bold()
+        );
         println!(
             "│ {}",
             format!(
@@ -305,8 +302,7 @@ where
 
     println!(
         "│ {}",
-        "⚠ Maximum warning fix attempts reached, continuing with remaining warnings."
-            .yellow()
+        "⚠ Maximum warning fix attempts reached, continuing with remaining warnings.".yellow()
     );
     Ok(fix_attempts)
 }
@@ -402,7 +398,10 @@ fn handle_max_fix_attempts_reached(
 }
 
 /// 处理直接重试选项
-fn handle_retry_directly(attempt_number: usize, is_last_attempt: bool) -> Result<(bool, usize, bool)> {
+fn handle_retry_directly(
+    attempt_number: usize,
+    is_last_attempt: bool,
+) -> Result<(bool, usize, bool)> {
     use crate::util::MAX_TRANSLATION_ATTEMPTS;
 
     println!("│");
@@ -426,9 +425,7 @@ fn handle_retry_directly(attempt_number: usize, is_last_attempt: bool) -> Result
             "│ {}",
             "No more translation retries are available.".yellow()
         );
-        anyhow::bail!(
-            "RetryDirectly selected on last translation attempt — no retries remaining"
-        );
+        anyhow::bail!("RetryDirectly selected on last translation attempt — no retries remaining");
     }
 
     // 重新翻译（清空并重新生成 rs 文件）
@@ -503,10 +500,7 @@ fn handle_add_suggestion(
         // 没有更多翻译重试，但用户输入了新建议
         // 不清空 .rs 文件，而是用新建议重新开始完整的修复循环
         println!("│");
-        println!(
-            "│ {}",
-            "No translation retries remaining.".bright_yellow()
-        );
+        println!("│ {}", "No translation retries remaining.".bright_yellow());
         println!(
             "│ {}",
             "Starting new fix-and-verify cycle with your suggestion...".bright_cyan()
@@ -521,24 +515,29 @@ fn handle_add_suggestion(
         // 注意：这里传入 is_last_attempt=true 表示这是最后一次翻译机会
         // 但修复循环本身会有完整的 max_fix_attempts 次机会
         // 第二个返回值是递归循环中消耗的 fix_attempts 次数，由调用方 process_rs_file 聚合统计。
-        let (build_successful, recursive_fix_attempts, had_restart) = crate::verification::build_and_fix_loop(
-            feature,
-            file_type,
-            rs_file,
-            file_name,
-            &|op: &str| format!("Suggestion-based fix - {}", op),
-            true,  // is_last_attempt: 翻译层面确实是最后一次了
-            attempt_number,
-            max_fix_attempts,
-            show_full_output,
-        )?;
+        let (build_successful, recursive_fix_attempts, had_restart) =
+            crate::verification::build_and_fix_loop(
+                feature,
+                file_type,
+                rs_file,
+                file_name,
+                &|op: &str| format!("Suggestion-based fix - {}", op),
+                true, // is_last_attempt: 翻译层面确实是最后一次了
+                attempt_number,
+                max_fix_attempts,
+                show_full_output,
+            )?;
 
         Ok((build_successful, recursive_fix_attempts, had_restart))
     }
 }
 
 /// 处理手动修复选项
-fn handle_manual_fix(feature: &str, file_type: &str, rs_file: &Path) -> Result<(bool, usize, bool)> {
+fn handle_manual_fix(
+    feature: &str,
+    file_type: &str,
+    rs_file: &Path,
+) -> Result<(bool, usize, bool)> {
     println!("│");
     println!("│ {}", "You chose: Manual fix".bright_cyan());
 
