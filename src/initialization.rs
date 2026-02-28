@@ -82,7 +82,7 @@ pub fn check_and_initialize_feature(feature: &str) -> Result<()> {
 pub fn gate_cargo_build(feature: &str, show_full_output: bool) -> Result<()> {
     println!(
         "\n{}",
-        "Step 2.1: Cargo Build Verification".bright_cyan().bold()
+        "Step 2.2: Cargo Build Verification".bright_cyan().bold()
     );
     println!("{}", "Building project...".bright_blue().bold());
 
@@ -125,7 +125,7 @@ pub fn gate_cargo_build(feature: &str, show_full_output: bool) -> Result<()> {
 
 /// 门禁验证：代码分析同步
 pub fn gate_code_analysis(feature: &str) -> Result<()> {
-    println!("\n{}", "Step 2.2: Code Analysis Sync".bright_cyan().bold());
+    println!("\n{}", "Step 2.1: Code Analysis Sync".bright_cyan().bold());
     println!("{}", "Updating code analysis...".bright_blue());
     analyzer::update_code_analysis(feature)?;
     println!("{}", "✓ Code analysis updated".bright_green());
@@ -232,13 +232,15 @@ pub fn gate_hybrid_test(feature: &str) -> Result<bool> {
 /// 运行完整的门禁验证流程
 ///
 /// 包括：
-/// 1. Cargo Build
-/// 2. 代码分析同步
+/// 1. 代码分析同步
+/// 2. Cargo Build
 /// 3. 混合构建清除
 /// 4. 混合构建构建
 /// 5. 混合构建测试
 /// 6. 如果全部通过，提交到 git
 pub fn run_gate_verification(feature: &str, show_full_output: bool) -> Result<()> {
+    util::validate_feature_name(feature)?;
+
     println!(
         "\n{}",
         "═══ Gate Verification (Post-Initialization) ═══"
@@ -246,11 +248,11 @@ pub fn run_gate_verification(feature: &str, show_full_output: bool) -> Result<()
             .bold()
     );
 
-    // 2.1 Cargo Build
-    gate_cargo_build(feature, show_full_output)?;
-
-    // 2.2 代码分析同步
+    // 2.1 代码分析同步
     gate_code_analysis(feature)?;
+
+    // 2.2 Cargo Build
+    gate_cargo_build(feature, show_full_output)?;
 
     // 2.3 混合构建清除
     let hybrid_clean_ok = gate_hybrid_clean(feature)?;
