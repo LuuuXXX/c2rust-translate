@@ -10,6 +10,7 @@ use crate::{builder, file_scanner, interaction, suggestion, translator, util};
 /// 从错误消息中按出现顺序提取文件路径字符串
 /// 只提取 error 和 warning 级别诊断中引用的文件路径
 /// 过滤掉 note、help、suggestion 等辅助级别的文件路径引用
+/// 返回去重后的路径列表（按首次出现顺序排列），确保同一文件不会被多次处理
 fn collect_error_level_file_paths(error_msg: &str) -> Vec<String> {
     lazy_static::lazy_static! {
         static ref ERROR_WARNING_LEVEL_RE: regex::Regex =
@@ -23,7 +24,8 @@ fn collect_error_level_file_paths(error_msg: &str) -> Vec<String> {
                 .expect("Failed to compile file path line regex");
     }
 
-    let mut paths = Vec::new();
+    let mut paths: Vec<String> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
     let mut in_error_or_warning = false;
 
     for line in error_msg.lines() {
@@ -37,7 +39,10 @@ fn collect_error_level_file_paths(error_msg: &str) -> Vec<String> {
         if in_error_or_warning {
             if let Some(cap) = FILE_PATH_LINE_RE.captures(line) {
                 if let Some(path_match) = cap.get(1) {
-                    paths.push(path_match.as_str().to_string());
+                    let path_str = path_match.as_str().to_string();
+                    if seen.insert(path_str.clone()) {
+                        paths.push(path_str);
+                    }
                 }
             }
         }
@@ -841,6 +846,30 @@ error[E0425]: cannot find value `y` in this scope
 
         assert!(paths.contains(&"src/var_test.rs".to_string()));
         assert!(paths.contains(&"src/fun_helper.rs".to_string()));
+    }
+
+    #[test]
+    fn test_collect_error_level_file_paths_deduplicates_same_file() {
+        // 同一文件在多个 error 块中出现时，路径列表中只应出现一次
+        let error_msg = "error[E0308]: mismatched types
+   --> src/var_test.rs:10:5
+    |
+10  |     let x: i32 = \"hello\";
+
+error[E0425]: cannot find value `y` in this scope
+   --> src/var_test.rs:20:9
+    |
+20 |         y
+    |         ^ not found in this scope";
+
+        let paths = collect_error_level_file_paths(error_msg);
+
+        // var_test.rs 出现两次错误，但路径列表中只应有一个条目
+        assert_eq!(
+            paths.iter().filter(|p| *p == "src/var_test.rs").count(),
+            1,
+            "Same file path should appear only once"
+        );
     }
 
     #[test]

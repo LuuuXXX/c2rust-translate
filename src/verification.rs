@@ -99,13 +99,19 @@ where
             let (msg_file_type, _) =
                 crate::file_scanner::extract_file_type(file_stem).unwrap_or((file_type, ""));
             let msg_error = anyhow::anyhow!("{}", file_msg);
+            let msg_file_name = msg_file
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(file_stem);
+            let msg_format_progress =
+                |op: &str| format!("Fixing {} - {}", msg_file_name, op);
             if is_warning {
                 crate::apply_warning_fix(
                     feature,
                     msg_file_type,
                     msg_file,
                     &msg_error,
-                    format_progress,
+                    &msg_format_progress,
                     show_full_output,
                 )?;
             } else {
@@ -114,7 +120,7 @@ where
                     msg_file_type,
                     msg_file,
                     &msg_error,
-                    format_progress,
+                    &msg_format_progress,
                     show_full_output,
                 )?;
             }
