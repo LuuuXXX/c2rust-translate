@@ -59,7 +59,10 @@ pub fn cargo_build(feature: &str, _show_full_output: bool) -> Result<()> {
 ///
 /// Note: `_show_full_output` is not currently used; it is kept for API consistency
 /// with other build functions and for potential future use.
-pub fn cargo_build_check_warnings(feature: &str, _show_full_output: bool) -> Result<Option<String>> {
+pub fn cargo_build_check_warnings(
+    feature: &str,
+    _show_full_output: bool,
+) -> Result<Option<String>> {
     util::validate_feature_name(feature)?;
 
     let project_root = util::find_project_root()?;
@@ -735,7 +738,11 @@ pub(crate) fn handle_build_failure_interactive(
                                                         current_error = e;
                                                         continue;
                                                     }
-                                                    interaction::FailureChoice::Skip => unreachable!("Skip is not offered in this context"),
+                                                    interaction::FailureChoice::Skip => {
+                                                        unreachable!(
+                                                            "Skip is not offered in this context"
+                                                        )
+                                                    }
                                                     interaction::FailureChoice::Exit => {
                                                         return Err(e).context("Build failed after manual fix and user chose to exit");
                                                     }
@@ -758,7 +765,9 @@ pub(crate) fn handle_build_failure_interactive(
                                     }
                                 }
                             }
-                            interaction::FailureChoice::Skip => unreachable!("Skip is not offered in this context"),
+                            interaction::FailureChoice::Skip => {
+                                unreachable!("Skip is not offered in this context")
+                            }
                             interaction::FailureChoice::Exit => {
                                 return Err(current_error)
                                     .context("Build failed and user chose to exit");
@@ -833,7 +842,9 @@ pub(crate) fn handle_build_failure_interactive(
                                             feature, file_type, rs_file, e,
                                         );
                                     }
-                                    interaction::FailureChoice::Skip => unreachable!("Skip is not offered in this context"),
+                                    interaction::FailureChoice::Skip => {
+                                        unreachable!("Skip is not offered in this context")
+                                    }
                                     interaction::FailureChoice::Exit => {
                                         return Err(e).context(
                                             "Build failed after manual fix and user chose to exit",
@@ -1065,7 +1076,9 @@ pub(crate) fn handle_test_failure_interactive(
                                     }
                                 }
                             }
-                            interaction::FailureChoice::Skip => unreachable!("Skip is not offered in this context"),
+                            interaction::FailureChoice::Skip => {
+                                unreachable!("Skip is not offered in this context")
+                            }
                             interaction::FailureChoice::Exit => {
                                 return Err(current_error)
                                     .context("Tests failed and user chose to exit");
@@ -1133,7 +1146,9 @@ pub(crate) fn handle_test_failure_interactive(
                                         );
                                         return Err(e).context("Tests still failing after manual fix; user chose to add a suggestion");
                                     }
-                                    interaction::FailureChoice::Skip => unreachable!("Skip is not offered in this context"),
+                                    interaction::FailureChoice::Skip => {
+                                        unreachable!("Skip is not offered in this context")
+                                    }
                                     interaction::FailureChoice::Exit => {
                                         return Err(e).context(
                                             "Tests failed after manual fix and user chose to exit",
@@ -1167,57 +1182,17 @@ pub(crate) fn handle_test_failure_interactive(
 /// 执行完整的构建和测试流程
 /// 顺序：update_code_analysis → cargo_build → c2rust_clean → c2rust_build → c2rust_test
 /// 这是主流程中的标准验证流程
-///
-/// 注意：此函数会多次调用 `update_code_analysis`（在 cargo_build 之前以及 clean、build、test 步骤中各一次），
-/// 这会略微降低性能。未来可以优化为只更新一次分析。
 pub fn run_full_build_and_test(feature: &str) -> Result<()> {
-    println!("│");
-    println!(
-        "│ {}",
-        "Running full build and test flow...".bright_blue().bold()
-    );
-
-    // 1. 更新代码分析，然后构建 Rust 代码
-    println!(
-        "│ {}",
-        "→ Step 1/4: Updating code analysis and building Rust code (cargo build)...".bright_blue()
-    );
-    println!("│ {}", "Updating code analysis...".bright_blue());
-    analyzer::update_code_analysis(feature)?;
-    println!("│ {}", "✓ Code analysis updated".bright_green());
-    cargo_build(feature, true)?;
-    println!("│ {}", "  ✓ Rust build successful".bright_green());
-
-    // 2. 清理混合构建环境
-    println!("│ {}", "→ Step 2/4: Cleaning hybrid build...".bright_blue());
-    c2rust_clean(feature)?;
-
-    // 3. 混合构建
-    println!(
-        "│ {}",
-        "→ Step 3/4: Running hybrid build (C + Rust)...".bright_blue()
-    );
-    c2rust_build(feature)?;
-    println!("│ {}", "  ✓ Hybrid build successful".bright_green());
-
-    // 4. 运行测试
-    println!("│ {}", "→ Step 4/4: Running tests...".bright_blue());
-    c2rust_test(feature)?;
-    println!("│ {}", "  ✓ All tests passed".bright_green().bold());
-
-    Ok(())
+    run_full_build_and_test_interactive(feature, "", std::path::Path::new(""))
 }
 
 /// 执行完整的构建和测试流程
 /// 顺序：update_code_analysis → cargo_build → c2rust_clean → c2rust_build → c2rust_test
 ///
-/// 注意：此函数不提供交互式错误处理，任何步骤失败时都会直接返回错误。
+/// 任何步骤失败时直接返回错误，并打印详细的错误信息。
 /// 调用方负责处理错误并提供交互式修复选项（如需要）。
 ///
 /// 参数 `_file_type` 和 `_rs_file` 保留用于 API 兼容性，当前未使用。
-///
-/// 性能提示：此函数会多次调用 `update_code_analysis`（在 cargo_build 之前以及 clean、build、test 步骤中各一次），
-/// 这会略微降低性能。未来可以优化为只更新一次分析。
 pub fn run_full_build_and_test_interactive(
     feature: &str,
     _file_type: &str,
@@ -1243,8 +1218,10 @@ pub fn run_full_build_and_test_interactive(
         }
         Err(e) => {
             println!("│ {}", "  ✗ Rust build failed".red());
-            // cargo_build 失败通常意味着翻译的 Rust 代码有问题
-            // 这不应该发生在手动修复后，所以直接返回错误
+            println!("│");
+            println!("│ {}", "Error details:".red().bold());
+            println!("│ {}", format!("{:#}", e).red());
+            println!("│");
             return Err(e).context("Rust build failed in full build flow");
         }
     }
@@ -1338,7 +1315,8 @@ mod tests {
     /// Test that clean build output (no warnings) returns false
     #[test]
     fn test_no_warnings_clean_output() {
-        let stderr = "   Compiling myproject v0.1.0\n    Finished dev [unoptimized] target(s) in 1.23s";
+        let stderr =
+            "   Compiling myproject v0.1.0\n    Finished dev [unoptimized] target(s) in 1.23s";
         let has = stderr
             .lines()
             .any(|l| l.contains("warning[") || l.contains("warning:"));

@@ -65,7 +65,11 @@ impl TranslationStats {
     ) {
         self.total_files += 1;
 
-        debug_assert!(attempts > 0, "attempts must be at least 1, got: {}", attempts);
+        debug_assert!(
+            attempts > 0,
+            "attempts must be at least 1, got: {}",
+            attempts
+        );
         match attempts {
             1 => self.success_first_try += 1,
             2 => self.success_retry_1 += 1,
@@ -99,7 +103,10 @@ impl TranslationStats {
         use colored::Colorize;
 
         println!("\n{}", "═".repeat(80).bright_cyan());
-        println!("{}", "📊 Translation Statistics Summary".bright_cyan().bold());
+        println!(
+            "{}",
+            "📊 Translation Statistics Summary".bright_cyan().bold()
+        );
         println!("{}", "═".repeat(80).bright_cyan());
 
         if self.total_files == 0 {
@@ -109,86 +116,85 @@ impl TranslationStats {
                 return;
             }
         } else {
-
-        // 总体统计
-        println!("\n{}", "Overall Statistics:".bright_white().bold());
-        println!(
-            "  Total files successfully translated: {}",
-            self.total_files.to_string().bright_green()
-        );
-        println!(
-            "  Files with restart:          {}",
-            self.restart_count.to_string().bright_yellow()
-        );
-
-        // 计算总重试次数（translation_attempts 始终 >= 1，saturating_sub 防御性处理）
-        let total_retries: usize = self
-            .file_attempts
-            .values()
-            .map(|stat| stat.translation_attempts.saturating_sub(1))
-            .sum();
-        println!(
-            "  Total retries:               {}",
-            total_retries.to_string().bright_yellow()
-        );
-
-        // 按重试次数分类
-        println!("\n{}", "Success Rate by Attempts:".bright_white().bold());
-        println!(
-            "  ✓ First try (no retry):      {} ({:.1}%)",
-            self.success_first_try.to_string().bright_green(),
-            self.percentage(self.success_first_try)
-        );
-        println!(
-            "  ↻ Retry 1 time:              {} ({:.1}%)",
-            self.success_retry_1.to_string().bright_cyan(),
-            self.percentage(self.success_retry_1)
-        );
-        println!(
-            "  ↻ Retry 2 times:             {} ({:.1}%)",
-            self.success_retry_2.to_string().bright_yellow(),
-            self.percentage(self.success_retry_2)
-        );
-        println!(
-            "  ↻ Retry 3+ times:            {} ({:.1}%)",
-            self.success_retry_3_plus.to_string().bright_red(),
-            self.percentage(self.success_retry_3_plus)
-        );
-
-        // 详细文件列表
-        if !self.file_attempts.is_empty() {
+            // 总体统计
+            println!("\n{}", "Overall Statistics:".bright_white().bold());
             println!(
-                "\n{}",
-                "Detailed File Statistics (Top 10 by translation attempts):"
-                    .bright_white()
-                    .bold()
+                "  Total files successfully translated: {}",
+                self.total_files.to_string().bright_green()
             );
-            let mut files: Vec<_> = self.file_attempts.iter().collect();
-            files.sort_by(|a, b| {
-                b.1.translation_attempts
-                    .cmp(&a.1.translation_attempts)
-                    .then_with(|| b.1.fix_attempts.cmp(&a.1.fix_attempts))
-            });
+            println!(
+                "  Files with restart:          {}",
+                self.restart_count.to_string().bright_yellow()
+            );
 
-            for (file_name, stat) in files.iter().take(10) {
-                let restart_indicator = if stat.had_restart {
-                    " [RESTART]".bright_red().to_string()
-                } else {
-                    String::new()
-                };
+            // 计算总重试次数（translation_attempts 始终 >= 1，saturating_sub 防御性处理）
+            let total_retries: usize = self
+                .file_attempts
+                .values()
+                .map(|stat| stat.translation_attempts.saturating_sub(1))
+                .sum();
+            println!(
+                "  Total retries:               {}",
+                total_retries.to_string().bright_yellow()
+            );
+
+            // 按重试次数分类
+            println!("\n{}", "Success Rate by Attempts:".bright_white().bold());
+            println!(
+                "  ✓ First try (no retry):      {} ({:.1}%)",
+                self.success_first_try.to_string().bright_green(),
+                self.percentage(self.success_first_try)
+            );
+            println!(
+                "  ↻ Retry 1 time:              {} ({:.1}%)",
+                self.success_retry_1.to_string().bright_cyan(),
+                self.percentage(self.success_retry_1)
+            );
+            println!(
+                "  ↻ Retry 2 times:             {} ({:.1}%)",
+                self.success_retry_2.to_string().bright_yellow(),
+                self.percentage(self.success_retry_2)
+            );
+            println!(
+                "  ↻ Retry 3+ times:            {} ({:.1}%)",
+                self.success_retry_3_plus.to_string().bright_red(),
+                self.percentage(self.success_retry_3_plus)
+            );
+
+            // 详细文件列表
+            if !self.file_attempts.is_empty() {
                 println!(
-                    "  {} - {} translation attempt(s), {} fix attempt(s){}",
-                    file_name.bright_white(),
-                    stat.translation_attempts.to_string().bright_cyan(),
-                    stat.fix_attempts.to_string().bright_yellow(),
-                    restart_indicator
+                    "\n{}",
+                    "Detailed File Statistics (Top 10 by translation attempts):"
+                        .bright_white()
+                        .bold()
                 );
-            }
+                let mut files: Vec<_> = self.file_attempts.iter().collect();
+                files.sort_by(|a, b| {
+                    b.1.translation_attempts
+                        .cmp(&a.1.translation_attempts)
+                        .then_with(|| b.1.fix_attempts.cmp(&a.1.fix_attempts))
+                });
 
-            if self.file_attempts.len() > 10 {
-                println!("  ... and {} more files", self.file_attempts.len() - 10);
+                for (file_name, stat) in files.iter().take(10) {
+                    let restart_indicator = if stat.had_restart {
+                        " [RESTART]".bright_red().to_string()
+                    } else {
+                        String::new()
+                    };
+                    println!(
+                        "  {} - {} translation attempt(s), {} fix attempt(s){}",
+                        file_name.bright_white(),
+                        stat.translation_attempts.to_string().bright_cyan(),
+                        stat.fix_attempts.to_string().bright_yellow(),
+                        restart_indicator
+                    );
+                }
+
+                if self.file_attempts.len() > 10 {
+                    println!("  ... and {} more files", self.file_attempts.len() - 10);
+                }
             }
-        }
         } // close `else` from total_files != 0 check
 
         // 跳过的文件
@@ -240,9 +246,9 @@ impl TranslationStats {
                 Ok(Some(stats))
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(e).with_context(|| {
-                format!("Failed to read stats file: {}", path.display())
-            }),
+            Err(e) => {
+                Err(e).with_context(|| format!("Failed to read stats file: {}", path.display()))
+            }
         }
     }
 
@@ -251,12 +257,10 @@ impl TranslationStats {
         let path = Self::get_stats_file_path(feature)?;
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).with_context(|| {
-                format!("Failed to create directory: {}", parent.display())
-            })?;
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create directory: {}", parent.display()))?;
         }
-        let contents = serde_json::to_string_pretty(self)
-            .context("Failed to serialize stats")?;
+        let contents = serde_json::to_string_pretty(self).context("Failed to serialize stats")?;
         std::fs::write(&path, contents)
             .with_context(|| format!("Failed to write stats file: {}", path.display()))?;
         Ok(())
@@ -268,9 +272,9 @@ impl TranslationStats {
         match std::fs::remove_file(&path) {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(e) => Err(e).with_context(|| {
-                format!("Failed to remove stats file: {}", path.display())
-            }),
+            Err(e) => {
+                Err(e).with_context(|| format!("Failed to remove stats file: {}", path.display()))
+            }
         }
     }
 

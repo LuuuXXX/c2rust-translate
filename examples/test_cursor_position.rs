@@ -15,7 +15,6 @@
 /// - "测试123test"
 ///
 /// The cursor should remain properly aligned with the visible text.
-
 use inquire::Text;
 
 fn main() {

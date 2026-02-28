@@ -2,6 +2,24 @@ use crate::{analyzer, builder, git, hybrid_build, interaction, util};
 use anyhow::{Context, Result};
 use colored::Colorize;
 
+/// 从错误信息中提取失败的 .rs 文件并在 vim 中打开
+///
+/// 返回 true 如果找到并打开了文件，false 如果未找到任何文件
+fn open_failing_files_from_error(error_text: &str, feature: &str) -> Result<bool> {
+    let failing_files = crate::error_handler::group_errors_by_file(error_text, feature)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(f, _)| f)
+        .collect::<Vec<_>>();
+    if failing_files.is_empty() {
+        return Ok(false);
+    }
+    for rs_file in &failing_files {
+        interaction::open_in_vim(rs_file)?;
+    }
+    Ok(true)
+}
+
 /// 检查并初始化 feature 目录
 ///
 /// 如果 rust 目录不存在，则初始化并提交
@@ -86,37 +104,52 @@ pub fn gate_cargo_build(feature: &str, show_full_output: bool) -> Result<()> {
     );
     println!("{}", "Building project...".bright_blue().bold());
 
-    match builder::cargo_build(feature, show_full_output) {
-        Ok(_) => {
-            println!("{}", "✓ Build successful!".bright_green().bold());
-            Ok(())
-        }
-        Err(e) => {
-            println!("{}", "✗ Initial build failed!".red().bold());
-            println!(
-                "{}",
-                "This may indicate issues with the project setup or previous translations."
-                    .yellow()
-            );
+    loop {
+        match builder::cargo_build(feature, show_full_output) {
+            Ok(_) => {
+                println!("{}", "✓ Build successful!".bright_green().bold());
+                return Ok(());
+            }
+            Err(e) => {
+                println!("{}", "✗ Initial build failed!".red().bold());
+                println!(
+                    "{}",
+                    "This may indicate issues with the project setup or previous translations."
+                        .yellow()
+                );
 
-            println!();
-            println!("{}", "Error details:".red().bold());
-            println!("{}", format!("{:#}", e).red());
-            println!();
+                println!();
+                println!("{}", "Error details:".red().bold());
+                println!("{}", format!("{:#}", e).red());
+                println!();
 
-            // 提供交互式处理
-            let choice = interaction::prompt_user_choice("Initial build failure", false)?;
+                // 提供交互式处理
+                let choice = interaction::prompt_user_choice("Initial build failure", false)?;
 
-            match choice {
-                interaction::UserChoice::Continue => {
-                    println!("│ {}", "Continuing despite build failure. You can fix issues during file processing.".yellow());
-                    Ok(())
-                }
-                interaction::UserChoice::ManualFix => {
-                    Err(e).context("Initial build failed and user chose manual fix")
-                }
-                interaction::UserChoice::Exit => {
-                    Err(e).context("Initial build failed and user chose to exit")
+                match choice {
+                    interaction::UserChoice::Continue => {
+                        println!("│ {}", "Continuing despite build failure. You can fix issues during file processing.".yellow());
+                        return Ok(());
+                    }
+                    interaction::UserChoice::ManualFix => {
+                        // 从错误信息中提取失败的 .rs 文件并在 vim 中打开
+                        let error_text = e.to_string();
+                        if !open_failing_files_from_error(&error_text, feature)? {
+                            println!(
+                                "│ {}",
+                                "Could not identify a specific file to open. Please check the error above and fix manually."
+                                    .yellow()
+                            );
+                            return Err(e).context(
+                                "Initial build failed - no specific file identified for manual fix",
+                            );
+                        }
+                        // 继续循环以重新尝试构建
+                        println!("{}", "Retrying build after manual fix...".bright_blue());
+                    }
+                    interaction::UserChoice::Exit => {
+                        return Err(e).context("Initial build failed and user chose to exit");
+                    }
                 }
             }
         }
@@ -190,9 +223,19 @@ pub fn gate_hybrid_build(feature: &str) -> Result<bool> {
 
             match choice {
                 interaction::UserChoice::Continue => Ok(false),
-                interaction::UserChoice::ManualFix | interaction::UserChoice::Exit => {
+                interaction::UserChoice::ManualFix => {
+                    // 尝试从错误信息中提取失败的 .rs 文件并在 vim 中打开
+                    let error_text = e.to_string();
+                    if !open_failing_files_from_error(&error_text, feature)? {
+                        println!(
+                            "│ {}",
+                            "Could not identify a specific file to open. Please check the error above and fix manually."
+                                .yellow()
+                        );
+                    }
                     Err(e).context("Hybrid build failed")
                 }
+                interaction::UserChoice::Exit => Err(e).context("Hybrid build failed"),
             }
         }
     }
@@ -221,9 +264,19 @@ pub fn gate_hybrid_test(feature: &str) -> Result<bool> {
 
             match choice {
                 interaction::UserChoice::Continue => Ok(false),
-                interaction::UserChoice::ManualFix | interaction::UserChoice::Exit => {
+                interaction::UserChoice::ManualFix => {
+                    // 尝试从错误信息中提取失败的 .rs 文件并在 vim 中打开
+                    let error_text = e.to_string();
+                    if !open_failing_files_from_error(&error_text, feature)? {
+                        println!(
+                            "│ {}",
+                            "Could not identify a specific file to open. Please check the error above and fix manually."
+                                .yellow()
+                        );
+                    }
                     Err(e).context("Hybrid test failed")
                 }
+                interaction::UserChoice::Exit => Err(e).context("Hybrid test failed"),
             }
         }
     }

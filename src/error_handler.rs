@@ -116,14 +116,8 @@ pub(crate) fn extract_errors_for_file(error_msg: &str, file_path: &PathBuf) -> S
     // 构建一个能精确匹配文件名的正则表达式：
     // 文件名前必须是路径分隔符、空白或行首，后必须是非字母数字下划线字符或行尾。
     // 这可以防止 "test.rs" 误匹配 "my_test.rs"。
-    let pattern = format!(
-        r"(?:^|[/\\\s]){}\b",
-        regex::escape(file_name)
-    );
-    let file_re = match regex::RegexBuilder::new(&pattern)
-        .multi_line(true)
-        .build()
-    {
+    let pattern = format!(r"(?:^|[/\\\s]){}\b", regex::escape(file_name));
+    let file_re = match regex::RegexBuilder::new(&pattern).multi_line(true).build() {
         Ok(re) => re,
         Err(_) => {
             // 正则表达式构建失败时返回完整错误消息，以避免不正确的子字符串匹配
@@ -176,8 +170,7 @@ pub(crate) fn group_errors_by_file(
             if candidate.exists() && candidate.is_file() {
                 if let Ok(canonical) = candidate.canonicalize() {
                     if let Ok(rust_canonical) = rust_dir.canonicalize() {
-                        if canonical.starts_with(&rust_canonical)
-                            && seen.insert(canonical.clone())
+                        if canonical.starts_with(&rust_canonical) && seen.insert(canonical.clone())
                         {
                             ordered_files.push(canonical);
                             break;
@@ -928,7 +921,10 @@ note: expected signature from here
 
         // 只应包含 var_error.rs，不应包含仅在 note 中引用的 fun_note.rs
         assert_eq!(result.len(), 1, "Should only contain the error-level file");
-        assert!(result[0].ends_with("var_error.rs"), "Should contain var_error.rs");
+        assert!(
+            result[0].ends_with("var_error.rs"),
+            "Should contain var_error.rs"
+        );
     }
 
     #[test]

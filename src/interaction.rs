@@ -362,21 +362,27 @@ pub fn prompt_build_failure_choice() -> Result<FailureChoice> {
 
 /// 在所有文件处理完成后提示用户如何处理跳过的文件
 pub fn prompt_skipped_files_choice(skipped_files: &[String]) -> Result<SkippedFilesChoice> {
-    println!("\n{}", "┌─────────────────────────────────────────────┐".bright_cyan());
+    println!(
+        "\n{}",
+        "┌─────────────────────────────────────────────┐".bright_cyan()
+    );
     println!("{}", "│ Translation complete!".bright_cyan());
     println!("{}", "│".bright_cyan());
     println!("{}", "│ Some files were skipped:".bright_yellow());
     for (idx, file_name) in skipped_files.iter().enumerate() {
-        println!("{}", format!("│   {}. {}", idx + 1, file_name).bright_yellow());
+        println!(
+            "{}",
+            format!("│   {}. {}", idx + 1, file_name).bright_yellow()
+        );
     }
     println!("{}", "│".bright_cyan());
     println!("{}", "│ Would you like to:".bright_cyan());
-    println!("{}", "└─────────────────────────────────────────────┘".bright_cyan());
+    println!(
+        "{}",
+        "└─────────────────────────────────────────────┘".bright_cyan()
+    );
 
-    let options = vec![
-        "Process skipped files now",
-        "Exit and process them later",
-    ];
+    let options = vec!["Process skipped files now", "Exit and process them later"];
 
     let choice = Select::new("Select an option:", options.clone())
         .with_vim_mode(true)

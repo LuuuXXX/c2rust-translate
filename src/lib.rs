@@ -60,8 +60,7 @@ pub fn translate_feature(
     let mut stats = step_2_5_load_or_create_stats(feature)?;
 
     // Step 3 & 4: Select files and initialize progress
-    let (rust_dir, mut progress_state) =
-        step_3_4_select_files_and_init_progress(feature, &stats)?;
+    let (rust_dir, mut progress_state) = step_3_4_select_files_and_init_progress(feature, &stats)?;
 
     // Step 5: Execute translation loop
     let step5_result = step_5_execute_translation_loop(
@@ -116,26 +115,19 @@ fn step_2_5_load_or_create_stats(feature: &str) -> Result<util::TranslationStats
         Some(existing_stats) => {
             println!(
                 "\n{}",
-                "Found previous translation progress!".bright_yellow().bold()
+                "Found previous translation progress!"
+                    .bright_yellow()
+                    .bold()
             );
             println!("Previous progress:");
-            println!(
-                "  - Total files translated: {}",
-                existing_stats.total_files
-            );
-            println!(
-                "  - Files skipped: {}",
-                existing_stats.skipped_files.len()
-            );
+            println!("  - Total files translated: {}", existing_stats.total_files);
+            println!("  - Files skipped: {}", existing_stats.skipped_files.len());
 
             let choice = interaction::prompt_continue_or_restart()?;
 
             match choice {
                 interaction::ContinueChoice::Continue => {
-                    println!(
-                        "{}",
-                        "✓ Continuing previous progress...".bright_green()
-                    );
+                    println!("{}", "✓ Continuing previous progress...".bright_green());
                     Ok(existing_stats)
                 }
                 interaction::ContinueChoice::Restart => {
@@ -149,10 +141,7 @@ fn step_2_5_load_or_create_stats(feature: &str) -> Result<util::TranslationStats
             }
         }
         None => {
-            println!(
-                "{}",
-                "Starting new translation session...".bright_cyan()
-            );
+            println!("{}", "Starting new translation session...".bright_cyan());
             Ok(util::TranslationStats::new())
         }
     }
@@ -360,8 +349,7 @@ fn save_stats_or_warn(stats: &util::TranslationStats, feature: &str) {
     if let Err(e) = stats.save_to_file(feature) {
         eprintln!(
             "{}",
-            format!("⚠ Warning: Failed to save translation stats: {}", e)
-                .yellow()
+            format!("⚠ Warning: Failed to save translation stats: {}", e).yellow()
         );
     }
 }
@@ -403,7 +391,10 @@ fn process_selected_files(
             .ok()
             .and_then(|p| p.to_str())
             .unwrap_or_else(|| {
-                rs_file.file_name().and_then(|s| s.to_str()).unwrap_or("<unknown>")
+                rs_file
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("<unknown>")
             });
 
         print_file_processing_header(current_position, total_count, file_name);
@@ -522,7 +513,13 @@ fn process_rs_file(
         };
 
         // Translate C to Rust
-        translate_file(feature, file_type, rs_file, &format_progress, show_full_output)?;
+        translate_file(
+            feature,
+            file_type,
+            rs_file,
+            &format_progress,
+            show_full_output,
+        )?;
 
         // Phase 1: Build and fix errors (warnings suppressed via RUSTFLAGS="-A warnings")
         println!("│");
@@ -622,7 +619,9 @@ fn print_attempt_header(attempt_number: usize, rs_file: &Path) {
             "\n{}",
             format!(
                 "┌─ Retry attempt {}/{}: {}",
-                retry_number, max_retries, rs_file.display()
+                retry_number,
+                max_retries,
+                rs_file.display()
             )
             .bright_yellow()
             .bold()
@@ -658,7 +657,7 @@ fn extract_and_validate_file_info(rs_file: &Path) -> Result<(&'static str, &str)
 /// Check if corresponding C source file exists
 fn check_c_file_exists(rs_file: &Path) -> Result<()> {
     let c_file = rs_file.with_extension("c");
-    
+
     match std::fs::metadata(&c_file) {
         Ok(_) => {
             println!(
@@ -709,7 +708,7 @@ where
             .bright_blue()
             .bold()
     );
-    
+
     translator::translate_c_to_rust(feature, file_type, &c_file, rs_file, show_full_output)?;
 
     // Verify translation produced output
@@ -717,7 +716,7 @@ where
     if metadata.len() == 0 {
         anyhow::bail!("Translation failed: output file is empty");
     }
-    
+
     println!(
         "│ {}",
         format!("✓ Translation complete ({} bytes)", metadata.len()).bright_green()
@@ -746,7 +745,7 @@ where
     );
     println!("│");
     println!("│ {}", format_progress("Fix").bright_magenta().bold());
-    
+
     // Fix translation error
     // Always show full fix code, but respect user preference for error preview
     translator::fix_translation_error(
@@ -763,7 +762,7 @@ where
     if metadata.len() == 0 {
         anyhow::bail!("Fix failed: output file is empty");
     }
-    
+
     println!("│ {}", "✓ Fix applied".bright_green());
 
     Ok(())
@@ -786,12 +785,13 @@ where
 {
     println!(
         "│ {}",
-        "⚠ Warnings detected, attempting to fix..."
-            .yellow()
-            .bold()
+        "⚠ Warnings detected, attempting to fix...".yellow().bold()
     );
     println!("│");
-    println!("│ {}", format_progress("Warning Fix").bright_magenta().bold());
+    println!(
+        "│ {}",
+        format_progress("Warning Fix").bright_magenta().bold()
+    );
 
     // Fix using the same translation tool, passing warnings as the "error" message
     translator::fix_translation_error(
@@ -858,12 +858,8 @@ where
     // Handle build
     if let Err(build_error) = builder::c2rust_build(feature) {
         println!("│ {}", "✗ Build failed".red().bold());
-        let processing_complete = builder::handle_build_failure_interactive(
-            feature,
-            file_type,
-            rs_file,
-            build_error,
-        )?;
+        let processing_complete =
+            builder::handle_build_failure_interactive(feature, file_type, rs_file, build_error)?;
         if !processing_complete {
             return Ok(false); // Retry translation
         }
@@ -1006,11 +1002,7 @@ where
 }
 
 /// Finalize file processing: commit changes and update analysis
-fn finalize_file_processing<F>(
-    feature: &str,
-    file_name: &str,
-    format_progress: &F,
-) -> Result<()>
+fn finalize_file_processing<F>(feature: &str, file_name: &str, format_progress: &F) -> Result<()>
 where
     F: Fn(&str) -> String,
 {
@@ -1045,10 +1037,7 @@ where
     );
     git::git_commit(&format!("Update code analysis for {}", feature), feature)?;
 
-    println!(
-        "{}",
-        "└─ File processing complete".bright_white().bold()
-    );
+    println!("{}", "└─ File processing complete".bright_white().bold());
 
     Ok(())
 }

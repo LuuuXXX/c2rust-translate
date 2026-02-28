@@ -68,7 +68,11 @@ fn read_rusttype_from_decl_file(rs_file: &Path) -> Option<String> {
             // Normalize line endings to avoid embedded '\r' from CRLF files
             let normalized = content.replace("\r\n", "\n").replace('\r', "");
             let trimmed = normalized.trim().to_string();
-            if trimmed.is_empty() { None } else { Some(trimmed) }
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => {
