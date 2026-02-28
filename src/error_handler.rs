@@ -10,6 +10,7 @@ use crate::{builder, file_scanner, interaction, suggestion, translator, util};
 /// 从错误消息中按出现顺序提取文件路径字符串
 /// 只提取 error 和 warning 级别诊断中引用的文件路径
 /// 过滤掉 note、help、suggestion 等辅助级别的文件路径引用
+/// 仅提取文件名以 fun_ 或 var_ 开头的文件
 /// 返回去重后的路径列表（按首次出现顺序排列），确保同一文件不会被多次处理
 fn collect_error_level_file_paths(error_msg: &str) -> Vec<String> {
     lazy_static::lazy_static! {
@@ -40,6 +41,14 @@ fn collect_error_level_file_paths(error_msg: &str) -> Vec<String> {
             if let Some(cap) = FILE_PATH_LINE_RE.captures(line) {
                 if let Some(path_match) = cap.get(1) {
                     let path_str = path_match.as_str().to_string();
+                    // 只提取文件名以 fun_ 或 var_ 开头的文件
+                    let file_stem = std::path::Path::new(&path_str)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("");
+                    if !file_stem.starts_with("fun_") && !file_stem.starts_with("var_") {
+                        continue;
+                    }
                     if seen.insert(path_str.clone()) {
                         paths.push(path_str);
                     }
@@ -920,5 +929,59 @@ note: expected signature from here
         // 只应包含 var_error.rs，不应包含仅在 note 中引用的 fun_note.rs
         assert_eq!(result.len(), 1, "Should only contain the error-level file");
         assert!(result[0].ends_with("var_error.rs"), "Should contain var_error.rs");
+    }
+
+    #[test]
+    fn test_collect_error_level_file_paths_filters_non_fun_var_prefix() {
+        // error 级别引用的文件，但文件名不以 fun_ 或 var_ 开头，不应被提取
+        let error_msg = "error[E0308]: mismatched types
+  --> src/other_file.rs:10:5
+   |
+10 |     let x: i32 = \"hello\";
+   |     ^^^^^^ expected `i32`, found `&str`
+
+error[E0425]: cannot find value `y` in this scope
+  --> src/helper.rs:20:9
+   |
+20 |         y
+   |         ^ not found in this scope";
+
+        let paths = collect_error_level_file_paths(error_msg);
+
+        // 不应提取任何路径，因为两个文件都不以 fun_ 或 var_ 开头
+        assert!(
+            paths.is_empty(),
+            "Files not starting with fun_ or var_ should be filtered out"
+        );
+    }
+
+    #[test]
+    fn test_collect_error_level_file_paths_mixed_prefix_files() {
+        // error 级别中同时包含有前缀和无前缀的文件，只应提取有前缀的文件
+        let error_msg = "error[E0308]: mismatched types
+  --> src/var_foo.rs:10:5
+   |
+10 |     let x: i32 = \"hello\";
+
+error[E0425]: not found
+  --> src/other.rs:5:1
+   |
+5  | let y = z;
+
+error[E0001]: another error
+  --> src/fun_bar.rs:3:1
+   |
+3  | fn f() {}";
+
+        let paths = collect_error_level_file_paths(error_msg);
+
+        // 只应提取以 var_ 和 fun_ 开头的文件
+        assert!(paths.contains(&"src/var_foo.rs".to_string()));
+        assert!(paths.contains(&"src/fun_bar.rs".to_string()));
+        assert!(
+            !paths.contains(&"src/other.rs".to_string()),
+            "File not starting with fun_ or var_ should be filtered out"
+        );
+        assert_eq!(paths.len(), 2);
     }
 }
