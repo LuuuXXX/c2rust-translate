@@ -293,11 +293,6 @@ pub(crate) fn handle_startup_test_failure_with_files(
                 )?;
 
                 // 再次尝试构建和测试
-                println!("│");
-                println!(
-                    "│ {}",
-                    "Running full build and test flow...".bright_blue().bold()
-                );
                 match builder::run_full_build_and_test(feature) {
                     Ok(_) => {
                         // 全部通过，停止进一步的错误处理
