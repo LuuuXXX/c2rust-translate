@@ -1182,6 +1182,9 @@ pub fn run_full_build_and_test(feature: &str) -> Result<()> {
         "│ {}",
         "→ Step 1/4: Building Rust code (cargo build)...".bright_blue()
     );
+    println!("{}", "Updating code analysis...".bright_blue());
+    analyzer::update_code_analysis(feature)?;
+    println!("{}", "✓ Code analysis updated".bright_green());
     cargo_build(feature, true)?;
     println!("│ {}", "  ✓ Rust build successful".bright_green());
 
@@ -1231,6 +1234,9 @@ pub fn run_full_build_and_test_interactive(
         "│ {}",
         "→ Step 1/4: Building Rust code (cargo build)...".bright_blue()
     );
+    println!("{}", "Updating code analysis...".bright_blue());
+    analyzer::update_code_analysis(feature)?;
+    println!("{}", "✓ Code analysis updated".bright_green());
     match cargo_build(feature, true) {
         Ok(_) => {
             println!("│ {}", "  ✓ Rust build successful".bright_green());
