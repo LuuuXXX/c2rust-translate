@@ -174,6 +174,9 @@ where
     F: Fn(&str) -> String,
 {
     let mut fix_attempts = 0usize;
+    println!("│ {}", "Updating code analysis...".bright_blue());
+    analyzer::update_code_analysis(feature)?;
+    println!("│ {}", "✓ Code analysis updated".bright_green());
     for attempt in 1..=max_fix_attempts {
         println!("│");
         println!("│ {}", format_progress("Build").bright_magenta().bold());
@@ -222,9 +225,9 @@ where
             }
         }
 
-        println!("{}", "Updating code analysis...".bright_blue());
+        println!("│ {}", "Updating code analysis...".bright_blue());
         analyzer::update_code_analysis(feature)?;
-        println!("{}", "✓ Code analysis updated".bright_green());
+        println!("│ {}", "✓ Code analysis updated".bright_green());
     }
 
     Ok((false, fix_attempts, false))
