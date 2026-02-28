@@ -133,7 +133,7 @@ pub fn gate_cargo_build(feature: &str, show_full_output: bool) -> Result<()> {
                     }
                     interaction::UserChoice::ManualFix => {
                         // 从错误信息中提取失败的 .rs 文件并在 vim 中打开
-                        let error_text = e.to_string();
+                        let error_text = format!("{:#}", e);
                         if !open_failing_files_from_error(&error_text, feature)? {
                             println!(
                                 "│ {}",
@@ -202,40 +202,49 @@ pub fn gate_hybrid_clean(feature: &str) -> Result<bool> {
 pub fn gate_hybrid_build(feature: &str) -> Result<bool> {
     println!("\n{}", "Step 2.4: Hybrid Build".bright_cyan().bold());
 
-    match hybrid_build::execute_hybrid_build_command(
-        feature,
-        hybrid_build::HybridCommandType::Build,
-    ) {
-        Ok(_) => {
-            println!("{}", "✓ Hybrid build successful".bright_green());
-            Ok(true)
-        }
-        Err(e) => {
-            println!("{}", "✗ Hybrid build failed!".red().bold());
+    loop {
+        match hybrid_build::execute_hybrid_build_command(
+            feature,
+            hybrid_build::HybridCommandType::Build,
+        ) {
+            Ok(_) => {
+                println!("{}", "✓ Hybrid build successful".bright_green());
+                return Ok(true);
+            }
+            Err(e) => {
+                println!("{}", "✗ Hybrid build failed!".red().bold());
 
-            println!();
-            println!("{}", "Error details:".red().bold());
-            println!("{}", format!("{:#}", e).red());
-            println!();
+                println!();
+                println!("{}", "Error details:".red().bold());
+                println!("{}", format!("{:#}", e).red());
+                println!();
 
-            // 提供交互式处理
-            let choice = interaction::prompt_user_choice("Hybrid build failure", false)?;
+                // 提供交互式处理
+                let choice = interaction::prompt_user_choice("Hybrid build failure", false)?;
 
-            match choice {
-                interaction::UserChoice::Continue => Ok(false),
-                interaction::UserChoice::ManualFix => {
-                    // 尝试从错误信息中提取失败的 .rs 文件并在 vim 中打开
-                    let error_text = e.to_string();
-                    if !open_failing_files_from_error(&error_text, feature)? {
+                match choice {
+                    interaction::UserChoice::Continue => return Ok(false),
+                    interaction::UserChoice::ManualFix => {
+                        // 尝试从错误信息中提取失败的 .rs 文件并在 vim 中打开
+                        let error_text = format!("{:#}", e);
+                        if !open_failing_files_from_error(&error_text, feature)? {
+                            println!(
+                                "│ {}",
+                                "Could not identify a specific file to open. Please check the error above and fix manually."
+                                    .yellow()
+                            );
+                            return Err(e).context(
+                                "Hybrid build failed - no specific file identified for manual fix",
+                            );
+                        }
+                        // 继续循环以重新尝试混合构建
                         println!(
-                            "│ {}",
-                            "Could not identify a specific file to open. Please check the error above and fix manually."
-                                .yellow()
+                            "{}",
+                            "Retrying hybrid build after manual fix...".bright_blue()
                         );
                     }
-                    Err(e).context("Hybrid build failed")
+                    interaction::UserChoice::Exit => return Err(e).context("Hybrid build failed"),
                 }
-                interaction::UserChoice::Exit => Err(e).context("Hybrid build failed"),
             }
         }
     }
@@ -245,38 +254,49 @@ pub fn gate_hybrid_build(feature: &str) -> Result<bool> {
 pub fn gate_hybrid_test(feature: &str) -> Result<bool> {
     println!("\n{}", "Step 2.5: Hybrid Build Test".bright_cyan().bold());
 
-    match hybrid_build::execute_hybrid_build_command(feature, hybrid_build::HybridCommandType::Test)
-    {
-        Ok(_) => {
-            println!("{}", "✓ Hybrid test successful".bright_green());
-            Ok(true)
-        }
-        Err(e) => {
-            println!("{}", "✗ Hybrid test failed!".red().bold());
+    loop {
+        match hybrid_build::execute_hybrid_build_command(
+            feature,
+            hybrid_build::HybridCommandType::Test,
+        ) {
+            Ok(_) => {
+                println!("{}", "✓ Hybrid test successful".bright_green());
+                return Ok(true);
+            }
+            Err(e) => {
+                println!("{}", "✗ Hybrid test failed!".red().bold());
 
-            println!();
-            println!("{}", "Error details:".red().bold());
-            println!("{}", format!("{:#}", e).red());
-            println!();
+                println!();
+                println!("{}", "Error details:".red().bold());
+                println!("{}", format!("{:#}", e).red());
+                println!();
 
-            // 提供交互式处理
-            let choice = interaction::prompt_user_choice("Hybrid test failure", false)?;
+                // 提供交互式处理
+                let choice = interaction::prompt_user_choice("Hybrid test failure", false)?;
 
-            match choice {
-                interaction::UserChoice::Continue => Ok(false),
-                interaction::UserChoice::ManualFix => {
-                    // 尝试从错误信息中提取失败的 .rs 文件并在 vim 中打开
-                    let error_text = e.to_string();
-                    if !open_failing_files_from_error(&error_text, feature)? {
+                match choice {
+                    interaction::UserChoice::Continue => return Ok(false),
+                    interaction::UserChoice::ManualFix => {
+                        // 尝试从错误信息中提取失败的 .rs 文件并在 vim 中打开
+                        let error_text = format!("{:#}", e);
+                        if !open_failing_files_from_error(&error_text, feature)? {
+                            println!(
+                                "│ {}",
+                                "Could not identify a specific file to open. Please check the error above and fix manually."
+                                    .yellow()
+                            );
+                            return Err(e).context(
+                                "Hybrid test failed - no specific file identified for manual fix",
+                            );
+                        }
+                        // 继续循环以重新尝试混合构建测试
                         println!(
-                            "│ {}",
-                            "Could not identify a specific file to open. Please check the error above and fix manually."
-                                .yellow()
+                            "{}",
+                            "Retrying hybrid test after manual fix...".bright_blue()
                         );
                     }
-                    Err(e).context("Hybrid test failed")
+                    interaction::UserChoice::Exit => return Err(e).context("Hybrid test failed"),
                 }
-                interaction::UserChoice::Exit => Err(e).context("Hybrid test failed"),
             }
         }
     }
