@@ -6,8 +6,7 @@ use colored::Colorize;
 ///
 /// 返回 true 如果找到并打开了文件，false 如果未找到任何文件
 fn open_failing_files_from_error(error_text: &str, feature: &str) -> Result<bool> {
-    let failing_files = crate::error_handler::group_errors_by_file(error_text, feature)
-        .unwrap_or_default()
+    let failing_files = crate::error_handler::group_errors_by_file(error_text, feature)?
         .into_iter()
         .map(|(f, _)| f)
         .collect::<Vec<_>>();
