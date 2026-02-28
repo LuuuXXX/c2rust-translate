@@ -239,6 +239,8 @@ pub fn gate_hybrid_test(feature: &str) -> Result<bool> {
 /// 5. 混合构建测试
 /// 6. 如果全部通过，提交到 git
 pub fn run_gate_verification(feature: &str, show_full_output: bool) -> Result<()> {
+    util::validate_feature_name(feature)?;
+
     println!(
         "\n{}",
         "═══ Gate Verification (Post-Initialization) ═══"
