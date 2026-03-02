@@ -396,8 +396,9 @@ fn handle_max_fix_attempts_reached(
             "Build failed after {} fix attempts for file {}",
             max_fix_attempts, file_name
         )),
-        interaction::FailureChoice::RetryBuild => {
-            unreachable!("RetryBuild is not offered in this context")
+        interaction::FailureChoice::RetryBuild
+        | interaction::FailureChoice::FixOtherFile => {
+            unreachable!("RetryBuild and FixOtherFile are not offered in this context")
         }
     }
 }
@@ -629,6 +630,14 @@ fn handle_manual_fix(
                                     "Build or tests failed after manual fix for file {}",
                                     rs_file.display()
                                 ));
+                            }
+                            interaction::FailureChoice::FixOtherFile => {
+                                println!(
+                                    "│ {}",
+                                    "Skipping current file to fix other files..."
+                                        .bright_cyan()
+                                );
+                                return Err(anyhow::Error::from(SkipFileSignal));
                             }
                             interaction::FailureChoice::RetryDirectly
                             | interaction::FailureChoice::AddSuggestion

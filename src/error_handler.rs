@@ -418,6 +418,14 @@ pub(crate) fn handle_startup_test_failure_with_files(
                                                         files.len()
                                                     ));
                                                 }
+                                                interaction::FailureChoice::FixOtherFile => {
+                                                    println!(
+                                                        "│ {}",
+                                                        "Skipping current file(s) to fix other files..."
+                                                            .bright_cyan()
+                                                    );
+                                                    return Err(crate::verification::SkipFileSignal.into());
+                                                }
                                                 interaction::FailureChoice::RetryDirectly
                                                 | interaction::FailureChoice::AddSuggestion
                                                 | interaction::FailureChoice::Skip => {
@@ -449,8 +457,9 @@ pub(crate) fn handle_startup_test_failure_with_files(
             }
             interaction::FailureChoice::RetryDirectly
             | interaction::FailureChoice::AddSuggestion
-            | interaction::FailureChoice::RetryBuild => {
-                unreachable!("RetryDirectly, AddSuggestion and RetryBuild are not supported in this context")
+            | interaction::FailureChoice::RetryBuild
+            | interaction::FailureChoice::FixOtherFile => {
+                unreachable!("RetryDirectly, AddSuggestion, RetryBuild and FixOtherFile are not supported in this context")
             }
         }
     } // 循环结束

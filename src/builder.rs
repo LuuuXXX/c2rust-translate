@@ -746,9 +746,10 @@ pub(crate) fn handle_build_failure_interactive(
                                                         continue;
                                                     }
                                                     interaction::FailureChoice::Skip
-                                                    | interaction::FailureChoice::RetryBuild => {
+                                                    | interaction::FailureChoice::RetryBuild
+                                                    | interaction::FailureChoice::FixOtherFile => {
                                                         unreachable!(
-                                                            "Skip and RetryBuild are not offered in this context"
+                                                            "Skip, RetryBuild and FixOtherFile are not offered in this context"
                                                         )
                                                     }
                                                     interaction::FailureChoice::Exit => {
@@ -774,8 +775,9 @@ pub(crate) fn handle_build_failure_interactive(
                                 }
                             }
                             interaction::FailureChoice::Skip
-                            | interaction::FailureChoice::RetryBuild => {
-                                unreachable!("Skip and RetryBuild are not offered in this context")
+                            | interaction::FailureChoice::RetryBuild
+                            | interaction::FailureChoice::FixOtherFile => {
+                                unreachable!("Skip, RetryBuild and FixOtherFile are not offered in this context")
                             }
                             interaction::FailureChoice::Exit => {
                                 return Err(current_error)
@@ -854,8 +856,9 @@ pub(crate) fn handle_build_failure_interactive(
                                         );
                                     }
                                     interaction::FailureChoice::Skip
-                                    | interaction::FailureChoice::RetryBuild => {
-                                        unreachable!("Skip and RetryBuild are not offered in this context")
+                                    | interaction::FailureChoice::RetryBuild
+                                    | interaction::FailureChoice::FixOtherFile => {
+                                        unreachable!("Skip, RetryBuild and FixOtherFile are not offered in this context")
                                     }
                                     interaction::FailureChoice::Exit => {
                                         return Err(e).context(
@@ -878,8 +881,9 @@ pub(crate) fn handle_build_failure_interactive(
             }
         }
         interaction::FailureChoice::Skip
-        | interaction::FailureChoice::RetryBuild => {
-            unreachable!("Skip and RetryBuild are not offered in this context")
+        | interaction::FailureChoice::RetryBuild
+        | interaction::FailureChoice::FixOtherFile => {
+            unreachable!("Skip, RetryBuild and FixOtherFile are not offered in this context")
         }
         interaction::FailureChoice::Exit => {
             println!("│");
@@ -1097,8 +1101,9 @@ pub(crate) fn handle_test_failure_interactive(
                                 }
                             }
                             interaction::FailureChoice::Skip
-                            | interaction::FailureChoice::RetryBuild => {
-                                unreachable!("Skip and RetryBuild are not offered in this context")
+                            | interaction::FailureChoice::RetryBuild
+                            | interaction::FailureChoice::FixOtherFile => {
+                                unreachable!("Skip, RetryBuild and FixOtherFile are not offered in this context")
                             }
                             interaction::FailureChoice::Exit => {
                                 return Err(current_error)
@@ -1170,8 +1175,9 @@ pub(crate) fn handle_test_failure_interactive(
                                         return Err(e).context("Tests still failing after manual fix; user chose to add a suggestion");
                                     }
                                     interaction::FailureChoice::Skip
-                                    | interaction::FailureChoice::RetryBuild => {
-                                        unreachable!("Skip and RetryBuild are not offered in this context")
+                                    | interaction::FailureChoice::RetryBuild
+                                    | interaction::FailureChoice::FixOtherFile => {
+                                        unreachable!("Skip, RetryBuild and FixOtherFile are not offered in this context")
                                     }
                                     interaction::FailureChoice::Exit => {
                                         return Err(e).context(
@@ -1194,8 +1200,9 @@ pub(crate) fn handle_test_failure_interactive(
             }
         }
         interaction::FailureChoice::Skip
-        | interaction::FailureChoice::RetryBuild => {
-            unreachable!("Skip and RetryBuild are not offered in this context")
+        | interaction::FailureChoice::RetryBuild
+        | interaction::FailureChoice::FixOtherFile => {
+            unreachable!("Skip, RetryBuild and FixOtherFile are not offered in this context")
         }
         interaction::FailureChoice::Exit => {
             println!("│");
