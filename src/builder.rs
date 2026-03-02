@@ -492,6 +492,38 @@ pub fn run_hybrid_build_interactive(
     }
 }
 
+/// 收集手动修复所需的文件列表
+///
+/// 解析错误消息以获取所有涉及的文件，确保 rs_file 始终包含在列表中。
+/// 返回文件列表，rs_file 始终在第一位（如果不已存在）。
+/// 解析失败时回退到只包含 rs_file 的列表。
+fn get_manual_fix_files(
+    feature: &str,
+    rs_file: &std::path::Path,
+    error_str: &str,
+) -> Vec<std::path::PathBuf> {
+    let mut files = crate::error_handler::parse_error_for_files(error_str, feature)
+        .unwrap_or_default();
+
+    // 规范化 rs_file 以进行比较（parse_error_for_files 返回的路径也是规范化的）
+    let canonical_rs = rs_file.canonicalize().ok();
+
+    // 如果 rs_file 不在列表中，则添加到列表首位
+    let already_present = match &canonical_rs {
+        Some(c) => files.contains(c),
+        None => files.iter().any(|f| f == rs_file),
+    };
+
+    if !already_present {
+        let to_insert = canonical_rs
+            .clone()
+            .unwrap_or_else(|| rs_file.to_path_buf());
+        files.insert(0, to_insert);
+    }
+
+    files
+}
+
 /// 交互式处理构建失败
 /// Handles build failures in hybrid build phase interactively
 ///
@@ -648,8 +680,13 @@ pub(crate) fn handle_build_failure_interactive(
                                 println!("│ {}", "You chose: Manually edit the code".bright_cyan());
                                 println!("│ {}", "Opening vim for manual fixes...".bright_blue());
 
-                                // 打开 vim 允许用户手动编辑代码
-                                match interaction::open_in_vim(rs_file) {
+                                // 打开 vim 允许用户手动编辑代码（支持多文件选择）
+                                let fix_files = get_manual_fix_files(
+                                    feature,
+                                    rs_file,
+                                    &current_error.to_string(),
+                                );
+                                match interaction::open_files_for_manual_fix(&fix_files) {
                                     Ok(_) => {
                                         println!("│");
                                         println!(
@@ -693,7 +730,8 @@ pub(crate) fn handle_build_failure_interactive(
                                                     interaction::FailureChoice::ManualFix => {
                                                         // 重新打开 vim
                                                         println!("│ {}", "Reopening Vim for another manual fix attempt...".bright_blue());
-                                                        interaction::open_in_vim(rs_file)
+                                                        let fix_files = get_manual_fix_files(feature, rs_file, &e.to_string());
+                                                        interaction::open_files_for_manual_fix(&fix_files)
                                                             .context("Failed to reopen vim for additional manual fix")?;
                                                         // 更新错误并继续外部循环以重新构建
                                                         current_error = e;
@@ -745,7 +783,8 @@ pub(crate) fn handle_build_failure_interactive(
             println!("│ {}", "You chose: Manual fix".bright_cyan());
 
             // 尝试打开 vim
-            match interaction::open_in_vim(rs_file) {
+            let fix_files = get_manual_fix_files(feature, rs_file, &build_error.to_string());
+            match interaction::open_files_for_manual_fix(&fix_files) {
                 Ok(_) => {
                     loop {
                         println!("│");
@@ -789,7 +828,8 @@ pub(crate) fn handle_build_failure_interactive(
                                             "Reopening Vim for another manual fix attempt..."
                                                 .bright_blue()
                                         );
-                                        interaction::open_in_vim(rs_file).context(
+                                        let fix_files = get_manual_fix_files(feature, rs_file, &e.to_string());
+                                        interaction::open_files_for_manual_fix(&fix_files).context(
                                             "Failed to reopen vim for additional manual fix",
                                         )?;
                                         // Vim 关闭后，继续循环重新构建和重新测试
@@ -1001,7 +1041,12 @@ pub(crate) fn handle_test_failure_interactive(
                                 println!("│ {}", "Opening vim for manual fixes...".bright_blue());
 
                                 // 打开 vim 允许用户手动编辑代码
-                                match interaction::open_in_vim(rs_file) {
+                                let fix_files = get_manual_fix_files(
+                                    feature,
+                                    rs_file,
+                                    &current_error.to_string(),
+                                );
+                                match interaction::open_files_for_manual_fix(&fix_files) {
                                     Ok(_) => {
                                         println!("│");
                                         println!(
@@ -1061,7 +1106,8 @@ pub(crate) fn handle_test_failure_interactive(
             println!("│ {}", "You chose: Manual fix".bright_cyan());
 
             // 尝试打开 vim
-            match interaction::open_in_vim(rs_file) {
+            let fix_files = get_manual_fix_files(feature, rs_file, &test_error.to_string());
+            match interaction::open_files_for_manual_fix(&fix_files) {
                 Ok(_) => {
                     loop {
                         println!("│");
@@ -1101,7 +1147,8 @@ pub(crate) fn handle_test_failure_interactive(
                                             "Reopening Vim for another manual fix attempt..."
                                                 .bright_blue()
                                         );
-                                        interaction::open_in_vim(rs_file).context(
+                                        let fix_files = get_manual_fix_files(feature, rs_file, &e.to_string());
+                                        interaction::open_files_for_manual_fix(&fix_files).context(
                                             "Failed to reopen vim for additional manual fix",
                                         )?;
                                         // Vim 关闭后，继续循环重新构建和重新测试
@@ -1303,5 +1350,66 @@ mod tests {
             .lines()
             .any(|l| l.contains("warning[") || l.contains("warning:"));
         assert!(!has);
+    }
+
+    /// Test that get_manual_fix_files always includes the primary rs_file
+    #[test]
+    fn test_get_manual_fix_files_always_includes_rs_file() {
+        // When parsing fails (e.g. invalid feature name), rs_file is returned
+        let rs_file = std::path::Path::new("/nonexistent/fun_test.rs");
+        let error_str = "error: some build error";
+        let files = super::get_manual_fix_files("invalid/feature", rs_file, error_str);
+        assert!(!files.is_empty(), "Result should not be empty");
+        assert!(
+            files.iter().any(|f| f == rs_file),
+            "rs_file should always be in the result"
+        );
+    }
+
+    /// Test that get_manual_fix_files does not duplicate rs_file
+    #[test]
+    #[serial_test::serial]
+    fn test_get_manual_fix_files_no_duplicate_rs_file() {
+        use std::env;
+        use std::fs;
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let project_root = temp_dir.path();
+        let original_dir = env::current_dir().unwrap();
+        env::set_current_dir(project_root).unwrap();
+        let _restore = scopeguard::guard(original_dir, |dir| {
+            let _ = env::set_current_dir(dir);
+        });
+
+        let feature = "test_feature";
+        let rust_dir = project_root.join(".c2rust").join(feature).join("rust");
+        let src_dir = rust_dir.join("src");
+        fs::create_dir_all(&src_dir).unwrap();
+
+        let rs_file_path = src_dir.join("fun_test.rs");
+        fs::write(&rs_file_path, "// test").unwrap();
+
+        // Error message referencing the same file
+        let error_str = format!(
+            "error[E0308]: mismatched types\n  --> src/fun_test.rs:10:5\n  |\n10 |     x\n"
+        );
+
+        let files =
+            super::get_manual_fix_files(feature, &rs_file_path, &error_str);
+
+        // rs_file should appear only once
+        let canonical_rs = rs_file_path.canonicalize().ok();
+        let count = files
+            .iter()
+            .filter(|f| {
+                if let Some(ref c) = canonical_rs {
+                    *f == c
+                } else {
+                    *f == &rs_file_path
+                }
+            })
+            .count();
+        assert_eq!(count, 1, "rs_file should appear exactly once in the result");
     }
 }

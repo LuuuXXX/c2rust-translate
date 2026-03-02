@@ -221,6 +221,34 @@ pub fn open_in_vim(file_path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// 为手动修复打开一个或多个文件
+///
+/// 如果只有一个文件，直接在 vim 中打开（保持原有行为）。
+/// 如果有多个文件，展示文件选择列表供用户选择，然后依次打开所选文件。
+pub fn open_files_for_manual_fix(files: &[std::path::PathBuf]) -> Result<()> {
+    match files.len() {
+        0 => anyhow::bail!("No files provided for manual fix"),
+        1 => open_in_vim(&files[0]),
+        _ => {
+            println!("│");
+            println!(
+                "│ {}",
+                format!(
+                    "⚠ Error involves {} files. Select file(s) to edit:",
+                    files.len()
+                )
+                .bright_yellow()
+                .bold()
+            );
+            let selected = prompt_file_selection_for_edit(files)?;
+            for file in &selected {
+                open_in_vim(file)?;
+            }
+            Ok(())
+        }
+    }
+}
+
 /// 将 MultiSelect 返回的选项字符串（形如 "1: /path/to/file"）映射回 PathBuf 列表。
 ///
 /// 使用 1-based 索引，任何无法解析或越界的项都返回错误。
@@ -610,5 +638,11 @@ mod tests {
         let selections: Vec<String> = vec![];
         let result = map_selections_to_files(&selections, &files).unwrap();
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_open_files_for_manual_fix_empty_returns_error() {
+        let files: Vec<std::path::PathBuf> = vec![];
+        assert!(open_files_for_manual_fix(&files).is_err());
     }
 }
