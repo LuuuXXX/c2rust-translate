@@ -564,30 +564,40 @@ fn process_rs_file(
 
         if build_successful {
             // Phase 2: Fix warnings after all errors are resolved
-            println!("│");
-            println!(
-                "│ {}",
-                "Phase 2: Checking and fixing warnings..."
-                    .bright_blue()
-                    .bold()
-            );
-            let warning_fix_attempts = verification::execute_code_warning_check_with_fix_loop(
-                feature,
-                file_type,
-                rs_file,
-                file_name,
-                &format_progress,
-                max_fix_attempts,
-                show_full_output,
-            )
-            .unwrap_or_else(|e| {
+            // (skipped when C2RUST_PROCESS_WARNINGS=0 or =false)
+            if should_process_warnings() {
+                println!("│");
                 println!(
                     "│ {}",
-                    format!("⚠ Warning phase encountered an error: {}", e).yellow()
+                    "Phase 2: Checking and fixing warnings..."
+                        .bright_blue()
+                        .bold()
                 );
-                0
-            });
-            total_fix_attempts += warning_fix_attempts;
+                let warning_fix_attempts = verification::execute_code_warning_check_with_fix_loop(
+                    feature,
+                    file_type,
+                    rs_file,
+                    file_name,
+                    &format_progress,
+                    max_fix_attempts,
+                    show_full_output,
+                )
+                .unwrap_or_else(|e| {
+                    println!(
+                        "│ {}",
+                        format!("⚠ Warning phase encountered an error: {}", e).yellow()
+                    );
+                    0
+                });
+                total_fix_attempts += warning_fix_attempts;
+            } else {
+                println!("│");
+                println!(
+                    "│ {}",
+                    "Phase 2: Warning processing skipped (C2RUST_PROCESS_WARNINGS=0)."
+                        .bright_yellow()
+                );
+            }
 
             let processing_complete =
                 complete_file_processing(feature, file_name, file_type, rs_file, &format_progress)?;
@@ -605,6 +615,21 @@ fn process_rs_file(
     }
 
     anyhow::bail!("Unexpected: all retry attempts completed without resolution")
+}
+
+// ============================================================================
+// Environment-Variable Helpers
+// ============================================================================
+
+/// Returns `true` when warning processing is enabled (the default).
+///
+/// Set `C2RUST_PROCESS_WARNINGS=0` (or `false`) to skip Phase 2 (warning
+/// detection and auto-fix) for every file processed in a run.
+fn should_process_warnings() -> bool {
+    match std::env::var("C2RUST_PROCESS_WARNINGS") {
+        Ok(val) => val != "0" && val.to_lowercase() != "false",
+        Err(_) => true,
+    }
 }
 
 // ============================================================================
@@ -1041,4 +1066,56 @@ where
     println!("{}", "└─ File processing complete".bright_white().bold());
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[serial_test::serial]
+    fn test_should_process_warnings_default() {
+        std::env::remove_var("C2RUST_PROCESS_WARNINGS");
+        assert!(should_process_warnings());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_should_process_warnings_disabled_with_zero() {
+        std::env::set_var("C2RUST_PROCESS_WARNINGS", "0");
+        assert!(!should_process_warnings());
+        std::env::remove_var("C2RUST_PROCESS_WARNINGS");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_should_process_warnings_disabled_with_false() {
+        std::env::set_var("C2RUST_PROCESS_WARNINGS", "false");
+        assert!(!should_process_warnings());
+        std::env::remove_var("C2RUST_PROCESS_WARNINGS");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_should_process_warnings_disabled_with_false_uppercase() {
+        std::env::set_var("C2RUST_PROCESS_WARNINGS", "FALSE");
+        assert!(!should_process_warnings());
+        std::env::remove_var("C2RUST_PROCESS_WARNINGS");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_should_process_warnings_enabled_with_one() {
+        std::env::set_var("C2RUST_PROCESS_WARNINGS", "1");
+        assert!(should_process_warnings());
+        std::env::remove_var("C2RUST_PROCESS_WARNINGS");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_should_process_warnings_enabled_with_true() {
+        std::env::set_var("C2RUST_PROCESS_WARNINGS", "true");
+        assert!(should_process_warnings());
+        std::env::remove_var("C2RUST_PROCESS_WARNINGS");
+    }
 }
