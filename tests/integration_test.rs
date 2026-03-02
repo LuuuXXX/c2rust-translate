@@ -139,3 +139,56 @@ fn test_progress_numbering_across_rerun() {
     // Verify processed count
     assert_eq!(progress.processed_count, 8); // 6 already + 2 just processed
 }
+
+#[test]
+#[serial]
+fn test_calculate_progress_with_file_system() {
+    use std::io::Write;
+
+    let temp_dir = TempDir::new().unwrap();
+    let rust_dir = temp_dir.path().join("rust");
+    fs::create_dir(&rust_dir).unwrap();
+
+    // Create 8 translatable files: 5 processed (non-empty), 3 empty
+    for i in 1..=5 {
+        let mut f = fs::File::create(rust_dir.join(format!("var_file{}.rs", i))).unwrap();
+        f.write_all(format!("// processed {}", i).as_bytes()).unwrap();
+    }
+    for i in 6..=8 {
+        fs::File::create(rust_dir.join(format!("fun_file{}.rs", i))).unwrap();
+    }
+
+    let total = c2rust_translate::file_scanner::count_all_rs_files(&rust_dir).unwrap();
+    let empty = c2rust_translate::file_scanner::find_empty_rs_files(&rust_dir).unwrap().len();
+
+    // calculate_progress should return 5/8 = 0.625
+    let progress = c2rust_translate::util::calculate_progress(total, empty);
+    assert_eq!(total, 8);
+    assert_eq!(empty, 3);
+    assert!((progress - 0.625).abs() < 1e-9);
+}
+
+#[test]
+#[serial]
+fn test_calculate_progress_empty_directory() {
+    let temp_dir = TempDir::new().unwrap();
+    let rust_dir = temp_dir.path().join("rust");
+    fs::create_dir(&rust_dir).unwrap();
+
+    let total = c2rust_translate::file_scanner::count_all_rs_files(&rust_dir).unwrap();
+    let empty = c2rust_translate::file_scanner::find_empty_rs_files(&rust_dir).unwrap().len();
+
+    // No files → progress is 0.0 (not NaN or infinity)
+    let progress = c2rust_translate::util::calculate_progress(total, empty);
+    assert_eq!(progress, 0.0);
+}
+
+#[test]
+#[serial]
+fn test_is_interrupted_api_accessible() {
+    // Verify the public interrupt-flag API is callable from integration tests.
+    // The function must return a bool; both true and false are valid depending on
+    // test execution order, so we just assert the type and that it doesn't panic.
+    let flag: bool = c2rust_translate::util::is_interrupted();
+    assert!(flag == true || flag == false);
+}

@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 // ============================================================================
 // Constants
@@ -15,6 +16,60 @@ pub const CODE_PREVIEW_LINES: usize = 15;
 
 /// 从错误消息预览的行数
 pub const ERROR_PREVIEW_LINES: usize = 10;
+
+// ============================================================================
+// Interrupt Recovery
+// ============================================================================
+
+/// 全局中断标志：当 Ctrl+C 或 SIGINT 触发时设置为 true
+static INTERRUPTED: AtomicBool = AtomicBool::new(false);
+
+/// 检查是否已被用户中断（Ctrl+C 等）
+pub fn is_interrupted() -> bool {
+    INTERRUPTED.load(Ordering::SeqCst)
+}
+
+/// 标记当前进程已收到中断信号
+pub fn set_interrupted() {
+    INTERRUPTED.store(true, Ordering::SeqCst);
+}
+
+/// 重置中断标志（主要用于测试）
+#[cfg(test)]
+pub fn reset_interrupted() {
+    INTERRUPTED.store(false, Ordering::SeqCst);
+}
+
+// ============================================================================
+// Progress Calculation
+// ============================================================================
+
+/// 计算翻译进度比例
+///
+/// 公式：`(total_files - empty_files) / total_files`
+///
+/// # 参数
+/// * `total_files` - 总待翻译文件数
+/// * `empty_files` - 尚未翻译的空文件数
+///
+/// # 返回
+/// * 0.0 到 1.0 之间的进度比例；当 `total_files` 为 0 时返回 0.0
+///
+/// # 示例
+/// ```
+/// # use c2rust_translate::util::calculate_progress;
+/// assert_eq!(calculate_progress(10, 10), 0.0); // 无任何进度
+/// assert_eq!(calculate_progress(10, 0), 1.0);  // 全部完成
+/// assert_eq!(calculate_progress(10, 5), 0.5);  // 完成一半
+/// assert_eq!(calculate_progress(0, 0), 0.0);   // 无文件时返回 0.0
+/// ```
+pub fn calculate_progress(total_files: usize, empty_files: usize) -> f64 {
+    if total_files == 0 {
+        return 0.0;
+    }
+    let completed = total_files.saturating_sub(empty_files);
+    completed as f64 / total_files as f64
+}
 
 // ============================================================================
 // Translation Statistics Tracking
@@ -756,5 +811,85 @@ mod tests {
         assert_eq!(entry.translation_attempts, 3);
         assert_eq!(entry.fix_attempts, 7);
         assert!(entry.had_restart);
+    }
+
+    // ========================================================================
+    // calculate_progress Tests
+    // ========================================================================
+
+    #[test]
+    fn test_calculate_progress_no_files() {
+        // 无文件时返回 0.0
+        assert_eq!(calculate_progress(0, 0), 0.0);
+    }
+
+    #[test]
+    fn test_calculate_progress_all_empty() {
+        // 所有文件都是空的（无任何进度）
+        assert_eq!(calculate_progress(10, 10), 0.0);
+    }
+
+    #[test]
+    fn test_calculate_progress_all_done() {
+        // 所有文件都已完成（进度为 1.0）
+        assert_eq!(calculate_progress(10, 0), 1.0);
+    }
+
+    #[test]
+    fn test_calculate_progress_half_done() {
+        // 完成一半（进度为 0.5）
+        assert_eq!(calculate_progress(10, 5), 0.5);
+    }
+
+    #[test]
+    fn test_calculate_progress_one_file() {
+        // 单文件场景
+        assert_eq!(calculate_progress(1, 1), 0.0);
+        assert_eq!(calculate_progress(1, 0), 1.0);
+    }
+
+    #[test]
+    fn test_calculate_progress_empty_exceeds_total() {
+        // empty_files > total_files 时使用 saturating_sub 返回 0.0
+        assert_eq!(calculate_progress(5, 10), 0.0);
+    }
+
+    #[test]
+    fn test_calculate_progress_percentage_conversion() {
+        // 验证可以轻松转换为百分比
+        let progress = calculate_progress(4, 1);
+        let percentage = progress * 100.0;
+        assert!((percentage - 75.0).abs() < f64::EPSILON);
+    }
+
+    // ========================================================================
+    // Interrupt Flag Tests
+    // ========================================================================
+
+    #[test]
+    #[serial_test::serial]
+    fn test_interrupt_flag_default_false() {
+        reset_interrupted();
+        assert!(!is_interrupted());
+        reset_interrupted(); // 清理
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_set_interrupted() {
+        reset_interrupted();
+        assert!(!is_interrupted());
+        set_interrupted();
+        assert!(is_interrupted());
+        reset_interrupted(); // 清理
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_reset_interrupted() {
+        set_interrupted();
+        assert!(is_interrupted());
+        reset_interrupted();
+        assert!(!is_interrupted());
     }
 }

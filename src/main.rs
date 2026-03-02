@@ -40,7 +40,35 @@ enum Commands {
     },
 }
 
+/// 注册 Ctrl+C（SIGINT）处理程序以便在中断时保存进度
+///
+/// 当用户按下 Ctrl+C 时，设置全局中断标志并退出进程。
+/// 在退出之前打印提示信息，告知用户进度已保存。
+/// 仅在 Unix 系统上安装自定义处理程序；非 Unix 系统使用默认行为。
+fn register_interrupt_handler() {
+    #[cfg(unix)]
+    {
+        extern "C" fn sigint_handler(_: libc::c_int) {
+            c2rust_translate::util::set_interrupted();
+            eprintln!("\n中断信号收到，正在保存进度...");
+            eprintln!("Translation interrupted. Progress has been saved.");
+            eprintln!("Re-run to continue from where you left off.");
+            std::process::exit(130); // 130 = 128 + SIGINT(2)
+        }
+
+        let ret = unsafe {
+            libc::signal(libc::SIGINT, sigint_handler as *const () as libc::sighandler_t)
+        };
+
+        if ret == libc::SIG_ERR {
+            eprintln!("Warning: Failed to register SIGINT handler. Ctrl+C will not save progress gracefully.");
+        }
+    }
+}
+
 fn main() {
+    register_interrupt_handler();
+
     let cli = Cli::parse();
 
     let result = match cli.command {

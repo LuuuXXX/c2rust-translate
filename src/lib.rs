@@ -182,11 +182,8 @@ fn print_progress_status(already_processed: usize, total_rs_files: usize) {
         "Step 4: Initialize Project Progress".bright_cyan().bold()
     );
 
-    let progress_percentage = if total_rs_files > 0 {
-        (already_processed as f64 / total_rs_files as f64) * 100.0
-    } else {
-        0.0
-    };
+    let remaining_files = total_rs_files.saturating_sub(already_processed);
+    let progress_percentage = util::calculate_progress(total_rs_files, remaining_files) * 100.0;
 
     println!(
         "{} {:.1}% ({}/{} files processed)",
@@ -215,6 +212,20 @@ fn step_5_execute_translation_loop(
     );
 
     loop {
+        // 检查是否收到中断信号（Ctrl+C 等）
+        if util::is_interrupted() {
+            println!(
+                "\n{}",
+                "Translation interrupted by user. Progress has been saved.".bright_yellow()
+            );
+            println!(
+                "{}",
+                "Re-run the command to continue from where you left off.".bright_cyan()
+            );
+            save_stats_or_warn(stats, feature);
+            break;
+        }
+
         // Scan for empty .rs files, then exclude any that have already been skipped
         // by the user so they are only offered again via handle_skipped_files_loop.
         // Completed files are already excluded because successfully translated files are

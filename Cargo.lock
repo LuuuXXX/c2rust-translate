@@ -82,6 +82,7 @@ dependencies = [
  "colored",
  "inquire",
  "lazy_static",
+ "libc",
  "regex",
  "scopeguard",
  "serde",
