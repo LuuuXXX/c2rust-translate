@@ -385,10 +385,6 @@ pub(crate) fn handle_startup_test_failure_with_files(
                                                 interaction::prompt_after_manual_fix_choice()?;
 
                                             match retry_choice {
-                                                interaction::FailureChoice::RetryBuild => {
-                                                    // 只需使用现有更改重试构建
-                                                    continue;
-                                                }
                                                 interaction::FailureChoice::ManualFix => {
                                                     println!("│ {}", "Reopening file in Vim for additional manual fixes...".bright_blue());
                                                     match interaction::open_files_for_manual_fix(&files) {
@@ -417,6 +413,14 @@ pub(crate) fn handle_startup_test_failure_with_files(
                                                         "Build/tests failed after manual fix for {} file(s)",
                                                         files.len()
                                                     ));
+                                                }
+                                                interaction::FailureChoice::FixOtherFile => {
+                                                    println!(
+                                                        "│ {}",
+                                                        "Skipping current file(s) to fix other files..."
+                                                            .bright_cyan()
+                                                    );
+                                                    return Err(crate::verification::SkipFileSignal.into());
                                                 }
                                                 interaction::FailureChoice::RetryDirectly
                                                 | interaction::FailureChoice::AddSuggestion
@@ -449,8 +453,8 @@ pub(crate) fn handle_startup_test_failure_with_files(
             }
             interaction::FailureChoice::RetryDirectly
             | interaction::FailureChoice::AddSuggestion
-            | interaction::FailureChoice::RetryBuild => {
-                unreachable!("RetryDirectly, AddSuggestion and RetryBuild are not supported in this context")
+            | interaction::FailureChoice::FixOtherFile => {
+                unreachable!("RetryDirectly, AddSuggestion and FixOtherFile are not supported in this context")
             }
         }
     } // 循环结束

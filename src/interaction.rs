@@ -48,7 +48,7 @@ pub enum FailureChoice {
     AddSuggestion, // 添加建议后重试
     ManualFix,     // 手动修复
     Skip,          // 忽略本次失败，跳过当前步骤继续流程
-    RetryBuild,    // 重试构建（不重新打开编辑器）
+    FixOtherFile,  // 跳过当前文件，修复其他文件
     Exit,          // 退出
 }
 
@@ -102,8 +102,6 @@ pub fn prompt_failure_choice(context: &str) -> Result<FailureChoice> {
 }
 
 /// 手动修复后仍构建失败时的提示函数
-///
-/// 提供明确的"重试构建"语义，区别于通用的"跳过"选项
 pub fn prompt_after_manual_fix_choice() -> Result<FailureChoice> {
     println!("│");
     println!(
@@ -115,8 +113,8 @@ pub fn prompt_after_manual_fix_choice() -> Result<FailureChoice> {
     println!("│");
 
     let options = vec![
-        "重试构建（使用当前修改，不重新打开编辑器）",
         "重新手动修复（再次打开 VIM）",
+        "修复其他文件（跳过当前文件）",
         "退出（中止流程）",
     ];
 
@@ -131,8 +129,8 @@ pub fn prompt_after_manual_fix_choice() -> Result<FailureChoice> {
         .context("Unexpected selection value")?;
 
     match choice_index {
-        0 => Ok(FailureChoice::RetryBuild),
-        1 => Ok(FailureChoice::ManualFix),
+        0 => Ok(FailureChoice::ManualFix),
+        1 => Ok(FailureChoice::FixOtherFile),
         2 => Ok(FailureChoice::Exit),
         _ => unreachable!("Invalid selection index"),
     }
@@ -556,12 +554,12 @@ mod tests {
         assert_eq!(FailureChoice::AddSuggestion, FailureChoice::AddSuggestion);
         assert_eq!(FailureChoice::ManualFix, FailureChoice::ManualFix);
         assert_eq!(FailureChoice::Skip, FailureChoice::Skip);
-        assert_eq!(FailureChoice::RetryBuild, FailureChoice::RetryBuild);
+        assert_eq!(FailureChoice::FixOtherFile, FailureChoice::FixOtherFile);
         assert_eq!(FailureChoice::Exit, FailureChoice::Exit);
         assert_ne!(FailureChoice::RetryDirectly, FailureChoice::Exit);
         assert_ne!(FailureChoice::AddSuggestion, FailureChoice::Exit);
         assert_ne!(FailureChoice::Skip, FailureChoice::Exit);
-        assert_ne!(FailureChoice::RetryBuild, FailureChoice::Skip);
+        assert_ne!(FailureChoice::FixOtherFile, FailureChoice::Exit);
     }
 
     #[test]

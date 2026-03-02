@@ -173,7 +173,7 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool) -> Re
                     }
                     interaction::FailureChoice::RetryDirectly
                     | interaction::FailureChoice::AddSuggestion
-                    | interaction::FailureChoice::RetryBuild => {
+                    | interaction::FailureChoice::FixOtherFile => {
                         println!("│ {}", "此上下文不支持该选项，视为退出".yellow());
                         return Err(last_error).context("初始化验证失败");
                     }
