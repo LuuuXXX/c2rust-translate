@@ -544,8 +544,16 @@ fn collect_fix_files(
     error: &anyhow::Error,
 ) -> Vec<std::path::PathBuf> {
     let error_str = error.to_string();
-    let mut files =
-        crate::error_handler::parse_error_for_files(&error_str, feature).unwrap_or_default();
+    let mut files = match crate::error_handler::parse_error_for_files(&error_str, feature) {
+        Ok(parsed) => parsed,
+        Err(parse_err) => {
+            eprintln!(
+                "[debug] Failed to parse error for related files (feature: {}): {parse_err}",
+                feature
+            );
+            Vec::new()
+        }
+    };
     let canonical_rs = rs_file.canonicalize().ok();
     let already_present = match &canonical_rs {
         Some(c) => files.contains(c),
@@ -739,5 +747,156 @@ mod tests {
         // Build error during warning phase should be non-fatal → Ok(0)
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 0);
+    }
+
+    /// collect_fix_files returns a list containing only rs_file when the feature
+    /// name is invalid (parse_error_for_files returns Err).
+    #[test]
+    fn test_collect_fix_files_invalid_feature_falls_back_to_rs_file() {
+        use tempfile::TempDir;
+        let tmp = TempDir::new().unwrap();
+        let rs_file = tmp.path().join("var_foo.rs");
+        std::fs::write(&rs_file, "").unwrap();
+
+        // "../bad" is rejected by validate_feature_name, triggering the Err branch
+        let error = anyhow::anyhow!("dummy build error");
+        let result = collect_fix_files("../bad", &rs_file, &error);
+
+        assert_eq!(result.len(), 1);
+        assert!(result[0].ends_with("var_foo.rs"));
+    }
+
+    /// collect_fix_files includes rs_file even when parse returns an empty list
+    /// (no matching files in the error message).
+    #[test]
+    #[serial_test::serial]
+    fn test_collect_fix_files_empty_parse_includes_rs_file() {
+        use std::env;
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().unwrap();
+        let orig = env::current_dir().unwrap();
+        env::set_current_dir(tmp.path()).unwrap();
+
+        // Minimal project root so find_project_root succeeds
+        std::fs::create_dir_all(tmp.path().join(".c2rust")).unwrap();
+
+        let feature = "test_feature";
+        std::fs::create_dir_all(
+            tmp.path()
+                .join(".c2rust")
+                .join(feature)
+                .join("rust")
+                .join("src"),
+        )
+        .unwrap();
+
+        let rs_file = tmp
+            .path()
+            .join(".c2rust")
+            .join(feature)
+            .join("rust")
+            .join("src")
+            .join("var_foo.rs");
+        std::fs::write(&rs_file, "").unwrap();
+
+        // Error message references no files → parse returns empty
+        let error = anyhow::anyhow!("no file references here");
+        let result = collect_fix_files(feature, &rs_file, &error);
+
+        env::set_current_dir(orig).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert!(result[0].ends_with("var_foo.rs"));
+    }
+
+    /// collect_fix_files does not duplicate rs_file when it already appears in
+    /// the parsed file list.
+    #[test]
+    #[serial_test::serial]
+    fn test_collect_fix_files_no_duplicate_when_rs_file_already_present() {
+        use std::env;
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().unwrap();
+        let orig = env::current_dir().unwrap();
+        env::set_current_dir(tmp.path()).unwrap();
+
+        std::fs::create_dir_all(tmp.path().join(".c2rust")).unwrap();
+
+        let feature = "test_feature";
+        let src_dir = tmp
+            .path()
+            .join(".c2rust")
+            .join(feature)
+            .join("rust")
+            .join("src");
+        std::fs::create_dir_all(&src_dir).unwrap();
+
+        let rs_file = src_dir.join("var_foo.rs");
+        std::fs::write(&rs_file, "").unwrap();
+
+        // Error message that references var_foo.rs so parse_error_for_files returns it
+        let error_msg = "error[E0308]: mismatched types\n   --> src/var_foo.rs:1:1\n    |\n1   | x\n    | ^ error";
+        let error = anyhow::anyhow!("{}", error_msg);
+        let result = collect_fix_files(feature, &rs_file, &error);
+
+        env::set_current_dir(orig).unwrap();
+
+        // rs_file must appear exactly once
+        let count = result
+            .iter()
+            .filter(|f| f.ends_with("var_foo.rs"))
+            .count();
+        assert_eq!(count, 1, "var_foo.rs should appear exactly once, got: {result:?}");
+    }
+
+    /// collect_fix_files inserts rs_file at the front when it is not in the
+    /// parsed list and multiple other files are present.
+    #[test]
+    #[serial_test::serial]
+    fn test_collect_fix_files_rs_file_inserted_first_when_missing() {
+        use std::env;
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().unwrap();
+        let orig = env::current_dir().unwrap();
+        env::set_current_dir(tmp.path()).unwrap();
+
+        std::fs::create_dir_all(tmp.path().join(".c2rust")).unwrap();
+
+        let feature = "test_feature";
+        let src_dir = tmp
+            .path()
+            .join(".c2rust")
+            .join(feature)
+            .join("rust")
+            .join("src");
+        std::fs::create_dir_all(&src_dir).unwrap();
+
+        // Create two files that appear in the error, and a third that is rs_file
+        let file_a = src_dir.join("fun_a.rs");
+        let file_b = src_dir.join("fun_b.rs");
+        let rs_file = src_dir.join("var_main.rs");
+        for f in [&file_a, &file_b, &rs_file] {
+            std::fs::write(f, "").unwrap();
+        }
+
+        // Error references fun_a and fun_b but NOT var_main
+        let error_msg = "error[E0308]: mismatched types\n   --> src/fun_a.rs:1:1\n    |\n1   | x\nerror[E0425]: unknown\n   --> src/fun_b.rs:2:1\n    |\n2   | y";
+        let error = anyhow::anyhow!("{}", error_msg);
+        let result = collect_fix_files(feature, &rs_file, &error);
+
+        env::set_current_dir(orig).unwrap();
+
+        // rs_file should be present and at index 0
+        assert!(
+            result.iter().any(|f| f.ends_with("var_main.rs")),
+            "var_main.rs should be in results: {result:?}"
+        );
+        assert!(
+            result[0].ends_with("var_main.rs"),
+            "var_main.rs should be first: {result:?}"
+        );
     }
 }
