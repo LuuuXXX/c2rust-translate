@@ -32,14 +32,6 @@ pub fn disable_auto_accept_mode() {
     AUTO_ACCEPT_MODE.store(false, Ordering::Relaxed);
 }
 
-/// 处理失败时的用户选择
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum UserChoice {
-    Continue,
-    ManualFix,
-    Exit,
-}
-
 /// 编译成功且测试通过时的用户选择
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CompileSuccessChoice {
@@ -73,30 +65,24 @@ pub enum ContinueChoice {
     Restart,  // 开始新的翻译会话
 }
 
-/// 当达到最大尝试次数时提示用户选择
-pub fn prompt_user_choice(failure_type: &str, require_suggestion: bool) -> Result<UserChoice> {
+/// 统一的失败场景提示函数
+///
+/// 根据上下文提供合适的选项
+pub fn prompt_failure_choice(context: &str) -> Result<FailureChoice> {
     println!("│");
     println!(
         "│ {}",
-        format!("⚠ {} - What would you like to do?", failure_type)
-            .yellow()
-            .bold()
+        format!("⚠ {} - 您想怎么做？", context).yellow().bold()
     );
     println!("│");
 
-    let continue_text = if require_suggestion {
-        "Continue trying (requires entering a fix suggestion)"
-    } else {
-        "Continue trying (optionally enter a fix suggestion)"
-    };
-
     let options = vec![
-        continue_text,
-        "Manual fix (edit the file directly)",
-        "Exit (abort the translation process)",
+        "手动修复（使用 VIM 编辑文件）",
+        "跳过（忽略失败继续）",
+        "退出（中止流程）",
     ];
 
-    let choice = Select::new("Select an option:", options.clone())
+    let choice = Select::new("选择一个选项:", options.clone())
         .with_vim_mode(true)
         .prompt()
         .context("Failed to get user selection")?;
@@ -107,9 +93,9 @@ pub fn prompt_user_choice(failure_type: &str, require_suggestion: bool) -> Resul
         .context("Unexpected selection value")?;
 
     match choice_index {
-        0 => Ok(UserChoice::Continue),
-        1 => Ok(UserChoice::ManualFix),
-        2 => Ok(UserChoice::Exit),
+        0 => Ok(FailureChoice::ManualFix),
+        1 => Ok(FailureChoice::Skip),
+        2 => Ok(FailureChoice::Exit),
         _ => unreachable!("Invalid selection index"),
     }
 }
@@ -195,6 +181,37 @@ pub fn open_in_vim(file_path: &Path) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// 提示用户选择要编辑的文件
+pub fn prompt_file_selection_for_edit(
+    files: &[std::path::PathBuf],
+) -> Result<Vec<std::path::PathBuf>> {
+    println!("│ {}", "选择要编辑的文件:".bright_cyan().bold());
+    println!("│ {}", "  （使用空格选择，回车确认）".bright_blue());
+
+    let file_names: Vec<String> = files.iter().map(|f| f.display().to_string()).collect();
+
+    let selections = inquire::MultiSelect::new("文件:", file_names.clone())
+        .with_vim_mode(true)
+        .prompt()
+        .context("Failed to get file selection")?;
+
+    let selected_files: Vec<std::path::PathBuf> = selections
+        .iter()
+        .filter_map(|s| {
+            file_names
+                .iter()
+                .position(|f| f == s)
+                .map(|i| files[i].clone())
+        })
+        .collect();
+
+    if selected_files.is_empty() {
+        anyhow::bail!("未选择任何文件");
+    }
+
+    Ok(selected_files)
 }
 
 /// 显示多个文件路径
@@ -428,14 +445,6 @@ pub fn prompt_continue_or_restart() -> Result<ContinueChoice> {
 mod tests {
     use super::*;
     use serial_test::serial;
-
-    #[test]
-    fn test_user_choice_variants() {
-        assert_eq!(UserChoice::Continue, UserChoice::Continue);
-        assert_eq!(UserChoice::ManualFix, UserChoice::ManualFix);
-        assert_eq!(UserChoice::Exit, UserChoice::Exit);
-        assert_ne!(UserChoice::Continue, UserChoice::Exit);
-    }
 
     #[test]
     fn test_compile_success_choice_variants() {

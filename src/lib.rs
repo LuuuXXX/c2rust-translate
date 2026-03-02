@@ -6,6 +6,7 @@
 // Public modules - external API
 pub mod analyzer;
 pub mod builder;
+pub mod common_tasks;
 pub mod file_scanner;
 pub mod git;
 pub mod hybrid_build;
@@ -106,7 +107,7 @@ fn step_1_initialize(feature: &str) -> Result<()> {
 
 /// Step 2: Run gate verification
 fn step_2_gate_verification(feature: &str, show_full_output: bool) -> Result<()> {
-    initialization::run_gate_verification(feature, show_full_output)
+    initialization::execute_initial_verification(feature, show_full_output)
 }
 
 /// Step 2.5: Check for existing stats file and load or create stats
@@ -529,7 +530,7 @@ fn process_rs_file(
                 .bright_blue()
                 .bold()
         );
-        let build_loop_result = verification::build_and_fix_loop(
+        let build_loop_result = verification::execute_code_error_check_with_fix_loop(
             feature,
             file_type,
             rs_file,
@@ -570,7 +571,7 @@ fn process_rs_file(
                     .bright_blue()
                     .bold()
             );
-            let warning_fix_attempts = verification::build_and_fix_warnings_loop(
+            let warning_fix_attempts = verification::execute_code_warning_check_with_fix_loop(
                 feature,
                 file_type,
                 rs_file,

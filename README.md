@@ -4,11 +4,18 @@
 
 ## 版本历史
 
-### v0.2.0 (当前版本)
+### v0.3.0（当前版本）
+**重大改进：**
+- 重构代码结构，提取公共任务模块
+- 合并重复的构建函数
+- 统一命名规范（去除 `gate_` 前缀）
+- 文档全中文化
+- 优化用户交互体验
+
+### v0.2.0
 **破坏性变更：**
-- 移除了文件日志功能模块 (`logger` 模块)。所有输出现在仅通过 stdout/stderr 显示。
-- 如果您的代码依赖 `c2rust_translate::logger` 模块，请更新为使用标准输出。
-- 移除了 `chrono` 依赖。
+- 移除了文件日志功能模块 (`logger` 模块)
+- 移除了 `chrono` 依赖
 
 ### v0.1.0
 - 初始发布版本
@@ -18,10 +25,10 @@
 本项目采用模块化设计，代码组织清晰：
 
 - **lib.rs** - 主工作流程编排
-- **hybrid_build.rs** - 混合构建命令管理
-- **initialization.rs** - 项目初始化和门禁验证
+- **common_tasks.rs** - 公共任务（错误检查、告警检查、混合构建检查、翻译）
+- **initialization.rs** - 项目初始化
 - **verification.rs** - 构建验证和修复循环
-- **builder.rs** - Cargo 构建和命令执行
+- **builder.rs** - Cargo 构建
 - **translator.rs** - C 到 Rust 翻译
 - **analyzer.rs** - 代码分析集成
 - **interaction.rs** - 用户交互
@@ -29,7 +36,7 @@
 - **git.rs** - Git 版本控制
 - 其他辅助模块（progress, diff_display 等）
 
-详细的架构说明请参见 [REFACTORING_SUMMARY.md](REFACTORING_SUMMARY.md)。
+详细的架构说明请参见 [文档/架构说明.md](文档/架构说明.md)。
 
 ## 功能特性
 
@@ -40,441 +47,132 @@
 - 自动初始化 Rust 项目结构
 - 自动检测和修复构建错误
 - 基于 Git 的版本控制集成
-- **混合构建支持** - 通过 `build.target` 配置项设置 `C2RUST_LD_TARGET` 环境变量，支持 C 和 Rust 代码的混合构建
-- **持久化翻译统计** - 每次文件翻译或跳过后，将统计信息写入 `.c2rust/<feature>/translation_stats.json`，支持跨会话的断点续传
+- **公共任务模块** - 标准化的代码检查和构建流程
+- **混合构建支持** - 支持 C 和 Rust 代码的混合构建
+- **持久化翻译统计** - 支持跨会话的断点续传
 
 ### 用户体验优化
-- **彩色输出** - 构建/测试/清理命令使用不同颜色高亮，成功/错误/警告消息带有图标标识
-- **代码预览** - 显示正在翻译的 C 代码（默认前 15 行）和构建错误（默认前 10 行），可使用 `--show-full-output` 选项显示完整内容
-- **进度跟踪** - 基于文件内容实时跟踪翻译进度，显示当前处理文件在所有文件中的序号和总数（如 `[7/10] Processing var_example.rs`，表示已处理6个，正在处理第7个，共10个文件）
-- **智能恢复** - 中断后重新运行时提供两种选择：
-  - **继续上次进度** - 自动跳过已翻译（非空）文件和上次明确跳过的文件，进度序号继续累计
-  - **重新开始** - 清除已保存的统计信息，从头翻译所有空文件
-- **执行时间统计** - 显示所有命令的耗时，便于识别性能瓶颈
-- **文件排序显示** - 未处理文件按字母顺序列出
+- **彩色输出** - 使用不同颜色高亮不同类型的消息
+- **代码预览** - 显示正在翻译的 C 代码和构建错误
+- **进度追踪** - 实时显示翻译进度
+- **交互式修复** - 支持手动修复、跳过文件等多种选项
+- **多文件选择** - 手动修复时可以选择多个文件
 
-详细的用户体验改进说明请参见 [用户体验改进.md](用户体验改进.md)。
+## 公共任务说明
 
-## 安装
+项目定义了4个标准化的公共任务：
 
-从源码构建：
+### 1. 代码错误检查
+包含以下步骤：
+- 更新代码分析
+- 执行 cargo build（抑制警告）
+- 执行混合构建检查（clean + build + test）
+- 提交到 git
 
-```bash
-cargo build --release
-```
+### 2. 代码告警检查
+包含以下步骤：
+- 更新代码分析
+- 执行 cargo build（显示警告）
+- 执行混合构建检查（clean + build + test）
+- 提交到 git
 
-二进制文件将位于 `target/release/c2rust-translate`。
+### 3. 混合构建检查
+包含以下步骤：
+- 执行清理命令（通过 c2rust-config 获取）
+- 执行构建命令（通过 c2rust-config 获取）
+- 执行测试命令（通过 c2rust-config 获取）
+
+### 4. 翻译任务
+调用 translate_and_fix.py 执行 C 到 Rust 的翻译
 
 ## 使用方法
 
-### 翻译一个特性
-
+### 基本使用
 ```bash
-# 翻译指定的特性（交互模式：会提示选择要处理的文件）
-c2rust-translate translate --feature <特性名称>
+# 翻译指定 feature
+c2rust-translate --feature myfeature
 
-# 翻译默认特性（不指定 --feature 时默认使用 "default"）
-c2rust-translate translate
+# 自动处理所有文件（不提示）
+c2rust-translate --feature myfeature --allow-all
 
-# 自动处理所有文件，不进行交互提示
-c2rust-translate translate --feature <特性名称> --allow-all
-
-# 自定义最大修复尝试次数（默认为 10）
-c2rust-translate translate --feature <特性名称> --max-fix-attempts 5
-
-# 显示完整的代码和错误输出（不截断）
-c2rust-translate translate --feature <特性名称> --show-full-output
-
-# 组合多个选项使用
-c2rust-translate translate --feature <特性名称> --allow-all --show-full-output
+# 显示完整输出
+c2rust-translate --feature myfeature --show-full-output
 ```
 
-### 文件选择模式
+### 工作流程
+1. 工具会自动查找项目根目录（包含 `.c2rust` 目录）
+2. 如果 feature 目录不存在，会调用 `code_analyse --init` 初始化
+3. 执行初始验证（代码错误检查）
+4. 扫描待翻译文件（空的 .rs 文件）
+5. 选择要翻译的文件（交互式或全选）
+6. 对每个文件执行：
+   - 翻译 C 代码到 Rust
+   - 执行代码错误检查（带自动修复循环）
+   - 执行代码告警检查（带自动修复循环）
+7. 打印翻译统计信息
 
-工具提供两种文件处理模式：
+## 交互选项说明
 
-#### 1. 交互模式（默认）
+在遇到失败时，工具会提供以下选项：
 
-当不使用 `--allow-all` 选项时，工具会：
-- 列出所有未处理的 `.rs` 文件（按字母顺序排序）
-- 显示文件序号和相对路径
-- 提示用户选择要处理的文件
+### 编译失败时
+- **重试直接翻译**: 清空 .rs 文件，从 C 代码重新翻译
+- **添加修复建议**: 输入提示词，让 AI 修改代码
+- **手动修复**: 在 VIM 中编辑代码
+- **跳过文件**: 跳过当前文件，稍后处理
+- **退出**: 中止翻译流程
 
-支持的选择格式：
-- **单个文件**: `1` 或 `3`
-- **多个文件**: `1,3,5`（逗号分隔）
-- **范围**: `1-3`（处理文件 1、2、3）
-- **混合**: `1,3-5,7`（处理文件 1、3、4、5、7）
-- **所有文件**: `all` 或 `ALL`（大小写不敏感）
+### 验证失败时
+- **手动修复**: 在 VIM 中编辑代码
+- **跳过**: 跳过验证，继续流程（会记录警告）
+- **退出**: 中止翻译流程
 
-**示例输出：**
-```
-Available files to process:
-  1. fun_alpha.rs
-  2. fun_beta.rs
-  3. var_gamma.rs
-  4. var_zeta.rs
+## 多文件编辑支持
 
-Select files to process:
-  - Enter numbers separated by commas (e.g., 1,3,5)
-  - Enter ranges (e.g., 1-3,5)
-  - Enter 'all' to process all files
+当错误涉及多个文件时：
+1. 工具会列出所有错误文件
+2. 用户可以使用空格键选择要编辑的文件
+3. 回车确认后，依次打开选中的文件
 
-Your selection: 1,3-4
-```
+## 依赖要求
 
-#### 2. 自动处理模式 (`--allow-all`)
+- Rust 工具链 (rustc, cargo)
+- Python 3.x
+- code_analyse 工具
+- c2rust-config 工具
+- translate_and_fix.py 脚本
 
-使用 `--allow-all` 选项时：
-- 不显示文件列表
-- 不等待用户输入
-- 自动处理所有未处理的文件
-- 适合自动化脚本和批处理场景
+## 开发
 
-### 翻译工作流程
-
-该命令将执行以下操作：
-
-1. **初始化**（如需要）- 检查并初始化 `<特性名称>/rust` 目录
-2. **加载翻译统计**（Step 2.5）- 检测 `.c2rust/<特性名称>/translation_stats.json` 是否存在：
-   - 若存在，提示用户选择"继续上次进度"或"重新开始"
-   - 若不存在，直接开始新的翻译会话
-3. **文件翻译** - 对每个空的 `.rs` 文件（已跳过的文件会被自动排除）：
-   - 根据文件名前缀（`var_` 或 `fun_`）确定类型
-   - 翻译对应的 `.c` 文件为 Rust
-   - 构建并自动修复编译错误（默认最多 10 次尝试，可通过 `--max-fix-attempts` 选项配置）
-   - Git 提交更改
-   - 更新代码分析
-   - 运行混合构建测试
-   - 将本次结果写入统计文件
-
-#### 文件命名规范
-- `var_*.rs` - 变量声明
-- `fun_*.rs` - 函数定义
-
-每个 `.rs` 文件应有对应的同名 `.c` 文件。
-
-#### 必需工具
-
-**核心依赖：**
-- `code-analyse` - 代码分析和初始化
-- `translate_and_fix.py` - C 到 Rust 翻译和错误修复
-- `c2rust-config` - 配置管理（需配置 build/test/clean 的 dir 和 cmd）
-
-#### 混合构建配置
-
-如果需要进行混合构建（C 和 Rust 代码混合编译），可以使用 `c2rust-config` 工具设置 `build.target` 配置项。该配置项会被用于设置 `C2RUST_LD_TARGET` 环境变量，以支持混合构建场景。
-
-**设置 build.target：**
-
+### 运行测试
 ```bash
-# 进入 .c2rust 目录
-cd .c2rust
-
-# 设置特定特性的 build.target
-c2rust-config config --make --feature <特性名称> --set build.target <目标制品>
-
-# 验证配置
-c2rust-config config --make --feature <特性名称> --list build.target
+cargo test
 ```
 
-**示例：**
-
+### 代码格式化
 ```bash
-cd .c2rust
-c2rust-config config --make --feature my_feature --set build.target my_target_binary
+cargo fmt
 ```
 
-配置完成后，在执行构建、测试等命令时，`C2RUST_LD_TARGET` 环境变量会自动设置为指定的目标制品。
-
-#### 项目结构
-
-```
-项目根目录/
-├── .c2rust/
-│   ├── config.toml           # 配置文件
-│   └── <feature>/
-│       ├── translation_stats.json  # 翻译统计（断点续传状态）
-│       ├── c/                # C 源代码目录
-│       └── rust/             # 待翻译的 .rs 和 .c 文件
-│           ├── Cargo.toml    # Rust 项目配置
-│           ├── fun_*.rs / .c # 函数翻译文件
-│           └── var_*.rs / .c # 变量翻译文件
-```
-
-#### 工具用法示例
-
-**翻译工具调用格式：**
-
-> **说明**：`--suggestion` 参数仅在语法修复（`syntax_fix`）时可用。翻译阶段（`var`/`fn`）不支持建议参数。用户提供的建议会保存到 `suggestions.txt` 文件，在修复阶段自动使用。
-
+### Lint 检查
 ```bash
-# 变量翻译
-python translate_and_fix.py --config <config.toml> --type var --c_code <input.c> --output <output.rs>
-
-# 函数翻译
-python translate_and_fix.py --config <config.toml> --type fn --c_code <input.c> --output <output.rs>
-
-# 语法修复（没有修复建议时）
-python translate_and_fix.py --config <config.toml> --type syntax_fix --c_code <code.c> --rust_code <code.rs> --output <output.rs> --error <error.txt>
-
-# 语法修复（有修复建议时）
-python translate_and_fix.py --config <config.toml> --type syntax_fix --c_code <code.c> --rust_code <code.rs> --output <output.rs> --error <error.txt> --suggestion suggestions.txt
+cargo clippy
 ```
 
-**代码分析工具：**
-```bash
-code-analyse --init --feature <特性名称>     # 初始化
-code-analyse --update --feature <特性名称>   # 更新
-```
-
-## 示例
-
-在项目根目录（包含 `.c2rust/` 目录）或其子目录中运行：
-
-```bash
-# 翻译名为 "my_feature" 的特性
-c2rust-translate translate --feature my_feature
-
-# 翻译默认特性（使用 "default" 作为特性名称）
-c2rust-translate translate
-```
-
-这将处理 `<特性名称>/rust/` 目录中所有空的 `.rs` 文件。
-
-## 断点续传
-
-### 翻译统计文件
-
-每次文件翻译完成或被跳过后，工具会将统计信息写入 `.c2rust/<feature>/translation_stats.json`。该文件记录：
-
-- 每个文件的翻译尝试次数和修复尝试次数
-- 每个文件的重来标记（是否进行过重新翻译）
-- 被明确跳过（用户选择跳过）的文件列表
-
-### 恢复机制
-
-重新运行翻译时，工具会检测是否存在已保存的统计文件，并提示用户：
-
-```
-Found previous translation progress!
-Previous progress:
-  - Total files translated: 6
-  - Files skipped: 2
-
-? What would you like to do?
-> Continue previous progress (resume from where you left off)
-  Start fresh (clear all progress)
-```
-
-- **继续上次进度** - 被明确跳过的文件将从工作队列中排除；已成功翻译的非空文件则由文件内容检测机制自动跳过
-- **重新开始** - 删除统计文件，从头翻译所有空文件
-
-> **注意**：两种机制协同工作：非空文件由磁盘内容检测自动排除；仅被用户跳过（磁盘上仍为空文件）的文件依赖统计文件中记录的跳过列表排除。
-
-## 错误处理
-
-工具在遇到编译错误或测试失败时提供智能的交互式错误处理：
-
-### 自动修复尝试
-
-- 编译错误会自动尝试修复（默认最多 10 次，可通过 `--max-fix-attempts` 配置）
-- 每次修复失败后，自动应用下一次修复
-
-### 交互式错误处理
-
-当达到最大修复尝试次数后，工具会提供三个选项供用户选择：
-
-#### 1. 继续尝试（Continue）
-- 允许用户输入修复建议提示词
-- 提示词会保存到项目根目录的 `suggestions.txt` 文件中
-- **重新执行完整的翻译流程**：选择重试会清空之前的建议，从头开始翻译
-- 新的翻译会覆盖之前生成的 Rust 代码
-- **翻译阶段**：重新从 C 代码生成 Rust 代码（不使用建议）
-- **修复阶段**：使用新输入的建议来修复编译错误
-- 成功后会执行完整的后续流程：修复 → 清空 → 构建 → 测试
-- **对于测试失败**：必须输入修复建议才能继续
-
-**重试机制说明**：
-- 每次重试都会从翻译阶段重新开始，确保获得全新的翻译结果
-- 重试前会自动清空之前的建议（`suggestions.txt`），避免旧建议的干扰
-- **翻译阶段不使用建议**（translate_and_fix.py 脚本的翻译接口不支持 `--suggestion` 参数），只在修复阶段使用建议
-- 最多可重试 3 次（含首次尝试），每次都是完整的翻译流程
-
-**使用场景**：
-- 您已经分析了错误原因，想要给 AI 提供更具体的修复方向
-- 需要添加特定的约束或要求到错误修复过程中
-- 希望从头开始重新翻译，并在修复阶段应用新的建议
-
-#### 2. 手工修复（Manual Fix）
-- 自动在 vim 中打开失败的 Rust 文件
-- 完整显示 C 源代码和 Rust 代码（不截断）
-- 手工修改后会自动重新执行构建
-  - 对于构建失败：手工修改保存后会自动重新执行构建
-  - 对于测试失败：手工修改保存后会自动重新执行构建和测试
-- 如果修改后仍有错误，可以继续选择处理方式
-- **启动时门禁验证失败时**：如果工具能从错误信息中定位到具体失败的 `.rs` 文件，会自动打开该文件；修复保存后会自动重新执行对应的门禁验证（`gate_cargo_build`、`gate_hybrid_build`、`gate_hybrid_test` 均支持自动重试）
-
-**使用场景**：
-- 错误原因明确，手工修改更快
-- 需要进行复杂的代码重构
-- AI 修复多次失败，需要人工介入
-
-#### 3. 退出（Exit）
-- 停止翻译过程并退出工具
-- 未完成的文件不会被处理
-
-**使用场景**：
-- 遇到无法解决的问题，需要停止处理
-- 当前任务无法继续，需要修改项目配置或依赖后重新运行
-
-### 适用场景
-
-交互式错误处理适用于以下情况：
-
-1. **编译失败**：达到最大修复尝试次数后
-2. **测试失败**：混合构建测试失败时
-3. **启动时失败**：翻译开始前的初始构建或测试失败（门禁验证阶段）
-
-### 全量构建测试流程的错误输出
-
-在执行完整构建测试流程（手动修复后或应用 AI 修复建议后）时，所有步骤（cargo build、hybrid clean、hybrid build、hybrid test）的失败信息都会完整输出，确保用户能够了解失败原因。
-
-### 建议文件（suggestions.txt）
-
-- **位置**：项目根目录下的 `suggestions.txt`
-- **格式**：纯文本格式，每行一个建议
-- **用途**：存储用户输入的修复建议，仅供修复过程参考
-- **自动管理**：
-  - 重试翻译时会自动清空旧建议，避免建议积累和冲突
-  - 每次重试都从空白状态开始，只使用新输入的建议
-  - 保证每次重试的修复阶段都基于最新的指导
-- **应用范围**：
-  - **翻译阶段**：不使用建议（translate_and_fix.py 的翻译接口不支持 `--suggestion` 参数）
-  - **修复阶段**：自动检测并使用 `suggestions.txt` 中的建议来指导错误修复
-
-### 示例流程
-
-```
-⚠ Maximum fix attempts reached!
-File example.rs still has build errors after 10 fix attempts.
-
-File Locations:
-  C file:    /path/to/example.c
-  Rust file: /path/to/example.rs
-
-═══ C Source Code (Full) ═══
-[显示完整C代码]
-
-═══ Rust Code (Full) ═══
-[显示完整Rust代码]
-
-═══ Build Error ═══
-[显示编译错误]
-
-⚠ Build failure - What would you like to do?
-
-Available options:
-  1. Continue trying (optionally enter a fix suggestion)
-  2. Manual fix (edit the file directly)
-  3. Exit (abort the translation process)
-
-Enter your choice (1/2/3): 1
-
-Please enter your fix suggestion:
-(The suggestion will be saved and used in the next fix attempt)
-(Press Enter to skip entering a suggestion)
-
-Suggestion: Please use std::ffi::CStr instead of raw pointer manipulation
-
-✓ Suggestion recorded: Please use std::ffi::CStr instead of raw pointer manipulation
-✓ Suggestion saved to /path/to/project/suggestions.txt
-```
-
-### 错误类型
-
-工具会在以下情况下提供交互选项或停止执行：
-
-**提供交互选项的情况**：
-- 构建错误修复超过配置的最大尝试次数（默认 10 次）- 提供继续/手工修复/退出选项
-- 混合构建测试失败 - 提供继续/手工修复/退出选项（继续需要输入建议）
-- 启动时的初始构建失败 - 提供继续/手工修复/退出选项
-- 启动时的初始测试失败 - 提供继续/手工修复/退出选项
-
-**直接停止的情况**：
-- Rust 目录初始化失败
-- 缺少对应的 `.c` 文件
-- 翻译失败
-- Git 操作失败（add/commit，"nothing to commit" 除外）
-- 用户选择"退出"选项
-
-## Git 集成
-
-工具会自动提交更改：
-- 初始化后：`"Initialize <feature> rust directory"`
-- 翻译成功后：`"Translate <filename> from C to Rust (feature: <feature>)"`
-- 更新分析后：`"Update code analysis for <feature>"`
-
-## 代码结构
-
-项目采用模块化设计，主要模块包括：
-
-- `analyzer` - 代码分析功能（初始化和更新）
-- `builder` - 构建相关功能（cargo 构建、混合构建）
-- `file_scanner` - 文件扫描和类型提取
-- `git` - Git 版本控制操作
-- `translator` - C 到 Rust 的翻译和错误修复
-- `lib` - 主要翻译工作流程编排
-
-## 构建和测试流程
-
-工具使用统一的完整构建测试流程，确保代码质量和一致性：
-
-### 标准流程步骤
-
-1. **cargo build** - 构建翻译后的 Rust 代码
-2. **c2rust clean** - 清理混合构建环境
-3. **c2rust build** - 执行混合构建（C + Rust 集成）
-4. **c2rust test** - 运行完整的测试套件
-
-### 自动执行场景
-
-这个完整的 4 步流程会在以下场景自动执行：
-
-- **手动修复代码后** - 使用 vim 编辑文件并保存后
-- **应用 AI 修复建议后** - 使用建议修复代码后
-- **完成文件翻译后** - 新翻译的文件验证时
-
-### 流程特点
-
-- **统一性** - 所有验证场景使用相同的流程，避免遗漏步骤
-- **完整性** - 包含从 Rust 编译到混合构建测试的全部验证
-- **完整错误输出** - 每个步骤（cargo build、hybrid clean、hybrid build、hybrid test）失败时都会打印详细的错误信息
-- **交互式错误处理** - 步骤失败时由调用方提供继续/手工修复/退出等选项
-- **进度可见** - 显示每个步骤的执行状态和结果
+## 贡献指南
+
+欢迎贡献！请遵循以下步骤：
+
+1. Fork 本仓库
+2. 创建特性分支 (`git checkout -b feature/amazing-feature`)
+3. 提交更改 (`git commit -m 'Add some amazing feature'`)
+4. 推送到分支 (`git push origin feature/amazing-feature`)
+5. 打开 Pull Request
 
 ## 许可证
 
-本项目当前尚未正式选择开源许可证。
+本项目采用 MIT 许可证。
 
-在许可证明确之前，除非另有书面授权，您不应将本项目用于再分发或商业用途。如需商业使用，请联系项目维护者。
+## 联系方式
 
-## 贡献
-
-欢迎通过 Issue 和 Pull Request 贡献代码或提出建议。提交贡献时请尽量：
-
-- 在 Issue 中清晰描述问题或需求
-- 对于代码修改，先在本地通过相关构建与测试
-- 在 Pull Request 中说明变更目的、主要修改点以及可能的影响范围
-- 确保所有测试通过且代码没有警告
-- 遵循现有的代码风格和模块结构
-
-### 提交 Pull Request 的步骤：
-
-1. Fork 本仓库
-2. 创建您的特性分支 (`git checkout -b feature/amazing-feature`)
-3. 提交您的更改 (`git commit -m 'Add some amazing feature'`)
-4. 推送到分支 (`git push origin feature/amazing-feature`)
-5. 打开一个 Pull Request
-
-我们会尽快审查您的贡献。
+如有问题或建议，请提交 Issue。

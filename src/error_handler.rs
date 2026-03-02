@@ -262,10 +262,10 @@ pub(crate) fn handle_startup_test_failure_with_files(
         println!("│ {}", current_error);
 
         // 提供与 handle_max_fix_attempts_reached 相同的选择
-        let choice = interaction::prompt_user_choice("Initial test failure", false)?;
+        let choice = interaction::prompt_failure_choice("Initial test failure")?;
 
         match choice {
-            interaction::UserChoice::Continue => {
+            interaction::FailureChoice::Skip => {
                 println!("│");
                 println!(
                     "│ {}",
@@ -325,7 +325,7 @@ pub(crate) fn handle_startup_test_failure_with_files(
                     }
                 }
             }
-            interaction::UserChoice::ManualFix => {
+            interaction::FailureChoice::ManualFix => {
                 println!("│");
                 println!("│ {}", "You chose: Manual fix".bright_cyan());
 
@@ -368,17 +368,16 @@ pub(crate) fn handle_startup_test_failure_with_files(
                                             // 没有更多文件需要处理，询问用户是否想再试一次
                                             println!("│");
                                             println!("│ {}", "Build or tests still have errors. What would you like to do?".yellow());
-                                            let retry_choice = interaction::prompt_user_choice(
+                                            let retry_choice = interaction::prompt_failure_choice(
                                                 "Build/tests still failing",
-                                                false,
                                             )?;
 
                                             match retry_choice {
-                                                interaction::UserChoice::Continue => {
+                                                interaction::FailureChoice::Skip => {
                                                     // 只需使用现有更改重试构建
                                                     continue;
                                                 }
-                                                interaction::UserChoice::ManualFix => {
+                                                interaction::FailureChoice::ManualFix => {
                                                     println!("│ {}", "Reopening file in Vim for additional manual fixes...".bright_blue());
                                                     match interaction::open_in_vim(file) {
                                                         Ok(_) => {
@@ -401,11 +400,17 @@ pub(crate) fn handle_startup_test_failure_with_files(
                                                         }
                                                     }
                                                 }
-                                                interaction::UserChoice::Exit => {
+                                                interaction::FailureChoice::Exit => {
                                                     return Err(e).context(format!(
                                                         "Build/tests failed after manual fix for file {}",
                                                         file.display()
                                                     ));
+                                                }
+                                                interaction::FailureChoice::RetryDirectly
+                                                | interaction::FailureChoice::AddSuggestion => {
+                                                    unreachable!(
+                                                        "RetryDirectly and AddSuggestion are not supported in this context"
+                                                    )
                                                 }
                                             }
                                         }
@@ -423,11 +428,15 @@ pub(crate) fn handle_startup_test_failure_with_files(
                     }
                 }
             }
-            interaction::UserChoice::Exit => {
+            interaction::FailureChoice::Exit => {
                 println!("│");
                 println!("│ {}", "You chose: Exit".yellow());
                 return Err(current_error)
                     .context("User chose to exit during startup test failure handling");
+            }
+            interaction::FailureChoice::RetryDirectly
+            | interaction::FailureChoice::AddSuggestion => {
+                unreachable!("RetryDirectly and AddSuggestion are not supported in this context")
             }
         }
     } // 循环结束

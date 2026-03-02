@@ -6,61 +6,20 @@ use std::env;
 use std::process::Command;
 use std::time::Instant;
 
-/// 在每个特性的 Rust 项目目录 `<feature>/rust` 中运行 `cargo build`
+/// 统一的 cargo build 函数
 ///
-/// 每个特性在 `<feature>/rust` 下都有自己的 Rust 项目（有自己的
-/// `Cargo.toml`、依赖项和构建产物），而不是共享单个
-/// `.c2rust/` 目录。这避免了特性之间的冲突（例如，
-/// 不同的依赖版本或特性标志），并允许每个特性独立地构建、
-/// 测试和迭代。
+/// # 参数
+/// - `feature`: 特性名称
+/// - `suppress_warnings`: true=抑制警告(-A warnings), false=显示警告
+/// - `show_full_output`: true=显示完整输出
 ///
-/// 注意：`_show_full_output` 参数当前未使用，因为 cargo build 错误
-/// 已经通过 bail! 宏完整显示。保留该参数是为了与其他
-/// 显示函数保持 API 一致性以及未来可能的使用。
-pub fn cargo_build(feature: &str, _show_full_output: bool) -> Result<()> {
-    util::validate_feature_name(feature)?;
-
-    let project_root = util::find_project_root()?;
-    let build_dir = project_root.join(".c2rust").join(feature).join("rust");
-
-    let start_time = Instant::now();
-
-    let output = Command::new("cargo")
-        .arg("build")
-        .current_dir(&build_dir)
-        .env("RUSTFLAGS", "-A warnings")
-        .output()
-        .context("Failed to execute cargo build")?;
-
-    let duration = start_time.elapsed();
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("Build error: {}", stderr);
-    }
-
-    println!(
-        "  {} (took {:.2}s)",
-        "Build completed".bright_green(),
-        duration.as_secs_f64()
-    );
-
-    Ok(())
-}
-
-/// Run cargo build without suppressing warnings, capture and return warning output.
-///
-/// Unlike `cargo_build`, this function does not set `RUSTFLAGS="-A warnings"`,
-/// so the compiler emits all warnings.
-///
-/// - Returns `Ok(Some(warnings_text))` if the build succeeds and warnings are present.
-/// - Returns `Ok(None)` if the build succeeds with no warnings.
-/// - Returns `Err` if the build fails (errors present).
-///
-/// Note: `_show_full_output` is not currently used; it is kept for API consistency
-/// with other build functions and for potential future use.
-pub fn cargo_build_check_warnings(
+/// # 返回
+/// - `Ok(None)`: 构建成功且无警告（或警告被抑制）
+/// - `Ok(Some(warnings))`: 构建成功但有警告
+/// - `Err`: 构建失败
+pub fn cargo_build(
     feature: &str,
+    suppress_warnings: bool,
     _show_full_output: bool,
 ) -> Result<Option<String>> {
     util::validate_feature_name(feature)?;
@@ -70,12 +29,14 @@ pub fn cargo_build_check_warnings(
 
     let start_time = Instant::now();
 
-    let output = Command::new("cargo")
-        .arg("build")
-        .current_dir(&build_dir)
-        .output()
-        .context("Failed to execute cargo build")?;
+    let mut cmd = Command::new("cargo");
+    cmd.arg("build").current_dir(&build_dir);
 
+    if suppress_warnings {
+        cmd.env("RUSTFLAGS", "-A warnings");
+    }
+
+    let output = cmd.output().context("Failed to execute cargo build")?;
     let duration = start_time.elapsed();
 
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -90,17 +51,17 @@ pub fn cargo_build_check_warnings(
         duration.as_secs_f64()
     );
 
-    // Check for warnings in stderr. Use `contains` to handle any leading whitespace
-    // or indentation that may appear in multi-line warning output.
-    let has_warnings = stderr
-        .lines()
-        .any(|line| line.contains("warning[") || line.contains("warning:"));
+    if !suppress_warnings {
+        let has_warnings = stderr
+            .lines()
+            .any(|line| line.contains("warning[") || line.contains("warning:"));
 
-    if has_warnings {
-        Ok(Some(stderr))
-    } else {
-        Ok(None)
+        if has_warnings {
+            return Ok(Some(stderr));
+        }
     }
+
+    Ok(None)
 }
 
 /// 从 c2rust-config 获取特定的配置值
@@ -1212,7 +1173,7 @@ pub fn run_full_build_and_test_interactive(
     println!("│ {}", "Updating code analysis...".bright_blue());
     analyzer::update_code_analysis(feature)?;
     println!("│ {}", "✓ Code analysis updated".bright_green());
-    match cargo_build(feature, true) {
+    match cargo_build(feature, true, true) {
         Ok(_) => {
             println!("│ {}", "  ✓ Rust build successful".bright_green());
         }
