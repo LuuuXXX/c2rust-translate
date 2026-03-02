@@ -11,7 +11,7 @@ use std::time::Instant;
 /// # 参数
 /// - `feature`: 特性名称
 /// - `suppress_warnings`: true=抑制警告(-A warnings), false=显示警告
-/// - `show_full_output`: true=显示完整输出
+/// - `_show_full_output`: 保留参数，暂未实现，传入值不影响当前输出行为
 ///
 /// # 返回
 /// - `Ok(None)`: 构建成功且无警告（或警告被抑制）

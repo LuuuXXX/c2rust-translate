@@ -6,7 +6,7 @@
 //! 3. 执行混合构建检查
 //! 4. 执行翻译任务
 
-use crate::{analyzer, builder, git, hybrid_build, translator};
+use crate::{builder, git, hybrid_build, translator};
 use anyhow::{Context, Result};
 use colored::Colorize;
 use std::path::Path;
@@ -14,16 +14,11 @@ use std::path::Path;
 /// 公共任务1：执行代码错误检查
 ///
 /// 流程：
-/// 1. 更新代码分析（code_analyse --update）
-/// 2. 执行 cargo build（抑制警告）
-/// 3. 执行混合构建检查
-/// 4. 提交到 git
+/// 1. 执行 cargo build（抑制警告）
+/// 2. 执行混合构建检查（内部包含代码分析更新）
+/// 3. 提交到 git
 pub fn execute_code_error_check(feature: &str, show_full_output: bool) -> Result<()> {
     println!("{}", "执行代码错误检查...".bright_blue());
-
-    println!("{}", "  → 更新代码分析...".bright_blue());
-    analyzer::update_code_analysis(feature)?;
-    println!("{}", "  ✓ 代码分析已更新".bright_green());
 
     println!("{}", "  → 构建中（抑制警告）...".bright_blue());
     builder::cargo_build(feature, true, show_full_output)?;
@@ -42,16 +37,11 @@ pub fn execute_code_error_check(feature: &str, show_full_output: bool) -> Result
 /// 公共任务2：执行代码告警检查
 ///
 /// 流程：
-/// 1. 更新代码分析（code_analyse --update）
-/// 2. 执行 cargo build（显示警告）
-/// 3. 执行混合构建检查
-/// 4. 提交到 git
+/// 1. 执行 cargo build（显示警告）
+/// 2. 执行混合构建检查（内部包含代码分析更新）
+/// 3. 提交到 git
 pub fn execute_code_warning_check(feature: &str, show_full_output: bool) -> Result<()> {
     println!("{}", "执行代码告警检查...".bright_blue());
-
-    println!("{}", "  → 更新代码分析...".bright_blue());
-    analyzer::update_code_analysis(feature)?;
-    println!("{}", "  ✓ 代码分析已更新".bright_green());
 
     println!("{}", "  → 构建中（显示警告）...".bright_blue());
     match builder::cargo_build(feature, false, show_full_output)? {
