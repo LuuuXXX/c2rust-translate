@@ -1378,6 +1378,9 @@ mod tests {
         let project_root = temp_dir.path();
         let original_dir = env::current_dir().unwrap();
         env::set_current_dir(project_root).unwrap();
+        let _restore = scopeguard::guard(original_dir, |dir| {
+            let _ = env::set_current_dir(dir);
+        });
 
         let feature = "test_feature";
         let rust_dir = project_root.join(".c2rust").join(feature).join("rust");
@@ -1394,8 +1397,6 @@ mod tests {
 
         let files =
             super::get_manual_fix_files(feature, &rs_file_path, &error_str);
-
-        env::set_current_dir(&original_dir).unwrap();
 
         // rs_file should appear only once
         let canonical_rs = rs_file_path.canonicalize().ok();
