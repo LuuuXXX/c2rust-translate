@@ -627,7 +627,10 @@ fn process_rs_file(
 /// detection and auto-fix) for every file processed in a run.
 fn should_process_warnings() -> bool {
     match std::env::var("C2RUST_PROCESS_WARNINGS") {
-        Ok(val) => val != "0" && val.to_lowercase() != "false",
+        Ok(val) => {
+            let val = val.trim();
+            val != "0" && !val.eq_ignore_ascii_case("false")
+        }
         Err(_) => true,
     }
 }

@@ -266,6 +266,20 @@ pub fn map_selections_to_files(
     Ok(result)
 }
 
+/// 从形如 "1: /path/to/file" 的选项字符串中解析出 1-based 文件索引，并校验范围。
+fn parse_file_option(selection: &str, file_count: usize) -> Result<usize> {
+    let (idx_str, _) = selection
+        .split_once(": ")
+        .ok_or_else(|| anyhow::anyhow!("无法解析文件选项，缺少分隔符: {:?}", selection))?;
+    let i: usize = idx_str
+        .parse()
+        .with_context(|| format!("无法将 {:?} 解析为索引数字", idx_str))?;
+    if i < 1 || i > file_count {
+        anyhow::bail!("文件索引 {} 超出范围 (有效范围: 1-{})", i, file_count);
+    }
+    Ok(i)
+}
+
 /// 提示用户选择要编辑的文件（1-based 编号展示）
 pub fn prompt_file_selection_for_edit(
     files: &[std::path::PathBuf],
@@ -284,18 +298,7 @@ pub fn prompt_file_selection_for_edit(
         .prompt()
         .context("Failed to get file selection")?;
 
-    let idx = {
-        let (idx_str, _) = selection
-            .split_once(": ")
-            .ok_or_else(|| anyhow::anyhow!("无法解析文件选项，缺少分隔符: {:?}", selection))?;
-        let i: usize = idx_str
-            .parse()
-            .with_context(|| format!("无法将 {:?} 解析为索引数字", idx_str))?;
-        if i < 1 || i > files.len() {
-            anyhow::bail!("文件索引 {} 超出范围 (有效范围: 1-{})", i, files.len());
-        }
-        i
-    };
+    let idx = parse_file_option(&selection, files.len())?;
 
     Ok(files[idx - 1].clone())
 }
@@ -649,5 +652,32 @@ mod tests {
     fn test_open_files_for_manual_fix_empty_returns_error() {
         let files: Vec<std::path::PathBuf> = vec![];
         assert!(open_files_for_manual_fix(&files).is_err());
+    }
+
+    #[test]
+    fn test_parse_file_option_valid() {
+        assert_eq!(parse_file_option("1: /a/foo.rs", 3).unwrap(), 1);
+        assert_eq!(parse_file_option("2: /b/bar.rs", 3).unwrap(), 2);
+        assert_eq!(parse_file_option("3: /c/baz.rs", 3).unwrap(), 3);
+    }
+
+    #[test]
+    fn test_parse_file_option_no_separator() {
+        assert!(parse_file_option("no_colon_here", 3).is_err());
+    }
+
+    #[test]
+    fn test_parse_file_option_non_numeric_index() {
+        assert!(parse_file_option("x: /a/foo.rs", 3).is_err());
+    }
+
+    #[test]
+    fn test_parse_file_option_zero_index() {
+        assert!(parse_file_option("0: /a/foo.rs", 3).is_err());
+    }
+
+    #[test]
+    fn test_parse_file_option_out_of_bounds() {
+        assert!(parse_file_option("5: /a/foo.rs", 3).is_err());
     }
 }

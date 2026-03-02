@@ -497,13 +497,21 @@ pub fn run_hybrid_build_interactive(
 /// 解析错误消息以获取所有涉及的文件，确保 rs_file 始终包含在列表中。
 /// 返回文件列表，rs_file 始终在第一位（如果不已存在）。
 /// 解析失败时回退到只包含 rs_file 的列表。
-fn get_manual_fix_files(
+pub(crate) fn get_manual_fix_files(
     feature: &str,
     rs_file: &std::path::Path,
     error_str: &str,
 ) -> Vec<std::path::PathBuf> {
-    let mut files = crate::error_handler::parse_error_for_files(error_str, feature)
-        .unwrap_or_default();
+    let mut files = match crate::error_handler::parse_error_for_files(error_str, feature) {
+        Ok(parsed) => parsed,
+        Err(parse_err) => {
+            eprintln!(
+                "[debug] Failed to parse error for related files (feature: {}): {parse_err}",
+                feature
+            );
+            Vec::new()
+        }
+    };
 
     // 规范化 rs_file 以进行比较（parse_error_for_files 返回的路径也是规范化的）
     let canonical_rs = rs_file.canonicalize().ok();

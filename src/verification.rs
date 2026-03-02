@@ -543,27 +543,7 @@ fn collect_fix_files(
     rs_file: &Path,
     error: &anyhow::Error,
 ) -> Vec<std::path::PathBuf> {
-    let error_str = error.to_string();
-    let mut files = match crate::error_handler::parse_error_for_files(&error_str, feature) {
-        Ok(parsed) => parsed,
-        Err(parse_err) => {
-            eprintln!(
-                "[debug] Failed to parse error for related files (feature: {}): {parse_err}",
-                feature
-            );
-            Vec::new()
-        }
-    };
-    let canonical_rs = rs_file.canonicalize().ok();
-    let already_present = match &canonical_rs {
-        Some(c) => files.contains(c),
-        None => files.iter().any(|f| f == rs_file),
-    };
-    if !already_present {
-        let to_insert = canonical_rs.unwrap_or_else(|| rs_file.to_path_buf());
-        files.insert(0, to_insert);
-    }
-    files
+    crate::builder::get_manual_fix_files(feature, rs_file, &error.to_string())
 }
 
 /// 处理手动修复选项
@@ -777,8 +757,9 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let orig = env::current_dir().unwrap();
         env::set_current_dir(tmp.path()).unwrap();
-
-        // Minimal project root so find_project_root succeeds
+        let _restore = scopeguard::guard(orig, |dir| {
+            let _ = env::set_current_dir(dir);
+        });
         std::fs::create_dir_all(tmp.path().join(".c2rust")).unwrap();
 
         let feature = "test_feature";
@@ -804,8 +785,6 @@ mod tests {
         let error = anyhow::anyhow!("no file references here");
         let result = collect_fix_files(feature, &rs_file, &error);
 
-        env::set_current_dir(orig).unwrap();
-
         assert_eq!(result.len(), 1);
         assert!(result[0].ends_with("var_foo.rs"));
     }
@@ -821,6 +800,9 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let orig = env::current_dir().unwrap();
         env::set_current_dir(tmp.path()).unwrap();
+        let _restore = scopeguard::guard(orig, |dir| {
+            let _ = env::set_current_dir(dir);
+        });
 
         std::fs::create_dir_all(tmp.path().join(".c2rust")).unwrap();
 
@@ -841,8 +823,6 @@ mod tests {
         let error = anyhow::anyhow!("{}", error_msg);
         let result = collect_fix_files(feature, &rs_file, &error);
 
-        env::set_current_dir(orig).unwrap();
-
         // rs_file must appear exactly once
         let count = result
             .iter()
@@ -862,6 +842,9 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let orig = env::current_dir().unwrap();
         env::set_current_dir(tmp.path()).unwrap();
+        let _restore = scopeguard::guard(orig, |dir| {
+            let _ = env::set_current_dir(dir);
+        });
 
         std::fs::create_dir_all(tmp.path().join(".c2rust")).unwrap();
 
@@ -886,8 +869,6 @@ mod tests {
         let error_msg = "error[E0308]: mismatched types\n   --> src/fun_a.rs:1:1\n    |\n1   | x\nerror[E0425]: unknown\n   --> src/fun_b.rs:2:1\n    |\n2   | y";
         let error = anyhow::anyhow!("{}", error_msg);
         let result = collect_fix_files(feature, &rs_file, &error);
-
-        env::set_current_dir(orig).unwrap();
 
         // rs_file should be present and at index 0
         assert!(
