@@ -381,7 +381,9 @@ fn handle_max_fix_attempts_reached(
             max_fix_attempts,
             show_full_output,
         ),
-        interaction::FailureChoice::ManualFix => handle_manual_fix(feature, file_type, rs_file),
+        interaction::FailureChoice::ManualFix => {
+            handle_manual_fix(feature, file_type, rs_file, &build_error)
+        }
         interaction::FailureChoice::Skip => {
             println!("│ {}", "You chose: Skip this file".bright_cyan());
             println!(
@@ -535,17 +537,28 @@ fn handle_add_suggestion(
     }
 }
 
+/// 从错误消息中提取手动修复所需的文件列表，rs_file 始终包含在内
+fn collect_fix_files(
+    feature: &str,
+    rs_file: &Path,
+    error: &anyhow::Error,
+) -> Vec<std::path::PathBuf> {
+    crate::builder::get_manual_fix_files(feature, rs_file, &error.to_string())
+}
+
 /// 处理手动修复选项
 fn handle_manual_fix(
     feature: &str,
     file_type: &str,
     rs_file: &Path,
+    build_error: &anyhow::Error,
 ) -> Result<(bool, usize, bool)> {
     println!("│");
     println!("│ {}", "You chose: Manual fix".bright_cyan());
 
-    // 尝试打开 vim
-    match interaction::open_in_vim(rs_file) {
+    // 尝试打开文件（多文件时展示选择界面）
+    match interaction::open_files_for_manual_fix(&collect_fix_files(feature, rs_file, build_error))
+    {
         Ok(_) => {
             // Vim 编辑后，重复尝试构建并允许用户决定是重试还是退出
             loop {
@@ -595,7 +608,10 @@ fn handle_manual_fix(
                                     "Opening Vim again for another manual fix attempt..."
                                         .bright_cyan()
                                 );
-                                interaction::open_in_vim(rs_file)?;
+                                // 根据新的错误消息重新提取涉及的文件列表
+                                interaction::open_files_for_manual_fix(&collect_fix_files(
+                                    feature, rs_file, &e,
+                                ))?;
                             }
                             interaction::FailureChoice::Exit => {
                                 return Err(e).context(format!(
@@ -711,5 +727,157 @@ mod tests {
         // Build error during warning phase should be non-fatal → Ok(0)
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 0);
+    }
+
+    /// collect_fix_files returns a list containing only rs_file when the feature
+    /// name is invalid (parse_error_for_files returns Err).
+    #[test]
+    fn test_collect_fix_files_invalid_feature_falls_back_to_rs_file() {
+        use tempfile::TempDir;
+        let tmp = TempDir::new().unwrap();
+        let rs_file = tmp.path().join("var_foo.rs");
+        std::fs::write(&rs_file, "").unwrap();
+
+        // "../bad" is rejected by validate_feature_name, triggering the Err branch
+        let error = anyhow::anyhow!("dummy build error");
+        let result = collect_fix_files("../bad", &rs_file, &error);
+
+        assert_eq!(result.len(), 1);
+        assert!(result[0].ends_with("var_foo.rs"));
+    }
+
+    /// collect_fix_files includes rs_file even when parse returns an empty list
+    /// (no matching files in the error message).
+    #[test]
+    #[serial_test::serial]
+    fn test_collect_fix_files_empty_parse_includes_rs_file() {
+        use std::env;
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().unwrap();
+        let orig = env::current_dir().unwrap();
+        env::set_current_dir(tmp.path()).unwrap();
+        let _restore = scopeguard::guard(orig, |dir| {
+            let _ = env::set_current_dir(dir);
+        });
+        std::fs::create_dir_all(tmp.path().join(".c2rust")).unwrap();
+
+        let feature = "test_feature";
+        std::fs::create_dir_all(
+            tmp.path()
+                .join(".c2rust")
+                .join(feature)
+                .join("rust")
+                .join("src"),
+        )
+        .unwrap();
+
+        let rs_file = tmp
+            .path()
+            .join(".c2rust")
+            .join(feature)
+            .join("rust")
+            .join("src")
+            .join("var_foo.rs");
+        std::fs::write(&rs_file, "").unwrap();
+
+        // Error message references no files → parse returns empty
+        let error = anyhow::anyhow!("no file references here");
+        let result = collect_fix_files(feature, &rs_file, &error);
+
+        assert_eq!(result.len(), 1);
+        assert!(result[0].ends_with("var_foo.rs"));
+    }
+
+    /// collect_fix_files does not duplicate rs_file when it already appears in
+    /// the parsed file list.
+    #[test]
+    #[serial_test::serial]
+    fn test_collect_fix_files_no_duplicate_when_rs_file_already_present() {
+        use std::env;
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().unwrap();
+        let orig = env::current_dir().unwrap();
+        env::set_current_dir(tmp.path()).unwrap();
+        let _restore = scopeguard::guard(orig, |dir| {
+            let _ = env::set_current_dir(dir);
+        });
+
+        std::fs::create_dir_all(tmp.path().join(".c2rust")).unwrap();
+
+        let feature = "test_feature";
+        let src_dir = tmp
+            .path()
+            .join(".c2rust")
+            .join(feature)
+            .join("rust")
+            .join("src");
+        std::fs::create_dir_all(&src_dir).unwrap();
+
+        let rs_file = src_dir.join("var_foo.rs");
+        std::fs::write(&rs_file, "").unwrap();
+
+        // Error message that references var_foo.rs so parse_error_for_files returns it
+        let error_msg = "error[E0308]: mismatched types\n   --> src/var_foo.rs:1:1\n    |\n1   | x\n    | ^ error";
+        let error = anyhow::anyhow!("{}", error_msg);
+        let result = collect_fix_files(feature, &rs_file, &error);
+
+        // rs_file must appear exactly once
+        let count = result
+            .iter()
+            .filter(|f| f.ends_with("var_foo.rs"))
+            .count();
+        assert_eq!(count, 1, "var_foo.rs should appear exactly once, got: {result:?}");
+    }
+
+    /// collect_fix_files inserts rs_file at the front when it is not in the
+    /// parsed list and multiple other files are present.
+    #[test]
+    #[serial_test::serial]
+    fn test_collect_fix_files_rs_file_inserted_first_when_missing() {
+        use std::env;
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().unwrap();
+        let orig = env::current_dir().unwrap();
+        env::set_current_dir(tmp.path()).unwrap();
+        let _restore = scopeguard::guard(orig, |dir| {
+            let _ = env::set_current_dir(dir);
+        });
+
+        std::fs::create_dir_all(tmp.path().join(".c2rust")).unwrap();
+
+        let feature = "test_feature";
+        let src_dir = tmp
+            .path()
+            .join(".c2rust")
+            .join(feature)
+            .join("rust")
+            .join("src");
+        std::fs::create_dir_all(&src_dir).unwrap();
+
+        // Create two files that appear in the error, and a third that is rs_file
+        let file_a = src_dir.join("fun_a.rs");
+        let file_b = src_dir.join("fun_b.rs");
+        let rs_file = src_dir.join("var_main.rs");
+        for f in [&file_a, &file_b, &rs_file] {
+            std::fs::write(f, "").unwrap();
+        }
+
+        // Error references fun_a and fun_b but NOT var_main
+        let error_msg = "error[E0308]: mismatched types\n   --> src/fun_a.rs:1:1\n    |\n1   | x\nerror[E0425]: unknown\n   --> src/fun_b.rs:2:1\n    |\n2   | y";
+        let error = anyhow::anyhow!("{}", error_msg);
+        let result = collect_fix_files(feature, &rs_file, &error);
+
+        // rs_file should be present and at index 0
+        assert!(
+            result.iter().any(|f| f.ends_with("var_main.rs")),
+            "var_main.rs should be in results: {result:?}"
+        );
+        assert!(
+            result[0].ends_with("var_main.rs"),
+            "var_main.rs should be first: {result:?}"
+        );
     }
 }
