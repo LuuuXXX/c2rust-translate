@@ -396,9 +396,8 @@ fn handle_max_fix_attempts_reached(
             "Build failed after {} fix attempts for file {}",
             max_fix_attempts, file_name
         )),
-        interaction::FailureChoice::RetryBuild
-        | interaction::FailureChoice::FixOtherFile => {
-            unreachable!("RetryBuild and FixOtherFile are not offered in this context")
+        interaction::FailureChoice::FixOtherFile => {
+            unreachable!("FixOtherFile is not offered in this context")
         }
     }
 }
@@ -633,8 +632,7 @@ fn handle_manual_fix(
                             }
                             interaction::FailureChoice::RetryDirectly
                             | interaction::FailureChoice::AddSuggestion
-                            | interaction::FailureChoice::Skip
-                            | interaction::FailureChoice::RetryBuild => {
+                            | interaction::FailureChoice::Skip => {
                                 return Err(e).context(
                                     "手动修复处理中出现意外选项 - 此上下文仅支持 ManualFix、FixOtherFile 和 Exit",
                                 );

@@ -424,8 +424,7 @@ pub(crate) fn handle_startup_test_failure_with_files(
                                                 }
                                                 interaction::FailureChoice::RetryDirectly
                                                 | interaction::FailureChoice::AddSuggestion
-                                                | interaction::FailureChoice::Skip
-                                                | interaction::FailureChoice::RetryBuild => {
+                                                | interaction::FailureChoice::Skip => {
                                                     unreachable!(
                                                         "此选项在此上下文中不受支持"
                                                     )
@@ -454,9 +453,8 @@ pub(crate) fn handle_startup_test_failure_with_files(
             }
             interaction::FailureChoice::RetryDirectly
             | interaction::FailureChoice::AddSuggestion
-            | interaction::FailureChoice::RetryBuild
             | interaction::FailureChoice::FixOtherFile => {
-                unreachable!("RetryDirectly, AddSuggestion, RetryBuild and FixOtherFile are not supported in this context")
+                unreachable!("RetryDirectly, AddSuggestion and FixOtherFile are not supported in this context")
             }
         }
     } // 循环结束
