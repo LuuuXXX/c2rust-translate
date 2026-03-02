@@ -79,7 +79,7 @@ pub fn execute_hybrid_build_check(feature: &str) -> Result<()> {
 
 /// 公共任务4：执行翻译任务
 ///
-/// 调用 translate_file 执行 C 到 Rust 的翻译
+/// 调用 `translator::translate_c_to_rust` 执行 C 到 Rust 的翻译
 pub fn execute_translation_task<F>(
     feature: &str,
     file_type: &str,
