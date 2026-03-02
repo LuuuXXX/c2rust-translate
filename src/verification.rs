@@ -381,7 +381,9 @@ fn handle_max_fix_attempts_reached(
             max_fix_attempts,
             show_full_output,
         ),
-        interaction::FailureChoice::ManualFix => handle_manual_fix(feature, file_type, rs_file),
+        interaction::FailureChoice::ManualFix => {
+            handle_manual_fix(feature, file_type, rs_file, &build_error)
+        }
         interaction::FailureChoice::Skip => {
             println!("│ {}", "You chose: Skip this file".bright_cyan());
             println!(
@@ -535,17 +537,40 @@ fn handle_add_suggestion(
     }
 }
 
+/// 从错误消息中提取手动修复所需的文件列表，rs_file 始终包含在内
+fn collect_fix_files(
+    feature: &str,
+    rs_file: &Path,
+    error: &anyhow::Error,
+) -> Vec<std::path::PathBuf> {
+    let error_str = error.to_string();
+    let mut files =
+        crate::error_handler::parse_error_for_files(&error_str, feature).unwrap_or_default();
+    let canonical_rs = rs_file.canonicalize().ok();
+    let already_present = match &canonical_rs {
+        Some(c) => files.contains(c),
+        None => files.iter().any(|f| f == rs_file),
+    };
+    if !already_present {
+        let to_insert = canonical_rs.unwrap_or_else(|| rs_file.to_path_buf());
+        files.insert(0, to_insert);
+    }
+    files
+}
+
 /// 处理手动修复选项
 fn handle_manual_fix(
     feature: &str,
     file_type: &str,
     rs_file: &Path,
+    build_error: &anyhow::Error,
 ) -> Result<(bool, usize, bool)> {
     println!("│");
     println!("│ {}", "You chose: Manual fix".bright_cyan());
 
-    // 尝试打开 vim
-    match interaction::open_in_vim(rs_file) {
+    // 尝试打开文件（多文件时展示选择界面）
+    match interaction::open_files_for_manual_fix(&collect_fix_files(feature, rs_file, build_error))
+    {
         Ok(_) => {
             // Vim 编辑后，重复尝试构建并允许用户决定是重试还是退出
             loop {
@@ -595,7 +620,10 @@ fn handle_manual_fix(
                                     "Opening Vim again for another manual fix attempt..."
                                         .bright_cyan()
                                 );
-                                interaction::open_in_vim(rs_file)?;
+                                // 根据新的错误消息重新提取涉及的文件列表
+                                interaction::open_files_for_manual_fix(&collect_fix_files(
+                                    feature, rs_file, &e,
+                                ))?;
                             }
                             interaction::FailureChoice::Exit => {
                                 return Err(e).context(format!(
