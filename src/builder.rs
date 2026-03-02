@@ -699,9 +699,10 @@ pub(crate) fn handle_build_failure_interactive(
                                                         current_error = e;
                                                         continue;
                                                     }
-                                                    interaction::FailureChoice::Skip => {
+                                                    interaction::FailureChoice::Skip
+                                                    | interaction::FailureChoice::RetryBuild => {
                                                         unreachable!(
-                                                            "Skip is not offered in this context"
+                                                            "Skip and RetryBuild are not offered in this context"
                                                         )
                                                     }
                                                     interaction::FailureChoice::Exit => {
@@ -726,8 +727,9 @@ pub(crate) fn handle_build_failure_interactive(
                                     }
                                 }
                             }
-                            interaction::FailureChoice::Skip => {
-                                unreachable!("Skip is not offered in this context")
+                            interaction::FailureChoice::Skip
+                            | interaction::FailureChoice::RetryBuild => {
+                                unreachable!("Skip and RetryBuild are not offered in this context")
                             }
                             interaction::FailureChoice::Exit => {
                                 return Err(current_error)
@@ -803,8 +805,9 @@ pub(crate) fn handle_build_failure_interactive(
                                             feature, file_type, rs_file, e,
                                         );
                                     }
-                                    interaction::FailureChoice::Skip => {
-                                        unreachable!("Skip is not offered in this context")
+                                    interaction::FailureChoice::Skip
+                                    | interaction::FailureChoice::RetryBuild => {
+                                        unreachable!("Skip and RetryBuild are not offered in this context")
                                     }
                                     interaction::FailureChoice::Exit => {
                                         return Err(e).context(
@@ -826,7 +829,10 @@ pub(crate) fn handle_build_failure_interactive(
                 }
             }
         }
-        interaction::FailureChoice::Skip => unreachable!("Skip is not offered in this context"),
+        interaction::FailureChoice::Skip
+        | interaction::FailureChoice::RetryBuild => {
+            unreachable!("Skip and RetryBuild are not offered in this context")
+        }
         interaction::FailureChoice::Exit => {
             println!("│");
             println!("│ {}", "You chose: Exit".yellow());
@@ -1037,8 +1043,9 @@ pub(crate) fn handle_test_failure_interactive(
                                     }
                                 }
                             }
-                            interaction::FailureChoice::Skip => {
-                                unreachable!("Skip is not offered in this context")
+                            interaction::FailureChoice::Skip
+                            | interaction::FailureChoice::RetryBuild => {
+                                unreachable!("Skip and RetryBuild are not offered in this context")
                             }
                             interaction::FailureChoice::Exit => {
                                 return Err(current_error)
@@ -1107,8 +1114,9 @@ pub(crate) fn handle_test_failure_interactive(
                                         );
                                         return Err(e).context("Tests still failing after manual fix; user chose to add a suggestion");
                                     }
-                                    interaction::FailureChoice::Skip => {
-                                        unreachable!("Skip is not offered in this context")
+                                    interaction::FailureChoice::Skip
+                                    | interaction::FailureChoice::RetryBuild => {
+                                        unreachable!("Skip and RetryBuild are not offered in this context")
                                     }
                                     interaction::FailureChoice::Exit => {
                                         return Err(e).context(
@@ -1130,7 +1138,10 @@ pub(crate) fn handle_test_failure_interactive(
                 }
             }
         }
-        interaction::FailureChoice::Skip => unreachable!("Skip is not offered in this context"),
+        interaction::FailureChoice::Skip
+        | interaction::FailureChoice::RetryBuild => {
+            unreachable!("Skip and RetryBuild are not offered in this context")
+        }
         interaction::FailureChoice::Exit => {
             println!("│");
             println!("│ {}", "You chose: Exit".yellow());

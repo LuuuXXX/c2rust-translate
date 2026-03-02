@@ -394,6 +394,9 @@ fn handle_max_fix_attempts_reached(
             "Build failed after {} fix attempts for file {}",
             max_fix_attempts, file_name
         )),
+        interaction::FailureChoice::RetryBuild => {
+            unreachable!("RetryBuild is not offered in this context")
+        }
     }
 }
 
@@ -578,7 +581,7 @@ fn handle_manual_fix(
                         let retry_choice = interaction::prompt_after_manual_fix_choice()?;
 
                         match retry_choice {
-                            interaction::FailureChoice::Skip => {
+                            interaction::FailureChoice::RetryBuild => {
                                 // 用户选择继续尝试，不再强制重新打开 Vim，直接在下一轮循环中重试构建和测试
                                 println!(
                                     "│ {}",
@@ -601,9 +604,10 @@ fn handle_manual_fix(
                                 ));
                             }
                             interaction::FailureChoice::RetryDirectly
-                            | interaction::FailureChoice::AddSuggestion => {
+                            | interaction::FailureChoice::AddSuggestion
+                            | interaction::FailureChoice::Skip => {
                                 return Err(e).context(
-                                    "手动修复处理中出现意外选项 - 此上下文仅支持 ManualFix、Skip 和 Exit",
+                                    "手动修复处理中出现意外选项 - 此上下文仅支持 RetryBuild、ManualFix 和 Exit",
                                 );
                             }
                         }

@@ -79,21 +79,12 @@ pub fn execute_code_warning_check(feature: &str, show_full_output: bool) -> Resu
 
 /// 公共任务3：执行混合构建检查
 ///
-/// 流程：
+/// 流程（仅执行一次代码分析）：
 /// 1. 执行混合构建清除命令
 /// 2. 执行混合构建构建命令
 /// 3. 执行混合构建测试命令
 pub fn execute_hybrid_build_check(feature: &str) -> Result<()> {
-    hybrid_build::execute_hybrid_build_command(feature, hybrid_build::HybridCommandType::Clean)
-        .context("混合构建清除失败")?;
-
-    hybrid_build::execute_hybrid_build_command(feature, hybrid_build::HybridCommandType::Build)
-        .context("混合构建失败")?;
-
-    hybrid_build::execute_hybrid_build_command(feature, hybrid_build::HybridCommandType::Test)
-        .context("混合构建测试失败")?;
-
-    Ok(())
+    hybrid_build::execute_hybrid_build_sequence(feature).context("混合构建检查失败")
 }
 
 /// 公共任务4：执行翻译任务

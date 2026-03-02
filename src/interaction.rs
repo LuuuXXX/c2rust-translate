@@ -48,6 +48,7 @@ pub enum FailureChoice {
     AddSuggestion, // 添加建议后重试
     ManualFix,     // 手动修复
     Skip,          // 跳过当前文件
+    RetryBuild,    // 重试构建（不重新打开编辑器）
     Exit,          // 退出
 }
 
@@ -130,7 +131,7 @@ pub fn prompt_after_manual_fix_choice() -> Result<FailureChoice> {
         .context("Unexpected selection value")?;
 
     match choice_index {
-        0 => Ok(FailureChoice::Skip), // Skip = "retry build without reopening editor"
+        0 => Ok(FailureChoice::RetryBuild),
         1 => Ok(FailureChoice::ManualFix),
         2 => Ok(FailureChoice::Exit),
         _ => unreachable!("Invalid selection index"),
@@ -504,10 +505,12 @@ mod tests {
         assert_eq!(FailureChoice::AddSuggestion, FailureChoice::AddSuggestion);
         assert_eq!(FailureChoice::ManualFix, FailureChoice::ManualFix);
         assert_eq!(FailureChoice::Skip, FailureChoice::Skip);
+        assert_eq!(FailureChoice::RetryBuild, FailureChoice::RetryBuild);
         assert_eq!(FailureChoice::Exit, FailureChoice::Exit);
         assert_ne!(FailureChoice::RetryDirectly, FailureChoice::Exit);
         assert_ne!(FailureChoice::AddSuggestion, FailureChoice::Exit);
         assert_ne!(FailureChoice::Skip, FailureChoice::Exit);
+        assert_ne!(FailureChoice::RetryBuild, FailureChoice::Skip);
     }
 
     #[test]

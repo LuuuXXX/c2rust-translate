@@ -83,7 +83,27 @@ pub fn execute_hybrid_build_command(feature: &str, command_type: HybridCommandTy
     analyzer::update_code_analysis(feature)?;
     println!("{}", "✓ Code analysis updated".bright_green());
 
-    // 直接获取命令字符串，避免重复调用 get_config_value
+    run_hybrid_command(feature, command_type)
+}
+
+/// 执行混合构建命令序列（clean + build + test），仅更新一次代码分析
+///
+/// 相比于对每个命令分别调用 `execute_hybrid_build_command`，此函数只执行一次
+/// `analyzer::update_code_analysis`，避免重复分析开销。
+pub fn execute_hybrid_build_sequence(feature: &str) -> Result<()> {
+    util::validate_feature_name(feature)?;
+
+    println!("{}", "Updating code analysis...".bright_blue());
+    analyzer::update_code_analysis(feature)?;
+    println!("{}", "✓ Code analysis updated".bright_green());
+
+    run_hybrid_command(feature, HybridCommandType::Clean)?;
+    run_hybrid_command(feature, HybridCommandType::Build)?;
+    run_hybrid_command(feature, HybridCommandType::Test)
+}
+
+/// 执行单个混合构建命令（不更新代码分析）
+fn run_hybrid_command(feature: &str, command_type: HybridCommandType) -> Result<()> {
     let cmd = get_config_value(command_type.cmd_key(), feature)?;
 
     crate::builder::execute_command_in_dir_with_type(

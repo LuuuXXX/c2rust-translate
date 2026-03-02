@@ -368,12 +368,11 @@ pub(crate) fn handle_startup_test_failure_with_files(
                                             // 没有更多文件需要处理，询问用户是否想再试一次
                                             println!("│");
                                             println!("│ {}", "Build or tests still have errors. What would you like to do?".yellow());
-                                            let retry_choice = interaction::prompt_failure_choice(
-                                                "Build/tests still failing",
-                                            )?;
+                                            let retry_choice =
+                                                interaction::prompt_after_manual_fix_choice()?;
 
                                             match retry_choice {
-                                                interaction::FailureChoice::Skip => {
+                                                interaction::FailureChoice::RetryBuild => {
                                                     // 只需使用现有更改重试构建
                                                     continue;
                                                 }
@@ -407,9 +406,10 @@ pub(crate) fn handle_startup_test_failure_with_files(
                                                     ));
                                                 }
                                                 interaction::FailureChoice::RetryDirectly
-                                                | interaction::FailureChoice::AddSuggestion => {
+                                                | interaction::FailureChoice::AddSuggestion
+                                                | interaction::FailureChoice::Skip => {
                                                     unreachable!(
-                                                        "RetryDirectly 和 AddSuggestion 在此上下文中不受支持"
+                                                        "此选项在此上下文中不受支持"
                                                     )
                                                 }
                                             }
@@ -435,8 +435,9 @@ pub(crate) fn handle_startup_test_failure_with_files(
                     .context("User chose to exit during startup test failure handling");
             }
             interaction::FailureChoice::RetryDirectly
-            | interaction::FailureChoice::AddSuggestion => {
-                unreachable!("RetryDirectly and AddSuggestion are not supported in this context")
+            | interaction::FailureChoice::AddSuggestion
+            | interaction::FailureChoice::RetryBuild => {
+                unreachable!("RetryDirectly, AddSuggestion and RetryBuild are not supported in this context")
             }
         }
     } // 循环结束
