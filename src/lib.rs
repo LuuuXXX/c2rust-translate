@@ -594,7 +594,7 @@ fn process_rs_file(
                 println!("│");
                 println!(
                     "│ {}",
-                    "Phase 2: Warning processing skipped (C2RUST_PROCESS_WARNINGS=0)."
+                    "Phase 2: Warning processing skipped (C2RUST_PROCESS_WARNINGS=0/false)."
                         .bright_yellow()
                 );
             }
@@ -1072,50 +1072,70 @@ where
 mod tests {
     use super::*;
 
+    struct EnvGuard {
+        key: &'static str,
+        prior: Option<String>,
+    }
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let prior = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, prior }
+        }
+        fn remove(key: &'static str) -> Self {
+            let prior = std::env::var(key).ok();
+            std::env::remove_var(key);
+            Self { key, prior }
+        }
+    }
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.prior {
+                Some(v) => std::env::set_var(self.key, v),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
+
     #[test]
     #[serial_test::serial]
     fn test_should_process_warnings_default() {
-        std::env::remove_var("C2RUST_PROCESS_WARNINGS");
+        let _guard = EnvGuard::remove("C2RUST_PROCESS_WARNINGS");
         assert!(should_process_warnings());
     }
 
     #[test]
     #[serial_test::serial]
     fn test_should_process_warnings_disabled_with_zero() {
-        std::env::set_var("C2RUST_PROCESS_WARNINGS", "0");
+        let _guard = EnvGuard::set("C2RUST_PROCESS_WARNINGS", "0");
         assert!(!should_process_warnings());
-        std::env::remove_var("C2RUST_PROCESS_WARNINGS");
     }
 
     #[test]
     #[serial_test::serial]
     fn test_should_process_warnings_disabled_with_false() {
-        std::env::set_var("C2RUST_PROCESS_WARNINGS", "false");
+        let _guard = EnvGuard::set("C2RUST_PROCESS_WARNINGS", "false");
         assert!(!should_process_warnings());
-        std::env::remove_var("C2RUST_PROCESS_WARNINGS");
     }
 
     #[test]
     #[serial_test::serial]
     fn test_should_process_warnings_disabled_with_false_uppercase() {
-        std::env::set_var("C2RUST_PROCESS_WARNINGS", "FALSE");
+        let _guard = EnvGuard::set("C2RUST_PROCESS_WARNINGS", "FALSE");
         assert!(!should_process_warnings());
-        std::env::remove_var("C2RUST_PROCESS_WARNINGS");
     }
 
     #[test]
     #[serial_test::serial]
     fn test_should_process_warnings_enabled_with_one() {
-        std::env::set_var("C2RUST_PROCESS_WARNINGS", "1");
+        let _guard = EnvGuard::set("C2RUST_PROCESS_WARNINGS", "1");
         assert!(should_process_warnings());
-        std::env::remove_var("C2RUST_PROCESS_WARNINGS");
     }
 
     #[test]
     #[serial_test::serial]
     fn test_should_process_warnings_enabled_with_true() {
-        std::env::set_var("C2RUST_PROCESS_WARNINGS", "true");
+        let _guard = EnvGuard::set("C2RUST_PROCESS_WARNINGS", "true");
         assert!(should_process_warnings());
-        std::env::remove_var("C2RUST_PROCESS_WARNINGS");
     }
 }
