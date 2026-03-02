@@ -221,7 +221,26 @@ pub fn open_in_vim(file_path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// 提示用户选择要编辑的文件
+/// 将 MultiSelect 返回的选项字符串（形如 "1: /path/to/file"）映射回 PathBuf 列表。
+///
+/// 使用 1-based 索引，任何无法解析或越界的项都返回错误。
+pub fn map_selections_to_files(
+    selections: &[String],
+    files: &[std::path::PathBuf],
+) -> Result<Vec<std::path::PathBuf>> {
+    let mut result = Vec::with_capacity(selections.len());
+    for s in selections {
+        let idx = s
+            .split_once(": ")
+            .and_then(|(idx_str, _)| idx_str.parse::<usize>().ok())
+            .filter(|&i| i >= 1 && i <= files.len())
+            .ok_or_else(|| anyhow::anyhow!("无法解析文件选项: {:?}", s))?;
+        result.push(files[idx - 1].clone());
+    }
+    Ok(result)
+}
+
+/// 提示用户选择要编辑的文件（1-based 编号展示）
 pub fn prompt_file_selection_for_edit(
     files: &[std::path::PathBuf],
 ) -> Result<Vec<std::path::PathBuf>> {
@@ -231,7 +250,7 @@ pub fn prompt_file_selection_for_edit(
     let options: Vec<String> = files
         .iter()
         .enumerate()
-        .map(|(i, f)| format!("{}: {}", i, f.display()))
+        .map(|(i, f)| format!("{}: {}", i + 1, f.display()))
         .collect();
 
     let selections = inquire::MultiSelect::new("文件:", options)
@@ -239,15 +258,7 @@ pub fn prompt_file_selection_for_edit(
         .prompt()
         .context("Failed to get file selection")?;
 
-    let selected_files: Vec<std::path::PathBuf> = selections
-        .iter()
-        .filter_map(|s| {
-            s.split_once(": ")
-                .and_then(|(idx_str, _)| idx_str.parse::<usize>().ok())
-                .and_then(|i| files.get(i))
-                .cloned()
-        })
-        .collect();
+    let selected_files = map_selections_to_files(&selections, files)?;
 
     if selected_files.is_empty() {
         anyhow::bail!("未选择任何文件");
@@ -543,5 +554,61 @@ mod tests {
 
         // 清理 - 确保下次测试时禁用
         disable_auto_accept_mode();
+    }
+
+    #[test]
+    fn test_map_selections_to_files_normal() {
+        let files = vec![
+            std::path::PathBuf::from("/a/foo.rs"),
+            std::path::PathBuf::from("/b/bar.rs"),
+            std::path::PathBuf::from("/c/baz.rs"),
+        ];
+        let selections = vec!["1: /a/foo.rs".to_string(), "3: /c/baz.rs".to_string()];
+        let result = map_selections_to_files(&selections, &files).unwrap();
+        assert_eq!(result, vec![files[0].clone(), files[2].clone()]);
+    }
+
+    #[test]
+    fn test_map_selections_to_files_duplicate_paths() {
+        // 两个不同索引但路径相同的文件都应正确回填
+        let files = vec![
+            std::path::PathBuf::from("/dup.rs"),
+            std::path::PathBuf::from("/dup.rs"),
+        ];
+        let selections = vec!["1: /dup.rs".to_string(), "2: /dup.rs".to_string()];
+        let result = map_selections_to_files(&selections, &files).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0], files[0]);
+        assert_eq!(result[1], files[1]);
+    }
+
+    #[test]
+    fn test_map_selections_to_files_invalid_string() {
+        let files = vec![std::path::PathBuf::from("/a/foo.rs")];
+        let selections = vec!["no_colon_here".to_string()];
+        assert!(map_selections_to_files(&selections, &files).is_err());
+    }
+
+    #[test]
+    fn test_map_selections_to_files_zero_index() {
+        // 0 is out of valid 1-based range
+        let files = vec![std::path::PathBuf::from("/a/foo.rs")];
+        let selections = vec!["0: /a/foo.rs".to_string()];
+        assert!(map_selections_to_files(&selections, &files).is_err());
+    }
+
+    #[test]
+    fn test_map_selections_to_files_out_of_bounds() {
+        let files = vec![std::path::PathBuf::from("/a/foo.rs")];
+        let selections = vec!["5: /a/foo.rs".to_string()];
+        assert!(map_selections_to_files(&selections, &files).is_err());
+    }
+
+    #[test]
+    fn test_map_selections_to_files_empty_selections() {
+        let files = vec![std::path::PathBuf::from("/a/foo.rs")];
+        let selections: Vec<String> = vec![];
+        let result = map_selections_to_files(&selections, &files).unwrap();
+        assert!(result.is_empty());
     }
 }
