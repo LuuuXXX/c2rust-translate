@@ -587,17 +587,15 @@ fn handle_manual_fix(
 
                         // 从新的错误中提取涉及的文件列表
                         let fix_files = collect_fix_files(feature, rs_file, &e);
-                        if !fix_files.is_empty() {
-                            println!("│");
-                            println!(
-                                "│ {}",
-                                format!("Found {} file(s) with errors:", fix_files.len())
-                                    .bright_yellow()
-                                    .bold()
-                            );
-                            for (idx, file) in fix_files.iter().enumerate() {
-                                println!("│   {}. {}", idx + 1, file.display());
-                            }
+                        println!("│");
+                        println!(
+                            "│ {}",
+                            format!("Found {} file(s) with errors:", fix_files.len())
+                                .bright_yellow()
+                                .bold()
+                        );
+                        for (idx, file) in fix_files.iter().enumerate() {
+                            println!("│   {}. {}", idx + 1, file.display());
                         }
 
                         // 询问用户是否想再试一次

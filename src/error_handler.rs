@@ -379,6 +379,7 @@ pub(crate) fn handle_startup_test_failure_with_files(
                                             for (idx, f) in files.iter().enumerate() {
                                                 println!("│   {}. {}", idx + 1, f.display());
                                             }
+                                            println!("│");
                                             println!("│ {}", "Build or tests still have errors. What would you like to do?".yellow());
                                             let retry_choice =
                                                 interaction::prompt_after_manual_fix_choice()?;
