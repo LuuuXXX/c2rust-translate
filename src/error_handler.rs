@@ -329,8 +329,8 @@ pub(crate) fn handle_startup_test_failure_with_files(
                 println!("│");
                 println!("│ {}", "You chose: Manual fix".bright_cyan());
 
-                // 尝试打开 vim
-                match interaction::open_in_vim(file) {
+                // 尝试打开 vim（支持多文件选择）
+                match interaction::open_files_for_manual_fix(&files) {
                     Ok(_) => {
                         // Vim 编辑后，重复尝试构建和测试
                         loop {
@@ -378,7 +378,7 @@ pub(crate) fn handle_startup_test_failure_with_files(
                                                 }
                                                 interaction::FailureChoice::ManualFix => {
                                                     println!("│ {}", "Reopening file in Vim for additional manual fixes...".bright_blue());
-                                                    match interaction::open_in_vim(file) {
+                                                    match interaction::open_files_for_manual_fix(&files) {
                                                         Ok(_) => {
                                                             // 循环将重试构建
                                                             continue;
