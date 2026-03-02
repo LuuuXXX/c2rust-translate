@@ -608,14 +608,6 @@ fn handle_manual_fix(
                         let retry_choice = interaction::prompt_after_manual_fix_choice()?;
 
                         match retry_choice {
-                            interaction::FailureChoice::RetryBuild => {
-                                // 用户选择继续尝试，不再强制重新打开 Vim，直接在下一轮循环中重试构建和测试
-                                println!(
-                                    "│ {}",
-                                    "Retrying build and tests without reopening the editor..."
-                                        .bright_cyan()
-                                );
-                            }
                             interaction::FailureChoice::ManualFix => {
                                 println!(
                                     "│ {}",
@@ -641,9 +633,10 @@ fn handle_manual_fix(
                             }
                             interaction::FailureChoice::RetryDirectly
                             | interaction::FailureChoice::AddSuggestion
-                            | interaction::FailureChoice::Skip => {
+                            | interaction::FailureChoice::Skip
+                            | interaction::FailureChoice::RetryBuild => {
                                 return Err(e).context(
-                                    "手动修复处理中出现意外选项 - 此上下文仅支持 RetryBuild、ManualFix 和 Exit",
+                                    "手动修复处理中出现意外选项 - 此上下文仅支持 ManualFix、FixOtherFile 和 Exit",
                                 );
                             }
                         }

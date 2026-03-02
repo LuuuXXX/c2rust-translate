@@ -385,10 +385,6 @@ pub(crate) fn handle_startup_test_failure_with_files(
                                                 interaction::prompt_after_manual_fix_choice()?;
 
                                             match retry_choice {
-                                                interaction::FailureChoice::RetryBuild => {
-                                                    // 只需使用现有更改重试构建
-                                                    continue;
-                                                }
                                                 interaction::FailureChoice::ManualFix => {
                                                     println!("│ {}", "Reopening file in Vim for additional manual fixes...".bright_blue());
                                                     match interaction::open_files_for_manual_fix(&files) {
@@ -428,7 +424,8 @@ pub(crate) fn handle_startup_test_failure_with_files(
                                                 }
                                                 interaction::FailureChoice::RetryDirectly
                                                 | interaction::FailureChoice::AddSuggestion
-                                                | interaction::FailureChoice::Skip => {
+                                                | interaction::FailureChoice::Skip
+                                                | interaction::FailureChoice::RetryBuild => {
                                                     unreachable!(
                                                         "此选项在此上下文中不受支持"
                                                     )
