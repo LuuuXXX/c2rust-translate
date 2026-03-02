@@ -604,7 +604,7 @@ fn handle_manual_fix(
                             interaction::FailureChoice::RetryDirectly
                             | interaction::FailureChoice::AddSuggestion => {
                                 return Err(e).context(
-                                    "Unexpected choice in manual fix handling - only ManualFix, Skip, and Exit are supported in this context",
+                                    "手动修复处理中出现意外选项 - 此上下文仅支持 ManualFix、Skip 和 Exit",
                                 );
                             }
                         }

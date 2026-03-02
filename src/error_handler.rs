@@ -409,7 +409,7 @@ pub(crate) fn handle_startup_test_failure_with_files(
                                                 interaction::FailureChoice::RetryDirectly
                                                 | interaction::FailureChoice::AddSuggestion => {
                                                     unreachable!(
-                                                        "RetryDirectly and AddSuggestion are not supported in this context"
+                                                        "RetryDirectly 和 AddSuggestion 在此上下文中不受支持"
                                                     )
                                                 }
                                             }

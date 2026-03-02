@@ -82,7 +82,7 @@ pub fn prompt_failure_choice(context: &str) -> Result<FailureChoice> {
         "退出（中止流程）",
     ];
 
-    let choice = Select::new("选择一个选项:", options.clone())
+    let choice = Select::new("请选择处理方式:", options.clone())
         .with_vim_mode(true)
         .prompt()
         .context("Failed to get user selection")?;
