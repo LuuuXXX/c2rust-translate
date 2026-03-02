@@ -47,7 +47,7 @@ pub enum FailureChoice {
     RetryDirectly, // 直接重试不输入建议
     AddSuggestion, // 添加建议后重试
     ManualFix,     // 手动修复
-    Skip,          // 跳过当前文件
+    Skip,          // 忽略本次失败，跳过当前步骤继续流程
     RetryBuild,    // 重试构建（不重新打开编辑器）
     Exit,          // 退出
 }
@@ -228,9 +228,13 @@ pub fn prompt_file_selection_for_edit(
     println!("│ {}", "选择要编辑的文件:".bright_cyan().bold());
     println!("│ {}", "  （使用空格选择，回车确认）".bright_blue());
 
-    let file_names: Vec<String> = files.iter().map(|f| f.display().to_string()).collect();
+    let options: Vec<String> = files
+        .iter()
+        .enumerate()
+        .map(|(i, f)| format!("{}: {}", i, f.display()))
+        .collect();
 
-    let selections = inquire::MultiSelect::new("文件:", file_names.clone())
+    let selections = inquire::MultiSelect::new("文件:", options)
         .with_vim_mode(true)
         .prompt()
         .context("Failed to get file selection")?;
@@ -238,10 +242,10 @@ pub fn prompt_file_selection_for_edit(
     let selected_files: Vec<std::path::PathBuf> = selections
         .iter()
         .filter_map(|s| {
-            file_names
-                .iter()
-                .position(|f| f == s)
-                .map(|i| files[i].clone())
+            s.split_once(": ")
+                .and_then(|(idx_str, _)| idx_str.parse::<usize>().ok())
+                .and_then(|i| files.get(i))
+                .cloned()
         })
         .collect();
 

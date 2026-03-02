@@ -1184,7 +1184,7 @@ pub fn run_full_build_and_test_interactive(
     println!("│ {}", "Updating code analysis...".bright_blue());
     analyzer::update_code_analysis(feature)?;
     println!("│ {}", "✓ Code analysis updated".bright_green());
-    match cargo_build(feature, true, true) {
+    match cargo_build(feature, true, false) {
         Ok(_) => {
             println!("│ {}", "  ✓ Rust build successful".bright_green());
         }
