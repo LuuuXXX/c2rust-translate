@@ -54,7 +54,7 @@ pub fn translate_feature(
     // Step 1: Initialize feature directory
     step_1_initialize(feature)?;
 
-    // Step 2: Run gate verification
+    // Step 2: Run initial verification
     step_2_initial_verification(feature, show_full_output)?;
 
     // Step 2.5: Check and load previous translation stats

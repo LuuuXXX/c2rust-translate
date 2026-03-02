@@ -68,7 +68,7 @@ pub enum ContinueChoice {
 
 /// 统一的失败场景提示函数
 ///
-/// 根据上下文提供合适的选项
+/// 在失败时提示并返回 ManualFix/Skip/Exit（上下文仅用于展示提示信息）
 pub fn prompt_failure_choice(context: &str) -> Result<FailureChoice> {
     println!("│");
     println!(

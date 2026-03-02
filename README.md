@@ -63,16 +63,14 @@
 
 ### 1. 代码错误检查
 包含以下步骤：
-- 更新代码分析
 - 执行 cargo build（抑制警告）
-- 执行混合构建检查（clean + build + test）
+- 执行混合构建检查（clean + build + test，内部会更新代码分析）
 - 提交到 git
 
 ### 2. 代码告警检查
 包含以下步骤：
-- 更新代码分析
 - 执行 cargo build（显示警告）
-- 执行混合构建检查（clean + build + test）
+- 执行混合构建检查（clean + build + test，内部会更新代码分析）
 - 提交到 git
 
 ### 3. 混合构建检查
