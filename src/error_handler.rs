@@ -367,6 +367,19 @@ pub(crate) fn handle_startup_test_failure_with_files(
                                         _ => {
                                             // 没有更多文件需要处理，询问用户是否想再试一次
                                             println!("│");
+                                            println!(
+                                                "│ {}",
+                                                format!(
+                                                    "Current file(s) being processed ({}):",
+                                                    files.len()
+                                                )
+                                                .bright_yellow()
+                                                .bold()
+                                            );
+                                            for (idx, f) in files.iter().enumerate() {
+                                                println!("│   {}. {}", idx + 1, f.display());
+                                            }
+                                            println!("│");
                                             println!("│ {}", "Build or tests still have errors. What would you like to do?".yellow());
                                             let retry_choice =
                                                 interaction::prompt_after_manual_fix_choice()?;

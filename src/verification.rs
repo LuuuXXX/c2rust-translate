@@ -585,6 +585,19 @@ fn handle_manual_fix(
                             "✗ Build or tests still failing after manual fix".red()
                         );
 
+                        // 从新的错误中提取涉及的文件列表
+                        let fix_files = collect_fix_files(feature, rs_file, &e);
+                        println!("│");
+                        println!(
+                            "│ {}",
+                            format!("Found {} file(s) with errors:", fix_files.len())
+                                .bright_yellow()
+                                .bold()
+                        );
+                        for (idx, file) in fix_files.iter().enumerate() {
+                            println!("│   {}. {}", idx + 1, file.display());
+                        }
+
                         // 询问用户是否想再试一次
                         println!("│");
                         println!(
@@ -608,10 +621,8 @@ fn handle_manual_fix(
                                     "Opening Vim again for another manual fix attempt..."
                                         .bright_cyan()
                                 );
-                                // 根据新的错误消息重新提取涉及的文件列表
-                                interaction::open_files_for_manual_fix(&collect_fix_files(
-                                    feature, rs_file, &e,
-                                ))?;
+                                // 使用已提取的文件列表（不重新解析）
+                                interaction::open_files_for_manual_fix(&fix_files)?;
                             }
                             interaction::FailureChoice::Exit => {
                                 return Err(e).context(format!(
