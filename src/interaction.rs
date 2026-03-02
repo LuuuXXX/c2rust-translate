@@ -224,7 +224,7 @@ pub fn open_in_vim(file_path: &Path) -> Result<()> {
 /// 为手动修复打开一个或多个文件
 ///
 /// 如果只有一个文件，直接在 vim 中打开（保持原有行为）。
-/// 如果有多个文件，展示文件选择列表供用户选择，然后依次打开所选文件。
+/// 如果有多个文件，展示文件选择列表供用户选择，然后打开所选文件。
 pub fn open_files_for_manual_fix(files: &[std::path::PathBuf]) -> Result<()> {
     match files.len() {
         0 => anyhow::bail!("No files provided for manual fix"),
@@ -234,24 +234,22 @@ pub fn open_files_for_manual_fix(files: &[std::path::PathBuf]) -> Result<()> {
             println!(
                 "│ {}",
                 format!(
-                    "⚠ Error involves {} files. Select file(s) to edit:",
+                    "⚠ Error involves {} files. Select a file to edit:",
                     files.len()
                 )
                 .bright_yellow()
                 .bold()
             );
             let selected = prompt_file_selection_for_edit(files)?;
-            for file in &selected {
-                open_in_vim(file)?;
-            }
-            Ok(())
+            open_in_vim(&selected)
         }
     }
 }
 
-/// 将 MultiSelect 返回的选项字符串（形如 "1: /path/to/file"）映射回 PathBuf 列表。
+/// 将选项字符串（形如 "1: /path/to/file"）映射回 PathBuf 列表。
 ///
 /// 使用 1-based 索引，任何无法解析或越界的项都返回错误。
+#[cfg(test)]
 pub fn map_selections_to_files(
     selections: &[String],
     files: &[std::path::PathBuf],
@@ -271,9 +269,9 @@ pub fn map_selections_to_files(
 /// 提示用户选择要编辑的文件（1-based 编号展示）
 pub fn prompt_file_selection_for_edit(
     files: &[std::path::PathBuf],
-) -> Result<Vec<std::path::PathBuf>> {
+) -> Result<std::path::PathBuf> {
     println!("│ {}", "选择要编辑的文件:".bright_cyan().bold());
-    println!("│ {}", "  （使用空格选择，回车确认）".bright_blue());
+    println!("│ {}", "  （使用上下键选择，回车确认）".bright_blue());
 
     let options: Vec<String> = files
         .iter()
@@ -281,18 +279,25 @@ pub fn prompt_file_selection_for_edit(
         .map(|(i, f)| format!("{}: {}", i + 1, f.display()))
         .collect();
 
-    let selections = inquire::MultiSelect::new("文件:", options)
+    let selection = inquire::Select::new("文件:", options)
         .with_vim_mode(true)
         .prompt()
         .context("Failed to get file selection")?;
 
-    let selected_files = map_selections_to_files(&selections, files)?;
+    let idx = {
+        let (idx_str, _) = selection
+            .split_once(": ")
+            .ok_or_else(|| anyhow::anyhow!("无法解析文件选项，缺少分隔符: {:?}", selection))?;
+        let i: usize = idx_str
+            .parse()
+            .with_context(|| format!("无法将 {:?} 解析为索引数字", idx_str))?;
+        if i < 1 || i > files.len() {
+            anyhow::bail!("文件索引 {} 超出范围 (有效范围: 1-{})", i, files.len());
+        }
+        i
+    };
 
-    if selected_files.is_empty() {
-        anyhow::bail!("未选择任何文件");
-    }
-
-    Ok(selected_files)
+    Ok(files[idx - 1].clone())
 }
 
 /// 显示多个文件路径

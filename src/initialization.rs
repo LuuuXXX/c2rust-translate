@@ -26,10 +26,8 @@ fn open_failing_files_from_error(error_text: &str, feature: &str) -> Result<bool
         }
         println!("│");
 
-        let selected_files = interaction::prompt_file_selection_for_edit(&failing_files)?;
-        for file in selected_files {
-            interaction::open_in_vim(&file)?;
-        }
+        let selected_file = interaction::prompt_file_selection_for_edit(&failing_files)?;
+        interaction::open_in_vim(&selected_file)?;
     } else {
         interaction::open_in_vim(&failing_files[0])?;
     }
