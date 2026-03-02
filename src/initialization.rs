@@ -125,40 +125,59 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool) -> Re
             println!("{}", "✓ 初始化验证完成并已提交".bright_green().bold());
             Ok(())
         }
-        Err(e) => {
-            println!("{}", "✗ 初始化验证失败！".red().bold());
-            println!();
-            println!("{}", "错误详情:".red().bold());
-            println!("{}", format!("{:#}", e).red());
-            println!();
+        Err(mut last_error) => {
+            loop {
+                println!("{}", "✗ 初始化验证失败！".red().bold());
+                println!();
+                println!("{}", "错误详情:".red().bold());
+                println!("{}", format!("{:#}", last_error).red());
+                println!();
 
-            let choice = interaction::prompt_failure_choice("初始化验证失败")?;
+                let choice = interaction::prompt_failure_choice("初始化验证失败")?;
 
-            match choice {
-                interaction::FailureChoice::Skip => {
-                    println!(
-                        "│ {}",
-                        "跳过初始化验证。在文件处理过程中可能会出现问题。".yellow()
-                    );
-                    Ok(())
-                }
-                interaction::FailureChoice::ManualFix => {
-                    let error_text = format!("{:#}", e);
-                    if !open_failing_files_from_error(&error_text, feature)? {
+                match choice {
+                    interaction::FailureChoice::Skip => {
                         println!(
                             "│ {}",
-                            "无法识别要打开的特定文件。请检查上面的错误。".yellow()
+                            "跳过初始化验证。在文件处理过程中可能会出现问题。".yellow()
                         );
-                        return Err(e).context("初始化验证失败 - 未识别到特定文件");
+                        return Ok(());
                     }
-
-                    execute_initial_verification(feature, show_full_output)
-                }
-                interaction::FailureChoice::Exit => Err(e).context("初始化验证失败，用户选择退出"),
-                interaction::FailureChoice::RetryDirectly
-                | interaction::FailureChoice::AddSuggestion => {
-                    println!("│ {}", "此上下文不支持该选项，视为退出".yellow());
-                    Err(e).context("初始化验证失败")
+                    interaction::FailureChoice::ManualFix => {
+                        let error_text = format!("{:#}", last_error);
+                        if !open_failing_files_from_error(&error_text, feature)? {
+                            println!(
+                                "│ {}",
+                                "无法识别要打开的特定文件。请检查上面的错误。".yellow()
+                            );
+                            return Err(last_error).context("初始化验证失败 - 未识别到特定文件");
+                        }
+                        // Re-run the check; on success break out, on failure loop again
+                        match crate::common_tasks::execute_code_error_check(
+                            feature,
+                            show_full_output,
+                        ) {
+                            Ok(_) => {
+                                println!(
+                                    "{}",
+                                    "✓ 初始化验证完成并已提交".bright_green().bold()
+                                );
+                                return Ok(());
+                            }
+                            Err(e) => {
+                                last_error = e;
+                                continue;
+                            }
+                        }
+                    }
+                    interaction::FailureChoice::Exit => {
+                        return Err(last_error).context("初始化验证失败，用户选择退出");
+                    }
+                    interaction::FailureChoice::RetryDirectly
+                    | interaction::FailureChoice::AddSuggestion => {
+                        println!("│ {}", "此上下文不支持该选项，视为退出".yellow());
+                        return Err(last_error).context("初始化验证失败");
+                    }
                 }
             }
         }

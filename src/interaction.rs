@@ -100,7 +100,44 @@ pub fn prompt_failure_choice(context: &str) -> Result<FailureChoice> {
     }
 }
 
-/// 提示用户输入修复建议
+/// 手动修复后仍构建失败时的提示函数
+///
+/// 提供明确的"重试构建"语义，区别于通用的"跳过"选项
+pub fn prompt_after_manual_fix_choice() -> Result<FailureChoice> {
+    println!("│");
+    println!(
+        "│ {}",
+        "⚠ 手动修复后构建/测试仍然失败 - 您想怎么做？"
+            .yellow()
+            .bold()
+    );
+    println!("│");
+
+    let options = vec![
+        "重试构建（使用当前修改，不重新打开编辑器）",
+        "重新手动修复（再次打开 VIM）",
+        "退出（中止流程）",
+    ];
+
+    let choice = Select::new("请选择处理方式:", options.clone())
+        .with_vim_mode(true)
+        .prompt()
+        .context("Failed to get user selection")?;
+
+    let choice_index = options
+        .iter()
+        .position(|&o| o == choice)
+        .context("Unexpected selection value")?;
+
+    match choice_index {
+        0 => Ok(FailureChoice::Skip), // Skip = "retry build without reopening editor"
+        1 => Ok(FailureChoice::ManualFix),
+        2 => Ok(FailureChoice::Exit),
+        _ => unreachable!("Invalid selection index"),
+    }
+}
+
+
 /// 如果 require_input 为 true，用户必须提供非空输入
 pub fn prompt_suggestion(require_input: bool) -> Result<Option<String>> {
     loop {

@@ -4,7 +4,7 @@
 
 ## 版本历史
 
-### v0.3.0（当前版本）
+### v0.2.0（当前版本）
 **重大改进：**
 - 重构代码结构，提取公共任务模块
 - 合并重复的构建函数
@@ -12,8 +12,7 @@
 - 文档全中文化
 - 优化用户交互体验
 
-### v0.2.0
-**破坏性变更：**
+**历史变更：**
 - 移除了文件日志功能模块 (`logger` 模块)
 - 移除了 `chrono` 依赖
 
@@ -90,13 +89,13 @@
 ### 基本使用
 ```bash
 # 翻译指定 feature
-c2rust-translate --feature myfeature
+c2rust-translate translate --feature myfeature
 
 # 自动处理所有文件（不提示）
-c2rust-translate --feature myfeature --allow-all
+c2rust-translate translate --feature myfeature --allow-all
 
 # 显示完整输出
-c2rust-translate --feature myfeature --show-full-output
+c2rust-translate translate --feature myfeature --show-full-output
 ```
 
 ### 工作流程
@@ -168,10 +167,6 @@ cargo clippy
 3. 提交更改 (`git commit -m 'Add some amazing feature'`)
 4. 推送到分支 (`git push origin feature/amazing-feature`)
 5. 打开 Pull Request
-
-## 许可证
-
-本项目采用 MIT 许可证。
 
 ## 联系方式
 

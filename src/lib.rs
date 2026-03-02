@@ -55,7 +55,7 @@ pub fn translate_feature(
     step_1_initialize(feature)?;
 
     // Step 2: Run gate verification
-    step_2_gate_verification(feature, show_full_output)?;
+    step_2_initial_verification(feature, show_full_output)?;
 
     // Step 2.5: Check and load previous translation stats
     let mut stats = step_2_5_load_or_create_stats(feature)?;
@@ -105,8 +105,8 @@ fn step_1_initialize(feature: &str) -> Result<()> {
     initialization::check_and_initialize_feature(feature)
 }
 
-/// Step 2: Run gate verification
-fn step_2_gate_verification(feature: &str, show_full_output: bool) -> Result<()> {
+/// Step 2: Run initial verification
+fn step_2_initial_verification(feature: &str, show_full_output: bool) -> Result<()> {
     initialization::execute_initial_verification(feature, show_full_output)
 }
 

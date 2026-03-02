@@ -575,8 +575,7 @@ fn handle_manual_fix(
                             "│ {}",
                             "Build or tests still have errors. What would you like to do?".yellow()
                         );
-                        let retry_choice =
-                            interaction::prompt_failure_choice("Build/tests still failing")?;
+                        let retry_choice = interaction::prompt_after_manual_fix_choice()?;
 
                         match retry_choice {
                             interaction::FailureChoice::Skip => {
