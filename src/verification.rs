@@ -148,7 +148,7 @@ where
 /// - build_successful: true 如果构建成功
 /// - fix_attempts: 本次循环中应用的修复次数
 /// - had_restart: true 如果用户选择了 RetryDirectly
-pub fn build_and_fix_loop<F>(
+pub fn execute_code_error_check_with_fix_loop<F>(
     feature: &str,
     file_type: &str,
     rs_file: &Path,
@@ -179,7 +179,7 @@ where
             .bold()
         );
 
-        match builder::cargo_build(feature, show_full_output) {
+        match builder::cargo_build(feature, true, show_full_output) {
             Ok(_) => {
                 println!("│ {}", "✓ Build successful!".bright_green().bold());
                 return Ok((true, fix_attempts, false));
@@ -229,7 +229,7 @@ where
 
 /// 在循环中构建并修复警告（第二阶段）
 ///
-/// 在所有错误都已修复后运行（build_and_fix_loop 成功后），
+/// 在所有错误都已修复后运行（execute_code_error_check_with_fix_loop 成功后），
 /// 此函数运行不带 -A warnings 的构建并修复剩余的警告。
 ///
 /// 此函数为非致命性的：
@@ -237,7 +237,7 @@ where
 /// - 如果警告阶段出现意外构建错误，记录日志后继续（不中断文件处理）
 ///
 /// 返回 Ok(fix_attempts)：警告修复阶段中应用的修复次数
-pub fn build_and_fix_warnings_loop<F>(
+pub fn execute_code_warning_check_with_fix_loop<F>(
     feature: &str,
     file_type: &str,
     rs_file: &Path,
@@ -266,7 +266,7 @@ where
             .bold()
         );
 
-        match builder::cargo_build_check_warnings(feature, show_full_output) {
+        match builder::cargo_build(feature, false, show_full_output) {
             Ok(None) => {
                 println!("│ {}", "✓ No warnings found!".bright_green().bold());
                 return Ok(fix_attempts);
@@ -394,6 +394,9 @@ fn handle_max_fix_attempts_reached(
             "Build failed after {} fix attempts for file {}",
             max_fix_attempts, file_name
         )),
+        interaction::FailureChoice::RetryBuild => {
+            unreachable!("RetryBuild is not offered in this context")
+        }
     }
 }
 
@@ -511,12 +514,12 @@ fn handle_add_suggestion(
         );
         println!("│");
 
-        // 调用 build_and_fix_loop 重新开始完整的修复循环
+        // 调用 execute_code_error_check_with_fix_loop 重新开始完整的修复循环
         // 注意：这里传入 is_last_attempt=true 表示这是最后一次翻译机会
         // 但修复循环本身会有完整的 max_fix_attempts 次机会
         // 第二个返回值是递归循环中消耗的 fix_attempts 次数，由调用方 process_rs_file 聚合统计。
         let (build_successful, recursive_fix_attempts, had_restart) =
-            crate::verification::build_and_fix_loop(
+            crate::verification::execute_code_error_check_with_fix_loop(
                 feature,
                 file_type,
                 rs_file,
@@ -575,11 +578,10 @@ fn handle_manual_fix(
                             "│ {}",
                             "Build or tests still have errors. What would you like to do?".yellow()
                         );
-                        let retry_choice =
-                            interaction::prompt_user_choice("Build/tests still failing", false)?;
+                        let retry_choice = interaction::prompt_after_manual_fix_choice()?;
 
                         match retry_choice {
-                            interaction::UserChoice::Continue => {
+                            interaction::FailureChoice::RetryBuild => {
                                 // 用户选择继续尝试，不再强制重新打开 Vim，直接在下一轮循环中重试构建和测试
                                 println!(
                                     "│ {}",
@@ -587,7 +589,7 @@ fn handle_manual_fix(
                                         .bright_cyan()
                                 );
                             }
-                            interaction::UserChoice::ManualFix => {
+                            interaction::FailureChoice::ManualFix => {
                                 println!(
                                     "│ {}",
                                     "Opening Vim again for another manual fix attempt..."
@@ -595,11 +597,18 @@ fn handle_manual_fix(
                                 );
                                 interaction::open_in_vim(rs_file)?;
                             }
-                            interaction::UserChoice::Exit => {
+                            interaction::FailureChoice::Exit => {
                                 return Err(e).context(format!(
                                     "Build or tests failed after manual fix for file {}",
                                     rs_file.display()
                                 ));
+                            }
+                            interaction::FailureChoice::RetryDirectly
+                            | interaction::FailureChoice::AddSuggestion
+                            | interaction::FailureChoice::Skip => {
+                                return Err(e).context(
+                                    "手动修复处理中出现意外选项 - 此上下文仅支持 RetryBuild、ManualFix 和 Exit",
+                                );
                             }
                         }
                     }
@@ -667,12 +676,12 @@ mod tests {
         assert!(result.is_err());
     }
 
-    /// Test that build_and_fix_warnings_loop returns Ok(0) when the build fails
+    /// Test that execute_code_warning_check_with_fix_loop returns Ok(0) when the build fails
     /// during the warning phase (e.g. the feature build directory does not exist).
     /// The loop should treat this as non-fatal and return Ok(0).
     #[test]
     #[serial_test::serial]
-    fn test_build_and_fix_warnings_loop_build_failure_is_nonfatal() {
+    fn test_execute_code_warning_check_with_fix_loop_build_failure_is_nonfatal() {
         use std::env;
         use tempfile::TempDir;
 
@@ -681,13 +690,13 @@ mod tests {
         env::set_current_dir(tmp.path()).unwrap();
 
         // Create minimal .c2rust dir so find_project_root works, but do NOT create
-        // the feature build directory so cargo_build_check_warnings will fail.
+        // the feature build directory so cargo_build will fail.
         std::fs::create_dir_all(tmp.path().join(".c2rust")).unwrap();
 
         // Use a path inside tmp so it is portable and clearly non-existent.
         let rs_file = tmp.path().join("var_foo.rs");
 
-        let result = build_and_fix_warnings_loop(
+        let result = execute_code_warning_check_with_fix_loop(
             "nonexistent_feature",
             "var",
             &rs_file,
