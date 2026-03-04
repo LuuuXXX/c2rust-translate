@@ -326,10 +326,12 @@ impl ProgressState {
         }
     }
 
-    /// Refresh progress state from actual disk counts to prevent overflow.
+    /// Update progress state from caller-supplied actuals.
     ///
-    /// Call this after each file is processed to ensure progress tracking remains
-    /// accurate even when users interrupt and resume processing.
+    /// Sets `total_count` to `total` and `processed_count` to `processed`,
+    /// clamping `processed` at `total` to prevent overflow.
+    /// Useful when resuming a session or when an external source supplies
+    /// the true counts directly.
     pub fn refresh(&mut self, total: usize, processed: usize) {
         self.total_count = total;
         self.processed_count = processed.min(total);
