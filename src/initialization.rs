@@ -77,7 +77,7 @@ fn apply_fixes_for_init(
             .unwrap_or(file_stem);
         let msg_format_progress = |op: &str| format!("修复 {} - {}", msg_file_name, op);
 
-        if is_warning {
+        let fix_result = if is_warning {
             crate::apply_warning_fix(
                 feature,
                 msg_file_type,
@@ -85,7 +85,7 @@ fn apply_fixes_for_init(
                 &msg_error,
                 &msg_format_progress,
                 show_full_output,
-            )?;
+            )
         } else {
             crate::apply_error_fix(
                 feature,
@@ -94,9 +94,18 @@ fn apply_fixes_for_init(
                 &msg_error,
                 &msg_format_progress,
                 show_full_output,
-            )?;
+            )
+        };
+        match fix_result {
+            Ok(_) => count += 1,
+            Err(e) => {
+                println!(
+                    "│ {}",
+                    format!("⚠ 跳过文件 {} 的自动修复: {}", msg_file_name, e).yellow()
+                );
+                continue;
+            }
         }
-        count += 1;
     }
 
     Ok(count)

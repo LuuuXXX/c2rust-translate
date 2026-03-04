@@ -32,6 +32,30 @@ pub fn count_all_rs_files(rust_dir: &Path) -> Result<usize> {
     Ok(count)
 }
 
+/// 单次遍历统计给定目录中需要翻译的 .rs 文件总数和空文件数。
+/// 返回 `(total, empty_count)`。
+pub fn count_rs_files_with_empty(rust_dir: &Path) -> Result<(usize, usize)> {
+    let mut total = 0;
+    let mut empty = 0;
+
+    for entry in WalkDir::new(rust_dir) {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_file()
+            && path.extension().is_some_and(|ext| ext == "rs")
+            && is_translatable_rs_file(path)
+        {
+            total += 1;
+            let metadata = fs::metadata(path)?;
+            if metadata.len() == 0 {
+                empty += 1;
+            }
+        }
+    }
+
+    Ok((total, empty))
+}
+
 /// 查找给定目录中需要翻译的空 .rs 文件（文件名以 var_ 或 fun_ 开头且内容为空）
 pub fn find_empty_rs_files(rust_dir: &Path) -> Result<Vec<PathBuf>> {
     let mut empty_files = Vec::new();

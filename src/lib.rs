@@ -370,8 +370,7 @@ fn refresh_progress_from_disk(
     progress_state: &mut util::ProgressState,
     rust_dir: &Path,
 ) -> Result<()> {
-    let total = file_scanner::count_all_rs_files(rust_dir)?;
-    let empty_count = file_scanner::find_empty_rs_files(rust_dir)?.len();
+    let (total, empty_count) = file_scanner::count_rs_files_with_empty(rust_dir)?;
     let processed = total.saturating_sub(empty_count);
     progress_state.refresh(total, processed);
     Ok(())

@@ -319,9 +319,11 @@ impl ProgressState {
         }
     }
 
-    /// 将文件标记为已处理（递增计数器）
+    /// 将文件标记为已处理（递增计数器，不超过 total_count）
     pub fn mark_processed(&mut self) {
-        self.processed_count += 1;
+        if self.processed_count < self.total_count {
+            self.processed_count += 1;
+        }
     }
 
     /// Refresh progress state from actual disk counts to prevent overflow.
@@ -569,6 +571,41 @@ mod tests {
         let state2 = ProgressState::with_initial_progress(10, 10);
         assert_eq!(state2.processed_count, 10);
         assert_eq!(state2.get_current_position(), 11);
+    }
+
+    #[test]
+    fn test_refresh_updates_counts() {
+        let mut state = ProgressState::new(10);
+        state.refresh(20, 15);
+        assert_eq!(state.total_count, 20);
+        assert_eq!(state.processed_count, 15);
+    }
+
+    #[test]
+    fn test_refresh_clamps_processed_to_total() {
+        let mut state = ProgressState::new(10);
+        state.refresh(5, 8); // processed > total → clamp to 5
+        assert_eq!(state.total_count, 5);
+        assert_eq!(state.processed_count, 5);
+    }
+
+    #[test]
+    fn test_refresh_processed_equals_total() {
+        let mut state = ProgressState::new(3);
+        state.refresh(3, 3);
+        assert_eq!(state.total_count, 3);
+        assert_eq!(state.processed_count, 3);
+    }
+
+    #[test]
+    fn test_mark_processed_caps_at_total_count() {
+        let mut state = ProgressState::new(2);
+        state.mark_processed();
+        state.mark_processed();
+        assert_eq!(state.processed_count, 2);
+        // Further calls must not exceed total_count
+        state.mark_processed();
+        assert_eq!(state.processed_count, 2);
     }
 
     // ========================================================================
