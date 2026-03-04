@@ -654,7 +654,7 @@ fn process_rs_file(
 ///
 /// Set `C2RUST_PROCESS_WARNINGS=0` (or `false`) to skip Phase 2 (warning
 /// detection and auto-fix) for every file processed in a run.
-fn should_process_warnings() -> bool {
+pub(crate) fn should_process_warnings() -> bool {
     match std::env::var("C2RUST_PROCESS_WARNINGS") {
         Ok(val) => {
             let val = val.trim();

@@ -279,6 +279,17 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool) -> Re
     }
 
     // 阶段2：告警检查 + 自动/手动修复循环
+    // 当 C2RUST_PROCESS_WARNINGS=0 或 false 时跳过
+    if !crate::should_process_warnings() {
+        println!(
+            "{}",
+            "  → 告警检查已跳过 (C2RUST_PROCESS_WARNINGS=0/false)。"
+                .bright_yellow()
+        );
+        println!("{}", "✓ 初始化验证完成并已提交".bright_green().bold());
+        return Ok(());
+    }
+
     println!("{}", "  → 执行告警检查...".bright_blue());
     match crate::common_tasks::execute_code_warning_check(feature, show_full_output) {
         Ok(_) => {}
