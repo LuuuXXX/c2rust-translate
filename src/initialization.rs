@@ -35,82 +35,6 @@ fn open_failing_files_from_error(error_text: &str, feature: &str) -> Result<bool
     Ok(true)
 }
 
-/// Apply auto-fixes for errors or warnings found during initialization validation.
-///
-/// Reuses `apply_error_fix` / `apply_warning_fix` and `group_errors_by_file`
-/// to apply the same fix logic as the file-processing phase, ensuring code reuse.
-///
-/// Returns the number of fixes applied.
-fn apply_fixes_for_init(
-    message: &str,
-    feature: &str,
-    show_full_output: bool,
-    is_warning: bool,
-) -> Result<usize> {
-    let mut count = 0;
-
-    let file_messages = match crate::error_handler::group_errors_by_file(message, feature) {
-        Ok(v) => v,
-        Err(e) => {
-            println!(
-                "│ {}",
-                format!("⚠ 无法按文件分组消息: {}", e).yellow()
-            );
-            return Ok(0);
-        }
-    };
-
-    for (msg_file, file_msg) in &file_messages {
-        let Some(file_stem) = msg_file.file_stem().and_then(|s| s.to_str()) else {
-            println!(
-                "│ {}",
-                format!("⚠ 跳过无效文件名: {}", msg_file.display()).yellow()
-            );
-            continue;
-        };
-        let (msg_file_type, _) =
-            crate::file_scanner::extract_file_type(file_stem).unwrap_or(("fn", ""));
-        let msg_error = anyhow::anyhow!("{}", file_msg);
-        let msg_file_name = msg_file
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(file_stem);
-        let msg_format_progress = |op: &str| format!("修复 {} - {}", msg_file_name, op);
-
-        let fix_result = if is_warning {
-            crate::apply_warning_fix(
-                feature,
-                msg_file_type,
-                msg_file,
-                &msg_error,
-                &msg_format_progress,
-                show_full_output,
-            )
-        } else {
-            crate::apply_error_fix(
-                feature,
-                msg_file_type,
-                msg_file,
-                &msg_error,
-                &msg_format_progress,
-                show_full_output,
-            )
-        };
-        match fix_result {
-            Ok(_) => count += 1,
-            Err(e) => {
-                println!(
-                    "│ {}",
-                    format!("⚠ 跳过文件 {} 的自动修复: {}", msg_file_name, e).yellow()
-                );
-                continue;
-            }
-        }
-    }
-
-    Ok(count)
-}
-
 /// 检查并初始化 feature 目录
 ///
 /// 如果 rust 目录不存在，则初始化并提交
@@ -211,7 +135,7 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool) -> Re
 
                 // 先尝试自动修复
                 let error_text = format!("{:#}", last_error);
-                match apply_fixes_for_init(&error_text, feature, show_full_output, false) {
+                match crate::verification::apply_fixes_for_init(&error_text, feature, show_full_output, false) {
                     Ok(n) if n > 0 => {
                         match crate::common_tasks::execute_code_error_check(
                             feature,
@@ -311,7 +235,7 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool) -> Re
 
                 // 先尝试自动修复
                 let warning_text = format!("{:#}", last_warning);
-                match apply_fixes_for_init(&warning_text, feature, show_full_output, true) {
+                match crate::verification::apply_fixes_for_init(&warning_text, feature, show_full_output, true) {
                     Ok(n) if n > 0 => {
                         match crate::common_tasks::execute_code_warning_check(
                             feature,

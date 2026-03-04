@@ -217,6 +217,52 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
+    fn test_count_rs_files_with_empty_mixed_files() {
+        // Create a temp directory with a mix of translatable/non-translatable and
+        // empty/non-empty files including a nested subdirectory.
+        let temp_dir = tempdir().unwrap();
+        let base = temp_dir.path();
+
+        // translatable & empty
+        fs::File::create(base.join("var_empty.rs")).unwrap();
+        fs::File::create(base.join("fun_empty.rs")).unwrap();
+
+        // translatable & non-empty
+        let mut f = fs::File::create(base.join("var_nonempty.rs")).unwrap();
+        f.write_all(b"pub static X: i32 = 1;").unwrap();
+        let mut f = fs::File::create(base.join("fun_nonempty.rs")).unwrap();
+        f.write_all(b"fn foo() {}").unwrap();
+
+        // non-translatable .rs (no var_/fun_ prefix) – must not be counted
+        fs::File::create(base.join("other.rs")).unwrap();
+
+        // non-.rs file – must not be counted
+        fs::File::create(base.join("var_not_rs.txt")).unwrap();
+
+        // nested subdirectory: one translatable empty file
+        let nested = base.join("nested");
+        fs::create_dir(&nested).unwrap();
+        fs::File::create(nested.join("var_nested.rs")).unwrap();
+
+        // nested non-translatable .rs – must not be counted
+        let mut f = fs::File::create(nested.join("other_nested.rs")).unwrap();
+        f.write_all(b"// not counted").unwrap();
+
+        let (total, empty) = count_rs_files_with_empty(base).unwrap();
+
+        // translatable: var_empty, fun_empty, var_nonempty, fun_nonempty, nested/var_nested = 5
+        assert_eq!(total, 5);
+        // empty translatable: var_empty, fun_empty, nested/var_nested = 3
+        assert_eq!(empty, 3);
+
+        // Cross-check against the single-function helpers
+        let total_only = count_all_rs_files(base).unwrap();
+        let empty_files = find_empty_rs_files(base).unwrap();
+        assert_eq!(total_only, total);
+        assert_eq!(empty_files.len(), empty);
+    }
+
+    #[test]
     fn test_count_all_rs_files() {
         use std::io::Write;
 

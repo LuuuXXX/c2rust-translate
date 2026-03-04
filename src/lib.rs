@@ -328,14 +328,9 @@ fn handle_skipped_files_loop(
                         save_stats_or_warn(stats, feature);
                         return Err(e);
                     }
-                    // Refresh progress from disk after each successful file to prevent overflow.
-                    if let Err(e) = refresh_progress_from_disk(progress_state, rust_dir) {
-                        eprintln!(
-                            "{}",
-                            format!("⚠ Warning: Failed to refresh progress: {}", e).yellow()
-                        );
-                        progress_state.mark_processed();
-                    }
+                    // Mark file as processed. mark_processed() is capped at total_count
+                    // so it cannot overflow even if this is a resumed session.
+                    progress_state.mark_processed();
                     save_stats_or_warn(stats, feature);
                 }
                 // Loop again: if any files were skipped during this pass they are now
@@ -360,20 +355,6 @@ fn save_stats_or_warn(stats: &util::TranslationStats, feature: &str) {
             format!("⚠ Warning: Failed to save translation stats: {}", e).yellow()
         );
     }
-}
-
-/// Refresh progress state from actual disk counts to prevent overflow.
-///
-/// This should be called after each file is processed to keep the progress
-/// display accurate even when users interrupt and resume processing.
-fn refresh_progress_from_disk(
-    progress_state: &mut util::ProgressState,
-    rust_dir: &Path,
-) -> Result<()> {
-    let (total, empty_count) = file_scanner::count_rs_files_with_empty(rust_dir)?;
-    let processed = total.saturating_sub(empty_count);
-    progress_state.refresh(total, processed);
-    Ok(())
 }
 
 /// Select files to process based on allow_all flag
@@ -438,14 +419,8 @@ fn process_selected_files(
             // Save stats immediately so the skip is persisted.
             save_stats_or_warn(stats, feature);
         } else {
-            // Refresh progress from disk after each successful file to prevent overflow.
-            if let Err(e) = refresh_progress_from_disk(progress_state, rust_dir) {
-                eprintln!(
-                    "{}",
-                    format!("⚠ Warning: Failed to refresh progress: {}", e).yellow()
-                );
-                progress_state.mark_processed();
-            }
+            // Mark file as processed. mark_processed() is capped at total_count.
+            progress_state.mark_processed();
             // Save stats immediately after successful completion.
             save_stats_or_warn(stats, feature);
         }

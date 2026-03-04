@@ -34,6 +34,83 @@ pub fn display_retry_directly_warning() {
     println!("│");
 }
 
+/// Apply auto-fixes for errors or warnings found during initialization validation.
+///
+/// Groups `message` by file (via `group_errors_by_file`), then calls
+/// `apply_error_fix` or `apply_warning_fix` for each affected file.
+/// Per-file failures are logged and skipped rather than aborting the whole pass.
+///
+/// Returns the number of fixes successfully applied.
+pub(crate) fn apply_fixes_for_init(
+    message: &str,
+    feature: &str,
+    show_full_output: bool,
+    is_warning: bool,
+) -> Result<usize> {
+    let mut count = 0;
+
+    let file_messages = match crate::error_handler::group_errors_by_file(message, feature) {
+        Ok(v) => v,
+        Err(e) => {
+            println!(
+                "│ {}",
+                format!("⚠ 无法按文件分组消息: {}", e).yellow()
+            );
+            return Ok(0);
+        }
+    };
+
+    for (msg_file, file_msg) in &file_messages {
+        let Some(file_stem) = msg_file.file_stem().and_then(|s| s.to_str()) else {
+            println!(
+                "│ {}",
+                format!("⚠ 跳过无效文件名: {}", msg_file.display()).yellow()
+            );
+            continue;
+        };
+        let (msg_file_type, _) =
+            crate::file_scanner::extract_file_type(file_stem).unwrap_or(("fn", ""));
+        let msg_error = anyhow::anyhow!("{}", file_msg);
+        let msg_file_name = msg_file
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(file_stem);
+        let msg_format_progress = |op: &str| format!("修复 {} - {}", msg_file_name, op);
+
+        let fix_result = if is_warning {
+            crate::apply_warning_fix(
+                feature,
+                msg_file_type,
+                msg_file,
+                &msg_error,
+                &msg_format_progress,
+                show_full_output,
+            )
+        } else {
+            crate::apply_error_fix(
+                feature,
+                msg_file_type,
+                msg_file,
+                &msg_error,
+                &msg_format_progress,
+                show_full_output,
+            )
+        };
+        match fix_result {
+            Ok(_) => count += 1,
+            Err(e) => {
+                println!(
+                    "│ {}",
+                    format!("⚠ 跳过文件 {} 的自动修复: {}", msg_file_name, e).yellow()
+                );
+                continue;
+            }
+        }
+    }
+
+    Ok(count)
+}
+
 /// Group messages (errors or warnings) by file and apply a fix to each affected file.
 ///
 /// This is the shared logic used by both `build_and_fix_loop` (errors) and
