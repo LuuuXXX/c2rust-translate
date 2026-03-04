@@ -324,6 +324,15 @@ impl ProgressState {
         self.processed_count += 1;
     }
 
+    /// Refresh progress state from actual disk counts to prevent overflow.
+    ///
+    /// Call this after each file is processed to ensure progress tracking remains
+    /// accurate even when users interrupt and resume processing.
+    pub fn refresh(&mut self, total: usize, processed: usize) {
+        self.total_count = total;
+        self.processed_count = processed.min(total);
+    }
+
     /// 获取当前进度位置（从 1 开始索引用于显示）
     pub fn get_current_position(&self) -> usize {
         self.processed_count + 1
