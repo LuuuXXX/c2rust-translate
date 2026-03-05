@@ -360,6 +360,50 @@ pub fn prompt_compile_success_choice() -> Result<CompileSuccessChoice> {
     }
 }
 
+/// 构建成功但测试阶段被跳过时提示用户
+///
+/// 当 `test.cmd`/`test.dir` 配置不完整时，测试无法运行。
+/// 此提示明确告知用户代码未经测试验证。
+pub fn prompt_build_success_tests_skipped_choice() -> Result<CompileSuccessChoice> {
+    println!("│");
+    println!(
+        "│ {}",
+        "✓ Compilation successful!".bright_green().bold()
+    );
+    println!(
+        "│ {}",
+        "⚠ Tests skipped (test configuration not available — results are not validated by tests)."
+            .yellow()
+            .bold()
+    );
+    println!("│");
+
+    let options = vec![
+        "Accept this code (will be committed)",
+        "Auto-accept all subsequent translations",
+        "Manual fix (edit the file with VIM)",
+        "Exit (abort the translation process)",
+    ];
+
+    let choice = Select::new("What would you like to do?", options.clone())
+        .with_vim_mode(true)
+        .prompt()
+        .context("Failed to get user selection")?;
+
+    let choice_index = options
+        .iter()
+        .position(|&o| o == choice)
+        .context("Unexpected selection value")?;
+
+    match choice_index {
+        0 => Ok(CompileSuccessChoice::Accept),
+        1 => Ok(CompileSuccessChoice::AutoAccept),
+        2 => Ok(CompileSuccessChoice::ManualFix),
+        3 => Ok(CompileSuccessChoice::Exit),
+        _ => unreachable!("Invalid selection index"),
+    }
+}
+
 /// 测试失败时提示用户
 pub fn prompt_test_failure_choice() -> Result<FailureChoice> {
     println!("│");

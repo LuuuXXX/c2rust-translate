@@ -1042,52 +1042,108 @@ where
     let c_file = rs_file.with_extension("c");
     interaction::display_file_paths(Some(&c_file), rs_file);
 
-    let success_message = "✓ All tests passed";
-    if let Err(e) = diff_display::display_code_comparison(
-        &c_file,
-        rs_file,
-        success_message,
-        diff_display::ResultType::TestPass,
-    ) {
+    if skip_test {
+        // Tests were skipped: show build-only comparison with a clear warning header
         println!(
             "│ {}",
-            format!("Failed to display comparison: {}", e).yellow()
+            "Hybrid build completed with tests SKIPPED (results are not validated by tests)."
+                .yellow()
+                .bold()
         );
-        println!("│ {}", success_message.bright_green().bold());
-    }
+        if let Err(e) = diff_display::display_code_comparison(
+            &c_file,
+            rs_file,
+            "⚠ Tests skipped (test configuration not available)",
+            diff_display::ResultType::BuildFail,
+        ) {
+            println!(
+                "│ {}",
+                format!("Failed to display comparison: {}", e).yellow()
+            );
+        }
 
-    let choice = interaction::prompt_compile_success_choice()?;
+        let choice = interaction::prompt_build_success_tests_skipped_choice()?;
 
-    match choice {
-        interaction::CompileSuccessChoice::Accept => {
-            println!("│ {}", "You chose: Accept this code".bright_cyan());
-            finalize_file_processing(feature, file_name, format_progress)?;
+        match choice {
+            interaction::CompileSuccessChoice::Accept => {
+                println!("│ {}", "You chose: Accept this code".bright_cyan());
+                finalize_file_processing(feature, file_name, format_progress)?;
+            }
+            interaction::CompileSuccessChoice::AutoAccept => {
+                println!(
+                    "│ {}",
+                    "You chose: Auto-accept all subsequent translations".bright_cyan()
+                );
+                interaction::enable_auto_accept_mode();
+                finalize_file_processing(feature, file_name, format_progress)?;
+            }
+            interaction::CompileSuccessChoice::ManualFix => {
+                println!("│ {}", "You chose: Manual fix".bright_cyan());
+                interaction::open_in_vim(rs_file)?;
+                println!(
+                    "│ {}",
+                    "Running full build after manual changes...".bright_blue()
+                );
+                builder::run_full_build_and_test_interactive(feature, file_type, rs_file, skip_test)?;
+                println!(
+                    "│ {}",
+                    "✓ Build passes after manual changes (tests skipped)".bright_green()
+                );
+                finalize_file_processing(feature, file_name, format_progress)?;
+            }
+            interaction::CompileSuccessChoice::Exit => {
+                println!("│ {}", "You chose: Exit".yellow());
+                anyhow::bail!("User chose to exit after successful build (tests skipped)");
+            }
         }
-        interaction::CompileSuccessChoice::AutoAccept => {
+    } else {
+        let success_message = "✓ All tests passed";
+        if let Err(e) = diff_display::display_code_comparison(
+            &c_file,
+            rs_file,
+            success_message,
+            diff_display::ResultType::TestPass,
+        ) {
             println!(
                 "│ {}",
-                "You chose: Auto-accept all subsequent translations".bright_cyan()
+                format!("Failed to display comparison: {}", e).yellow()
             );
-            interaction::enable_auto_accept_mode();
-            finalize_file_processing(feature, file_name, format_progress)?;
+            println!("│ {}", success_message.bright_green().bold());
         }
-        interaction::CompileSuccessChoice::ManualFix => {
-            println!("│ {}", "You chose: Manual fix".bright_cyan());
-            interaction::open_in_vim(rs_file)?;
-            println!(
-                "│ {}",
-                "Running full build and test after manual changes...".bright_blue()
-            );
-            builder::run_full_build_and_test_interactive(feature, file_type, rs_file, skip_test)?;
-            println!(
-                "│ {}",
-                "✓ All builds and tests pass after manual changes".bright_green()
-            );
-            finalize_file_processing(feature, file_name, format_progress)?;
-        }
-        interaction::CompileSuccessChoice::Exit => {
-            println!("│ {}", "You chose: Exit".yellow());
-            anyhow::bail!("User chose to exit after successful tests");
+
+        let choice = interaction::prompt_compile_success_choice()?;
+
+        match choice {
+            interaction::CompileSuccessChoice::Accept => {
+                println!("│ {}", "You chose: Accept this code".bright_cyan());
+                finalize_file_processing(feature, file_name, format_progress)?;
+            }
+            interaction::CompileSuccessChoice::AutoAccept => {
+                println!(
+                    "│ {}",
+                    "You chose: Auto-accept all subsequent translations".bright_cyan()
+                );
+                interaction::enable_auto_accept_mode();
+                finalize_file_processing(feature, file_name, format_progress)?;
+            }
+            interaction::CompileSuccessChoice::ManualFix => {
+                println!("│ {}", "You chose: Manual fix".bright_cyan());
+                interaction::open_in_vim(rs_file)?;
+                println!(
+                    "│ {}",
+                    "Running full build and test after manual changes...".bright_blue()
+                );
+                builder::run_full_build_and_test_interactive(feature, file_type, rs_file, skip_test)?;
+                println!(
+                    "│ {}",
+                    "✓ All builds and tests pass after manual changes".bright_green()
+                );
+                finalize_file_processing(feature, file_name, format_progress)?;
+            }
+            interaction::CompileSuccessChoice::Exit => {
+                println!("│ {}", "You chose: Exit".yellow());
+                anyhow::bail!("User chose to exit after successful tests");
+            }
         }
     }
 
