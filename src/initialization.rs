@@ -2,61 +2,77 @@ use crate::util;
 use anyhow::{Context, Result};
 use colored::Colorize;
 
-/// 查找初始化验证中兜底用的 .rs 文件和对应的 file_type
+/// 扫描 `src_dir` 目录，查找带同名 `.c` 文件的 `.rs` 文件作为兜底。
 ///
-/// 当构建输出无法识别具体出错文件时，apply_fixes_for_messages 需要一个真实存在的 .rs 文件作为兜底。
-/// fix_translation_error 要求与 .rs 同名的 .c 伴随文件存在，因此 lib.rs/main.rs 不适合作为兜底。
+/// 内部辅助函数，与文件系统无关，便于单元测试。
 ///
-/// 选择优先级：
-/// 1. src 目录中带 var_/fun_ 前缀且存在同名 .c 文件的 .rs 文件（可正确推导 file_type）
-/// 2. src 目录中任意存在同名 .c 文件的 .rs 文件
+/// 选择优先级（按文件名排序后）：
+/// 1. 带 `var_`/`fun_` 前缀且存在同名 `.c` 文件的 `.rs` 文件（可正确推导 `file_type`）
+/// 2. 任意存在同名 `.c` 文件的 `.rs` 文件
 ///
-/// 返回 `(path, file_type)`，其中 file_type 由文件名前缀推导（var_/fun_），无法推导时为 ""。
-/// 若找不到任何带 .c 伴随文件的 .rs 文件，则返回 None。
-fn resolve_fallback_rs_file(feature: &str) -> Option<(std::path::PathBuf, &'static str)> {
-    let project_root = util::find_project_root().ok()?;
-    let src_dir = project_root
-        .join(".c2rust")
-        .join(feature)
-        .join("rust")
-        .join("src");
+/// `NotFound` 时返回 `Ok(None)`；其他 I/O 错误向上传播。
+fn scan_for_fallback_rs_file(
+    src_dir: &std::path::Path,
+) -> Result<Option<(std::path::PathBuf, &'static str)>> {
+    let entries = match std::fs::read_dir(src_dir) {
+        Ok(e) => e,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => {
+            return Err(anyhow::Error::from(e)
+                .context(format!("Failed to read directory {}", src_dir.display())));
+        }
+    };
 
-    // 两阶段扫描：
-    // - best_typed：首个带 var_/fun_ 前缀且有同名 .c 文件的 .rs 文件（可正确推导 file_type）
-    // - best_any：首个有同名 .c 文件的 .rs 文件（任意名称，file_type 为 ""）
+    // 收集所有带同名 .c 文件的 .rs 文件并排序，确保跨运行和跨平台结果稳定可复现
+    let mut candidates: Vec<std::path::PathBuf> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.is_file()
+                && p.extension().map_or(false, |ext| ext == "rs")
+                && p.with_extension("c").is_file()
+        })
+        .collect();
+    candidates.sort();
+
+    // 两阶段选择：优先 var_/fun_ 前缀（可正确推导 file_type），次选首个带 .c 的 .rs
     let mut best_typed: Option<(std::path::PathBuf, &'static str)> = None;
     let mut best_any: Option<std::path::PathBuf> = None;
 
-    if let Ok(entries) = std::fs::read_dir(&src_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_file() || !path.extension().map_or(false, |ext| ext == "rs") {
-                continue;
-            }
-            // fix_translation_error 需要同名的 .c 文件存在
-            if !path.with_extension("c").is_file() {
-                continue;
-            }
-            if best_any.is_none() {
-                best_any = Some(path.clone());
-            }
-            if best_typed.is_none() {
-                if let Some((ft, _)) = path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .and_then(|stem| crate::file_scanner::extract_file_type(stem))
-                {
-                    best_typed = Some((path.clone(), ft));
-                }
-            }
-            // 已同时找到两种目标（typed 优先，any 作为备选）时可提前退出
-            if best_typed.is_some() && best_any.is_some() {
+    for path in candidates {
+        if best_any.is_none() {
+            best_any = Some(path.clone());
+        }
+        if best_typed.is_none() {
+            if let Some((ft, _)) = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .and_then(|stem| crate::file_scanner::extract_file_type(stem))
+            {
+                best_typed = Some((path, ft));
                 break;
             }
         }
     }
 
-    best_typed.or_else(|| best_any.map(|p| (p, "")))
+    Ok(best_typed.or_else(|| best_any.map(|p| (p, ""))))
+}
+
+/// 查找初始化验证中兜底用的 `.rs` 文件和对应的 `file_type`。
+///
+/// 在 `.c2rust/<feature>/rust/src` 中调用 [`scan_for_fallback_rs_file`]。
+/// `find_project_root` 失败或目录 I/O 错误时向上传播；目录不存在时返回 `Ok(None)`。
+fn resolve_fallback_rs_file(
+    feature: &str,
+) -> Result<Option<(std::path::PathBuf, &'static str)>> {
+    let project_root = util::find_project_root()
+        .context("Failed to find project root while resolving fallback .rs file")?;
+    let src_dir = project_root
+        .join(".c2rust")
+        .join(feature)
+        .join("rust")
+        .join("src");
+    scan_for_fallback_rs_file(&src_dir)
 }
 
 /// 检查并初始化 feature 目录
@@ -151,7 +167,7 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool) -> Re
     // 以下兜底值仅在无法识别具体文件时使用。
     let max_fix_attempts = 10usize;
     let (fallback_rs_file, fallback_file_type) =
-        match resolve_fallback_rs_file(feature) {
+        match resolve_fallback_rs_file(feature)? {
             Some(v) => v,
             None => {
                 anyhow::bail!(
@@ -204,8 +220,13 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool) -> Re
     }
 
     if !build_successful {
+        // build_successful=false 且 had_restart=false 时，用户在达到最大修复次数后
+        // 选择了"添加建议"（AddSuggestion）并安排了翻译重试。
+        // 初始化验证阶段没有对应的翻译重试流程来消费该建议，因此在此终止并提示用户。
         return Err(anyhow::anyhow!(
-            "初始化验证失败：构建错误未能自动修复。请重新运行并使用 `--show-full-output` 选项（或查看构建日志）以查看最后一次构建错误的详细输出。"
+            "初始化验证失败：构建错误未能自动修复。\
+             若已添加建议，请在正常文件翻译流程中使用；\
+             请重新运行并使用 `--show-full-output` 选项（或查看构建日志）以查看最后一次构建错误的详细输出。"
         ));
     }
 
@@ -281,5 +302,98 @@ mod tests {
         }
 
         assert_signature(execute_initial_verification);
+    }
+
+    // ── scan_for_fallback_rs_file ──────────────────────────────────────
+
+    /// Helper: create a file at `dir/name` (and its companion `.c` if requested).
+    fn touch(dir: &std::path::Path, name: &str, with_c_companion: bool) {
+        std::fs::write(dir.join(name), "").unwrap();
+        if with_c_companion {
+            let stem = std::path::Path::new(name)
+                .file_stem()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_owned();
+            std::fs::write(dir.join(format!("{}.c", stem)), "").unwrap();
+        }
+    }
+
+    #[test]
+    fn scan_returns_none_for_missing_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let missing = tmp.path().join("does_not_exist");
+        let result = scan_for_fallback_rs_file(&missing).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn scan_returns_none_for_empty_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let result = scan_for_fallback_rs_file(tmp.path()).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn scan_returns_none_when_no_rs_has_c_companion() {
+        let tmp = tempfile::tempdir().unwrap();
+        // .rs without .c companion — should not be selected
+        touch(tmp.path(), "var_foo.rs", false);
+        touch(tmp.path(), "lib.rs", false);
+        let result = scan_for_fallback_rs_file(tmp.path()).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn scan_prefers_typed_over_untyped() {
+        let tmp = tempfile::tempdir().unwrap();
+        // untyped first alphabetically, typed second
+        touch(tmp.path(), "aaa.rs", true); // no var_/fun_ prefix
+        touch(tmp.path(), "var_bar.rs", true); // typed
+        let (path, file_type) = scan_for_fallback_rs_file(tmp.path())
+            .unwrap()
+            .expect("should find a fallback");
+        assert_eq!(path.file_name().unwrap(), "var_bar.rs");
+        assert_eq!(file_type, "var", "file_type should be 'var' for var_bar.rs");
+    }
+
+    #[test]
+    fn scan_falls_back_to_any_when_no_typed_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        touch(tmp.path(), "lib.rs", true); // has .c but no var_/fun_ prefix
+        touch(tmp.path(), "other.rs", true);
+        let (path, file_type) = scan_for_fallback_rs_file(tmp.path())
+            .unwrap()
+            .expect("should find a fallback");
+        // sorted: lib.rs < other.rs → lib.rs selected
+        assert_eq!(path.file_name().unwrap(), "lib.rs");
+        assert_eq!(file_type, "");
+    }
+
+    #[test]
+    fn scan_result_is_stable_regardless_of_creation_order() {
+        // Create files in reverse alphabetical order to verify sorting
+        let tmp = tempfile::tempdir().unwrap();
+        touch(tmp.path(), "var_z.rs", true);
+        touch(tmp.path(), "var_a.rs", true);
+        touch(tmp.path(), "var_m.rs", true);
+        let (path, _) = scan_for_fallback_rs_file(tmp.path())
+            .unwrap()
+            .expect("should find a fallback");
+        // sorted: var_a.rs is first; but all are typed, so typed wins — and var_a.rs is first typed
+        assert_eq!(path.file_name().unwrap(), "var_a.rs");
+    }
+
+    #[test]
+    fn scan_ignores_rs_without_c_companion() {
+        let tmp = tempfile::tempdir().unwrap();
+        touch(tmp.path(), "var_no_c.rs", false); // no .c companion
+        touch(tmp.path(), "other.rs", true); // has .c but untyped
+        let (path, file_type) = scan_for_fallback_rs_file(tmp.path())
+            .unwrap()
+            .expect("should find a fallback");
+        assert_eq!(path.file_name().unwrap(), "other.rs");
+        assert_eq!(file_type, "");
     }
 }
