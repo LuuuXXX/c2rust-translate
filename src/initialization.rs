@@ -204,241 +204,168 @@ fn resolve_fallback_rs_file(
     scan_for_fallback_rs_file(&src_dir)
 }
 
+/// Phase 1 error fix loop when a fallback .rs file is available.
+///
+/// Returns `Ok(true)` = build successful; `Ok(false)` = user skipped;
+/// `Err(_)` = fatal (user exited or I/O error).
+fn run_phase1_with_fix_loop<F>(
+    feature: &str,
+    file_type: &str,
+    rs_file: &Path,
+    file_name: &str,
+    format_progress: &F,
+    max_attempts: usize,
+    show_full_output: bool,
+) -> Result<bool>
+where
+    F: Fn(&str) -> String,
+{
+    let mut restarts = 0usize;
+    loop {
+        println!("{}", "Phase 1: 检查并修复错误...".bright_blue().bold());
+        match crate::verification::execute_code_error_check_with_fix_loop(
+            feature,
+            file_type,
+            rs_file,
+            file_name,
+            format_progress,
+            restarts >= max_attempts, // is_last_attempt — gates "Retry directly"
+            1,
+            max_attempts,
+            show_full_output,
+        ) {
+            // Returns (build_successful, fix_attempts, had_restart)
+            Ok((true, _, false)) => return Ok(true),
+            // Any other Ok: either had_restart=true (RetryDirectly) or build still failed
+            // (including the AddSuggestion re-translate signal). Restart Phase 1.
+            Ok(_) => {
+                restarts += 1;
+                println!("│ {}", "重新开始初始化验证...".bright_cyan());
+            }
+            Err(e) if e.downcast_ref::<crate::verification::SkipFileSignal>().is_some() => {
+                println!(
+                    "│ {}",
+                    "跳过初始化验证。在文件处理过程中可能会出现问题。".yellow()
+                );
+                return Ok(false);
+            }
+            Err(e) => return Err(e).context("初始化验证失败"),
+        }
+    }
+}
+
+/// Phase 1 error fix loop when no fallback .rs file is available.
+///
+/// Runs a plain `cargo_build` and offers Skip / ManualFix / Exit on failure.
+/// Returns `Ok(true)` = build ok; `Ok(false)` = user skipped; `Err(_)` = fatal.
+fn run_phase1_no_fallback(feature: &str, show_full_output: bool) -> Result<bool> {
+    let mut last_error = match crate::builder::cargo_build(feature, true, show_full_output) {
+        Ok(_) => return Ok(true),
+        Err(e) => e,
+    };
+    loop {
+        println!("{}", "✗ 初始化验证失败！".red().bold());
+        println!("\n{}", "错误详情:".red().bold());
+        println!("{}\n", format!("{:#}", last_error).red());
+        match interaction::prompt_failure_choice("初始化验证失败")? {
+            interaction::FailureChoice::Skip => {
+                println!(
+                    "│ {}",
+                    "跳过初始化验证。在文件处理过程中可能会出现问题。".yellow()
+                );
+                return Ok(false);
+            }
+            interaction::FailureChoice::ManualFix => {
+                let error_text = format!("{:#}", last_error);
+                if !open_failing_files_from_error(&error_text, feature)? {
+                    println!(
+                        "│ {}",
+                        "无法识别要打开的特定文件。请检查上面的错误。".yellow()
+                    );
+                    return Err(last_error).context("初始化验证失败 - 未识别到特定文件");
+                }
+                match crate::builder::cargo_build(feature, true, show_full_output) {
+                    Ok(_) => return Ok(true),
+                    Err(e) => last_error = e,
+                }
+            }
+            interaction::FailureChoice::Exit => {
+                return Err(last_error).context("初始化验证失败，用户选择退出");
+            }
+            // prompt_failure_choice is defined to only return Skip/ManualFix/Exit
+            // in this non-interactive failure context; other variants are not possible.
+            _ => unreachable!("prompt_failure_choice only returns Skip/ManualFix/Exit"),
+        }
+    }
+}
+
 /// 执行初始化验证
 ///
 /// 在项目初始化后执行一次完整的代码检查，确保项目基础状态正常。
 ///
 /// 流程：
-/// 1. **第一阶段**：错误检查与自动修复（使用修复循环）
-///    - 尝试自动修复构建错误
-///    - 如果修复失败，提供 Skip/ManualFix/Exit 选项
-/// 2. **第二阶段**：告警检查与自动修复（非致命）
-///    - 只在错误全部修复后执行
-///    - 修复失败不会中断整个流程
+/// 1. **第一阶段**：错误检查与自动修复（使用修复循环，致命）
+/// 2. **第二阶段**：告警检查与自动修复（非致命，受 `C2RUST_PROCESS_WARNINGS` 控制）
 /// 3. 运行混合构建检查并提交变更
 pub fn execute_initial_verification(feature: &str, show_full_output: bool) -> Result<()> {
     util::validate_feature_name(feature)?;
-
-    println!(
-        "\n{}",
-        "═══ 初始化验证（初始化后） ═══".bright_magenta().bold()
-    );
+    println!("\n{}", "═══ 初始化验证（初始化后） ═══".bright_magenta().bold());
 
     const MAX_FIX_ATTEMPTS: usize = 3;
     let format_progress = |op: &str| format!("[初始化验证] {}", op);
-
-    // Resolve a fallback rs_file for the fix loops
     let fallback = resolve_fallback_rs_file(feature)?;
 
-    let build_successful = match &fallback {
+    // ── Phase 1: error check (fatal) ──────────────────────────────────────────
+    let phase1_ok = match &fallback {
         Some((rs_file, file_type, file_name)) => {
-            // Phase 1: Error check with auto-fix loop.
-            // Loop to handle had_restart=true (user chose "Retry directly"): restart Phase 1
-            // from scratch, which is the correct behaviour in this initialization context.
-            // Cap restarts at MAX_FIX_ATTEMPTS to prevent runaway retries.
-            let mut restarts = 0usize;
-            loop {
-                println!(
-                    "{}",
-                    "Phase 1: 检查并修复错误...".bright_blue().bold()
-                );
-                let result = crate::verification::execute_code_error_check_with_fix_loop(
-                    feature,
-                    file_type,
-                    rs_file,
-                    file_name,
-                    &format_progress,
-                    // is_last_attempt: true once we've exhausted restart budget, so the fix
-                    // loop will reject "Retry directly" rather than looping indefinitely.
-                    // attempt_number=1: this is the first attempt for this verification.
-                    restarts >= MAX_FIX_ATTEMPTS, // is_last_attempt
-                    1,                            // attempt_number
-                    MAX_FIX_ATTEMPTS,
-                    show_full_output,
-                );
-                match result {
-                    // had_restart=true: user chose "Retry directly" — restart Phase 1.
-                    Ok((_success, _fix_attempts, true)) => {
-                        restarts += 1;
-                        println!(
-                            "│ {}",
-                            "重新开始初始化验证...".bright_cyan()
-                        );
-                        continue;
-                    }
-                    // build_successful=false, had_restart=false: fix loop exhausted without
-                    // success. This can also be an AddSuggestion "re-translate" signal
-                    // (is_last_attempt=false path): the file was regenerated, so restart
-                    // Phase 1 from scratch to pick up the new content.
-                    Ok((false, _fix_attempts, false)) => {
-                        restarts += 1;
-                        println!(
-                            "│ {}",
-                            "重新开始初始化验证...".bright_cyan()
-                        );
-                        continue;
-                    }
-                    Ok((true, _fix_attempts, false)) => break true,
-                    Err(e) => {
-                        // SkipFileSignal means the user chose to skip this verification
-                        if e.downcast_ref::<crate::verification::SkipFileSignal>().is_some() {
-                            println!(
-                                "│ {}",
-                                "跳过初始化验证。在文件处理过程中可能会出现问题。".yellow()
-                            );
-                            return Ok(());
-                        }
-                        return Err(e).context("初始化验证失败");
-                    }
-                }
-            }
+            run_phase1_with_fix_loop(
+                feature, file_type, rs_file, file_name,
+                &format_progress, MAX_FIX_ATTEMPTS, show_full_output,
+            )?
         }
-        None => {
-            // No fallback file found — run an error-only build (no commit here; the single
-            // hybrid build + commit runs after both phases complete below).
-            // Use a labeled block so Phase 2 and the commit still run after Phase 1 succeeds.
-            'phase1: {
-                match crate::builder::cargo_build(feature, true, show_full_output) {
-                    Ok(_) => break 'phase1 true,
-                    Err(mut last_error) => {
-                        loop {
-                            println!("{}", "✗ 初始化验证失败！".red().bold());
-                            println!();
-                            println!("{}", "错误详情:".red().bold());
-                            println!("{}", format!("{:#}", last_error).red());
-                            println!();
-
-                            let choice =
-                                interaction::prompt_failure_choice("初始化验证失败")?;
-
-                            match choice {
-                                interaction::FailureChoice::Skip => {
-                                    println!(
-                                        "│ {}",
-                                        "跳过初始化验证。在文件处理过程中可能会出现问题。"
-                                            .yellow()
-                                    );
-                                    return Ok(());
-                                }
-                                interaction::FailureChoice::ManualFix => {
-                                    let error_text = format!("{:#}", last_error);
-                                    if !open_failing_files_from_error(&error_text, feature)? {
-                                        println!(
-                                            "│ {}",
-                                            "无法识别要打开的特定文件。请检查上面的错误。"
-                                                .yellow()
-                                        );
-                                        return Err(last_error)
-                                            .context("初始化验证失败 - 未识别到特定文件");
-                                    }
-                                    // Re-run the build; on success break out, on failure loop
-                                    match crate::builder::cargo_build(
-                                        feature,
-                                        true,
-                                        show_full_output,
-                                    ) {
-                                        Ok(_) => break 'phase1 true,
-                                        Err(e) => {
-                                            last_error = e;
-                                            continue;
-                                        }
-                                    }
-                                }
-                                interaction::FailureChoice::Exit => {
-                                    return Err(last_error)
-                                        .context("初始化验证失败，用户选择退出");
-                                }
-                                _ => unreachable!(
-                                    "prompt_failure_choice only returns Skip/ManualFix/Exit"
-                                ),
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        None => run_phase1_no_fallback(feature, show_full_output)?,
     };
+    if !phase1_ok {
+        return Ok(()); // user chose to skip
+    }
 
-    if build_successful {
-        // Phase 2: Warning check with auto-fix (non-fatal).
-        // Respects the C2RUST_PROCESS_WARNINGS env-var — set to "0" or "false" to skip.
+    // ── Phase 2: warning check (non-fatal) ────────────────────────────────────
+    if crate::should_process_warnings() {
         if let Some((rs_file, file_type, file_name)) = &fallback {
-            if crate::should_process_warnings() {
-                println!(
-                    "{}",
-                    "Phase 2: 检查并修复警告...".bright_blue().bold()
-                );
-                crate::verification::execute_code_warning_check_with_fix_loop(
-                    feature,
-                    file_type,
-                    rs_file,
-                    file_name,
-                    &format_progress,
-                    MAX_FIX_ATTEMPTS,
-                    show_full_output,
-                )
-                .unwrap_or_else(|e| {
-                    println!(
-                        "│ {}",
-                        format!("⚠ 告警检查出现错误: {}", e).yellow()
-                    );
-                    0
-                });
-            } else {
-                println!(
-                    "{}",
-                    "Phase 2: 告警处理已跳过 (C2RUST_PROCESS_WARNINGS=0/false)。"
-                        .bright_yellow()
-                );
-            }
+            println!("{}", "Phase 2: 检查并修复警告...".bright_blue().bold());
+            crate::verification::execute_code_warning_check_with_fix_loop(
+                feature, file_type, rs_file, file_name,
+                &format_progress, MAX_FIX_ATTEMPTS, show_full_output,
+            )
+            .unwrap_or_else(|e| {
+                println!("│ {}", format!("⚠ 告警检查出现错误: {}", e).yellow());
+                0
+            });
         } else {
-            // No fallback file for auto-fix; run a basic (non-fatal) warning check.
-            if crate::should_process_warnings() {
-                println!(
-                    "{}",
-                    "Phase 2: 检查警告（无法自动修复）...".bright_blue().bold()
-                );
-                match crate::builder::cargo_build(feature, false, show_full_output) {
-                    Ok(Some(warnings)) => {
-                        println!(
-                            "│ {}",
-                            format!("⚠ 检测到告警（无法自动修复）:\n{}", warnings).yellow()
-                        );
-                    }
-                    Ok(None) => {
-                        println!("{}", "  ✓ 无告警".bright_green());
-                    }
-                    Err(e) => {
-                        println!(
-                            "│ {}",
-                            format!("⚠ 告警检查出现错误: {}", e).yellow()
-                        );
-                    }
-                }
-            } else {
-                println!(
-                    "{}",
-                    "Phase 2: 告警处理已跳过 (C2RUST_PROCESS_WARNINGS=0/false)。"
-                        .bright_yellow()
-                );
+            println!("{}", "Phase 2: 检查警告（无法自动修复）...".bright_blue().bold());
+            match crate::builder::cargo_build(feature, false, show_full_output) {
+                Ok(Some(w)) => println!(
+                    "│ {}",
+                    format!("⚠ 检测到告警（无法自动修复）:\n{}", w).yellow()
+                ),
+                Ok(None) => println!("{}", "  ✓ 无告警".bright_green()),
+                Err(e) => println!("│ {}", format!("⚠ 告警检查出现错误: {}", e).yellow()),
             }
         }
-
-        // Run hybrid build check and commit
-        println!("{}", "  → 执行混合构建检查...".bright_blue());
-        crate::common_tasks::execute_hybrid_build_check(feature)?;
-        println!("{}", "  ✓ 混合构建检查通过".bright_green());
-
-        crate::git::git_commit(
-            &format!("Initial verification passed for {}", feature),
-            feature,
-        )?;
-        println!("{}", "✓ 初始化验证完成并已提交".bright_green().bold());
-        Ok(())
     } else {
-        // build_successful=false: fix loop exhausted all attempts without success
-        Err(anyhow::anyhow!("初始化验证：构建在修复尝试后仍未成功"))
+        println!(
+            "{}",
+            "Phase 2: 告警处理已跳过 (C2RUST_PROCESS_WARNINGS=0/false)。".bright_yellow()
+        );
     }
+
+    // ── Hybrid build + commit ─────────────────────────────────────────────────
+    println!("{}", "  → 执行混合构建检查...".bright_blue());
+    crate::common_tasks::execute_hybrid_build_check(feature)?;
+    println!("{}", "  ✓ 混合构建检查通过".bright_green());
+    crate::git::git_commit(&format!("Initial verification passed for {}", feature), feature)?;
+    println!("{}", "✓ 初始化验证完成并已提交".bright_green().bold());
+    Ok(())
 }
 
 #[cfg(test)]
