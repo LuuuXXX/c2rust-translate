@@ -40,14 +40,13 @@ pub fn count_rs_files_with_empty(rust_dir: &Path) -> Result<(usize, usize)> {
 
     for entry in WalkDir::new(rust_dir) {
         let entry = entry?;
+        if !entry.file_type().is_file() {
+            continue;
+        }
         let path = entry.path();
-        if path.is_file()
-            && path.extension().is_some_and(|ext| ext == "rs")
-            && is_translatable_rs_file(path)
-        {
+        if path.extension().is_some_and(|ext| ext == "rs") && is_translatable_rs_file(path) {
             total += 1;
-            let metadata = fs::metadata(path)?;
-            if metadata.len() == 0 {
+            if entry.metadata()?.len() == 0 {
                 empty += 1;
             }
         }
