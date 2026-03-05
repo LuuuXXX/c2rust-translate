@@ -116,7 +116,7 @@ pub fn check_and_initialize_feature(feature: &str) -> Result<()> {
 fn scan_for_fallback_rs_file(
     src_dir: &Path,
 ) -> Result<Option<(PathBuf, &'static str, String)>> {
-    let entries = match std::fs::read_dir(src_dir) {
+    let read_dir = match std::fs::read_dir(src_dir) {
         Ok(e) => e,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => {
@@ -125,10 +125,14 @@ fn scan_for_fallback_rs_file(
         }
     };
 
+    // Collect and sort entries by file name so selection is deterministic across
+    // platforms/filesystems (read_dir order is not guaranteed).
+    let mut entries: Vec<_> = read_dir.collect::<std::io::Result<_>>()?;
+    entries.sort_by_key(|e| e.file_name());
+
     let mut generic_fallback: Option<(PathBuf, &'static str, String)> = None;
 
     for entry in entries {
-        let entry = entry?;
         let path = entry.path();
 
         if !path.is_file() {
@@ -262,7 +266,19 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool) -> Re
                         );
                         continue;
                     }
-                    Ok((success, _fix_attempts, false)) => break success,
+                    // build_successful=false, had_restart=false: fix loop exhausted without
+                    // success. This can also be an AddSuggestion "re-translate" signal
+                    // (is_last_attempt=false path): the file was regenerated, so restart
+                    // Phase 1 from scratch to pick up the new content.
+                    Ok((false, _fix_attempts, false)) => {
+                        restarts += 1;
+                        println!(
+                            "│ {}",
+                            "重新开始初始化验证...".bright_cyan()
+                        );
+                        continue;
+                    }
+                    Ok((true, _fix_attempts, false)) => break true,
                     Err(e) => {
                         // SkipFileSignal means the user chose to skip this verification
                         if e.downcast_ref::<crate::verification::SkipFileSignal>().is_some() {
