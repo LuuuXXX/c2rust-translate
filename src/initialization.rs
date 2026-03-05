@@ -239,11 +239,11 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool) -> Re
                 rs_file,
                 file_name,
                 &format_progress,
-                // is_last_attempt=true: initialization has no translation retry concept,
-                // so RetryDirectly will be rejected by the fix loop when max attempts are hit.
-                // attempt_number=1: this is the single (first and only) attempt.
-                true, // is_last_attempt
-                1,    // attempt_number
+                // is_last_attempt=false: allow the fix loop to present and handle
+                // "Retry directly" normally in this initialization context.
+                // attempt_number=1: this is the first attempt for this verification.
+                false, // is_last_attempt
+                1,     // attempt_number
                 MAX_FIX_ATTEMPTS,
                 show_full_output,
             );
@@ -263,10 +263,11 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool) -> Re
             }
         }
         None => {
-            // No fallback file found — fall back to simple error check (original behavior).
+            // No fallback file found — run an error-only build (no commit here; the single
+            // hybrid build + commit runs after both phases complete below).
             // Use a labeled block so Phase 2 and the commit still run after Phase 1 succeeds.
             'phase1: {
-                match crate::common_tasks::execute_code_error_check(feature, show_full_output) {
+                match crate::builder::cargo_build(feature, true, show_full_output) {
                     Ok(_) => break 'phase1 true,
                     Err(mut last_error) => {
                         loop {
@@ -299,9 +300,10 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool) -> Re
                                         return Err(last_error)
                                             .context("初始化验证失败 - 未识别到特定文件");
                                     }
-                                    // Re-run the check; on success break out, on failure loop
-                                    match crate::common_tasks::execute_code_error_check(
+                                    // Re-run the build; on success break out, on failure loop
+                                    match crate::builder::cargo_build(
                                         feature,
+                                        true,
                                         show_full_output,
                                     ) {
                                         Ok(_) => break 'phase1 true,
