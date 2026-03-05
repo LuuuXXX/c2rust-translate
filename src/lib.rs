@@ -54,11 +54,11 @@ pub fn translate_feature(
     // Step 1: Initialize feature directory
     step_1_initialize(feature)?;
 
+    // Check test configuration before initial verification (step 2 also uses test-related commands)
+    let skip_test = check_test_configuration(feature)?;
+
     // Step 2: Run initial verification
     step_2_initial_verification(feature, show_full_output)?;
-
-    // Check test configuration before proceeding with translation loop
-    let skip_test = check_test_configuration(feature)?;
 
     // Step 2.5: Check and load previous translation stats
     let mut stats = step_2_5_load_or_create_stats(feature)?;
