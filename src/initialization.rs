@@ -5,8 +5,14 @@ use colored::Colorize;
 /// 查找初始化验证中兜底用的 .rs 文件和对应的 file_type
 ///
 /// 当构建输出无法识别具体出错文件时，apply_fixes_for_messages 需要一个真实存在的 .rs 文件作为兜底。
-/// 优先选择 lib.rs / main.rs（初始化后通常存在），否则扫描 src 目录的第一个 .rs 文件。
+/// fix_translation_error 要求与 .rs 同名的 .c 伴随文件存在，因此 lib.rs/main.rs 不适合作为兜底。
+///
+/// 选择优先级：
+/// 1. src 目录中带 var_/fun_ 前缀且存在同名 .c 文件的 .rs 文件（可正确推导 file_type）
+/// 2. src 目录中任意存在同名 .c 文件的 .rs 文件
+///
 /// 返回 `(path, file_type)`，其中 file_type 由文件名前缀推导（var_/fun_），无法推导时为 ""。
+/// 若找不到任何带 .c 伴随文件的 .rs 文件，则返回 None。
 fn resolve_fallback_rs_file(feature: &str) -> Option<(std::path::PathBuf, &'static str)> {
     let project_root = util::find_project_root().ok()?;
     let src_dir = project_root
@@ -15,35 +21,42 @@ fn resolve_fallback_rs_file(feature: &str) -> Option<(std::path::PathBuf, &'stat
         .join("rust")
         .join("src");
 
-    // 优先：lib.rs（初始化后通常存在）
-    let lib_rs = src_dir.join("lib.rs");
-    if lib_rs.is_file() {
-        return Some((lib_rs, ""));
-    }
+    // 两阶段扫描：
+    // - best_typed：首个带 var_/fun_ 前缀且有同名 .c 文件的 .rs 文件（可正确推导 file_type）
+    // - best_any：首个有同名 .c 文件的 .rs 文件（任意名称，file_type 为 ""）
+    let mut best_typed: Option<(std::path::PathBuf, &'static str)> = None;
+    let mut best_any: Option<std::path::PathBuf> = None;
 
-    // 其次：main.rs
-    let main_rs = src_dir.join("main.rs");
-    if main_rs.is_file() {
-        return Some((main_rs, ""));
-    }
-
-    // 兜底：src 目录中任意一个 .rs 文件（优先 var_/fun_ 前缀文件以获得正确 file_type）
     if let Ok(entries) = std::fs::read_dir(&src_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().map_or(false, |ext| ext == "rs") && path.is_file() {
-                let file_type = path
+            if !path.is_file() || !path.extension().map_or(false, |ext| ext == "rs") {
+                continue;
+            }
+            // fix_translation_error 需要同名的 .c 文件存在
+            if !path.with_extension("c").is_file() {
+                continue;
+            }
+            if best_any.is_none() {
+                best_any = Some(path.clone());
+            }
+            if best_typed.is_none() {
+                if let Some((ft, _)) = path
                     .file_stem()
                     .and_then(|s| s.to_str())
                     .and_then(|stem| crate::file_scanner::extract_file_type(stem))
-                    .map(|(ft, _)| ft)
-                    .unwrap_or("");
-                return Some((path, file_type));
+                {
+                    best_typed = Some((path.clone(), ft));
+                }
+            }
+            // 已同时找到两种目标（typed 优先，any 作为备选）时可提前退出
+            if best_typed.is_some() && best_any.is_some() {
+                break;
             }
         }
     }
 
-    None
+    best_typed.or_else(|| best_any.map(|p| (p, "")))
 }
 
 /// 检查并初始化 feature 目录
@@ -138,7 +151,16 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool) -> Re
     // 以下兜底值仅在无法识别具体文件时使用。
     let max_fix_attempts = 10usize;
     let (fallback_rs_file, fallback_file_type) =
-        resolve_fallback_rs_file(feature).unwrap_or_else(|| (std::path::PathBuf::new(), ""));
+        match resolve_fallback_rs_file(feature) {
+            Some(v) => v,
+            None => {
+                anyhow::bail!(
+                    "初始化验证失败：在 .c2rust/{}/rust/src 中找不到带同名 .c 文件的 .rs 文件。\
+                     请确认 feature 已完成初始化且源文件已生成。",
+                    feature
+                );
+            }
+        };
     let format_progress = |op: &str| format!("初始化验证 - {}", op);
 
     // Phase 1: 错误检查和修复循环
@@ -170,7 +192,16 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool) -> Re
         }
     }
 
-    let (build_successful, _fix_attempts, _had_restart) = build_loop_result?;
+    let (build_successful, _fix_attempts, had_restart) = build_loop_result?;
+
+    if had_restart {
+        // 用户在初始化验证阶段选择了"直接重试（重新翻译）"，
+        // 但初始化验证没有对应的翻译重试流程。
+        return Err(anyhow::anyhow!(
+            "初始化验证不支持重新翻译。请选择\u{201c}手动修复\u{201d}或\u{201c}跳过\u{201d}，\
+             或重新运行并使用 `--show-full-output` 查看构建错误详情。"
+        ));
+    }
 
     if !build_successful {
         return Err(anyhow::anyhow!(
