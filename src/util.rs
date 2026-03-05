@@ -332,7 +332,7 @@ impl ProgressState {
     /// clamping `processed` at `total` to prevent overflow.
     /// Useful when resuming a session or when an external source supplies
     /// the true counts directly.
-    pub fn refresh(&mut self, total: usize, processed: usize) {
+    pub(crate) fn refresh(&mut self, total: usize, processed: usize) {
         self.total_count = total;
         self.processed_count = processed.min(total);
     }
