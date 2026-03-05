@@ -150,7 +150,11 @@ fn scan_for_fallback_rs_file(
 
         // Must have a companion .c file with the same stem
         let c_companion = path.with_extension("c");
-        if !c_companion.exists() {
+        let c_meta = match std::fs::metadata(&c_companion) {
+            Ok(meta) => meta,
+            Err(_) => continue,
+        };
+        if !c_meta.is_file() {
             continue;
         }
 
@@ -246,7 +250,7 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool) -> Re
                         );
                         return Ok(());
                     }
-                    return Err(e).context("初始化验证失败，用户选择退出");
+                    return Err(e).context("初始化验证失败");
                 }
             }
         }
@@ -405,13 +409,11 @@ mod tests {
 
     #[test]
     fn scan_for_fallback_rs_file_returns_none_for_nonexistent_dir() {
-        // Create and immediately drop a TempDir to obtain a guaranteed non-existent path.
-        let guaranteed_gone = {
-            let tmp = tempfile::TempDir::new().unwrap();
-            tmp.path().to_path_buf()
-            // tmp is dropped here, so the directory no longer exists
-        };
-        let result = scan_for_fallback_rs_file(&guaranteed_gone);
+        // Use a path under a TempDir that we never create, ensuring it does not exist
+        let tmp = tempfile::TempDir::new().unwrap();
+        let nonexistent_dir = tmp.path().join("definitely_missing");
+
+        let result = scan_for_fallback_rs_file(&nonexistent_dir);
         assert!(result.is_ok());
         assert!(result.unwrap().is_none());
     }
