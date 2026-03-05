@@ -1,39 +1,6 @@
-use crate::{interaction, util};
+use crate::util;
 use anyhow::{Context, Result};
 use colored::Colorize;
-
-/// 从错误信息中提取失败的 .rs 文件并打开编辑器
-///
-/// 支持多文件选择
-fn open_failing_files_from_error(error_text: &str, feature: &str) -> Result<bool> {
-    let failing_files = crate::error_handler::group_errors_by_file(error_text, feature)?
-        .into_iter()
-        .map(|(f, _)| f)
-        .collect::<Vec<_>>();
-
-    if failing_files.is_empty() {
-        return Ok(false);
-    }
-
-    if failing_files.len() > 1 {
-        println!("│");
-        println!(
-            "│ {}",
-            format!("找到 {} 个包含错误的文件:", failing_files.len()).yellow()
-        );
-        for (i, f) in failing_files.iter().enumerate() {
-            println!("│   {}. {}", i + 1, f.display());
-        }
-        println!("│");
-
-        let selected_file = interaction::prompt_file_selection_for_edit(&failing_files)?;
-        interaction::open_in_vim(&selected_file)?;
-    } else {
-        interaction::open_in_vim(&failing_files[0])?;
-    }
-
-    Ok(true)
-}
 
 /// 检查并初始化 feature 目录
 ///
@@ -109,7 +76,11 @@ pub fn check_and_initialize_feature(feature: &str) -> Result<()> {
 
 /// 执行初始化验证
 ///
-/// 在项目初始化后执行一次完整的代码错误检查，确保项目基础状态正常
+/// 在项目初始化后执行错误检查和修复、告警检查和修复，确保项目基础状态正常。
+///
+/// Phase 1：自动检查并修复构建错误（使用 execute_code_error_check_with_fix_loop）
+/// Phase 2：自动检查并修复告警（使用 execute_code_warning_check_with_fix_loop，
+///          可通过 C2RUST_PROCESS_WARNINGS=0/false 跳过）
 pub fn execute_initial_verification(feature: &str, show_full_output: bool) -> Result<()> {
     util::validate_feature_name(feature)?;
 
@@ -118,64 +89,92 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool) -> Re
         "═══ 初始化验证（初始化后） ═══".bright_magenta().bold()
     );
 
-    match crate::common_tasks::execute_code_error_check(feature, show_full_output) {
-        Ok(_) => {
-            println!("{}", "✓ 初始化验证完成并已提交".bright_green().bold());
-            Ok(())
-        }
-        Err(mut last_error) => {
-            loop {
-                println!("{}", "✗ 初始化验证失败！".red().bold());
-                println!();
-                println!("{}", "错误详情:".red().bold());
-                println!("{}", format!("{:#}", last_error).red());
-                println!();
+    // 初始化验证不针对单个特定文件；
+    // apply_fixes_for_messages 内部会通过 group_errors_by_file 识别实际出错的文件，
+    // 以下占位值仅在无法识别具体文件时作为兜底。
+    let max_fix_attempts = 10usize;
+    let fallback_rs_file = std::path::Path::new("");
+    let format_progress = |op: &str| format!("初始化验证 - {}", op);
 
-                let choice = interaction::prompt_failure_choice("初始化验证失败")?;
+    // Phase 1: 错误检查和修复循环
+    println!("│");
+    println!(
+        "│ {}",
+        "Phase 1: 错误检查和修复...".bright_blue().bold()
+    );
+    let build_loop_result = crate::verification::execute_code_error_check_with_fix_loop(
+        feature,
+        "",               // file_type 占位值：初始化验证非单文件场景，实际出错文件由构建输出识别
+        fallback_rs_file,
+        "初始化验证",
+        &format_progress,
+        true, // is_last_attempt：初始化阶段无翻译重试
+        1,    // attempt_number：初始化阶段固定为第一次（也是唯一一次）尝试
+        max_fix_attempts,
+        show_full_output,
+    );
 
-                match choice {
-                    interaction::FailureChoice::Skip => {
-                        println!(
-                            "│ {}",
-                            "跳过初始化验证。在文件处理过程中可能会出现问题。".yellow()
-                        );
-                        return Ok(());
-                    }
-                    interaction::FailureChoice::ManualFix => {
-                        let error_text = format!("{:#}", last_error);
-                        if !open_failing_files_from_error(&error_text, feature)? {
-                            println!(
-                                "│ {}",
-                                "无法识别要打开的特定文件。请检查上面的错误。".yellow()
-                            );
-                            return Err(last_error).context("初始化验证失败 - 未识别到特定文件");
-                        }
-                        // Re-run the check; on success break out, on failure loop again
-                        match crate::common_tasks::execute_code_error_check(
-                            feature,
-                            show_full_output,
-                        ) {
-                            Ok(_) => {
-                                println!(
-                                    "{}",
-                                    "✓ 初始化验证完成并已提交".bright_green().bold()
-                                );
-                                return Ok(());
-                            }
-                            Err(e) => {
-                                last_error = e;
-                                continue;
-                            }
-                        }
-                    }
-                    interaction::FailureChoice::Exit => {
-                        return Err(last_error).context("初始化验证失败，用户选择退出");
-                    }
-                    _ => unreachable!("prompt_failure_choice only returns Skip/ManualFix/Exit"),
-                }
-            }
+    // 处理用户选择跳过的情况
+    if let Err(ref e) = build_loop_result {
+        if e.downcast_ref::<crate::verification::SkipFileSignal>().is_some() {
+            println!(
+                "│ {}",
+                "跳过初始化验证。在文件处理过程中可能会出现问题。".yellow()
+            );
+            return Ok(());
         }
     }
+
+    let (build_successful, _fix_attempts, _had_restart) = build_loop_result?;
+
+    if !build_successful {
+        return Err(anyhow::anyhow!("初始化验证失败：构建错误未能修复"));
+    }
+
+    // Phase 2: 告警检查和修复（可通过环境变量禁用）
+    if crate::should_process_warnings() {
+        println!("│");
+        println!(
+            "│ {}",
+            "Phase 2: 告警检查和修复...".bright_blue().bold()
+        );
+        crate::verification::execute_code_warning_check_with_fix_loop(
+            feature,
+            "",               // file_type 占位值：同 Phase 1
+            fallback_rs_file,
+            "初始化验证",
+            &format_progress,
+            max_fix_attempts,
+            show_full_output,
+        )
+        .unwrap_or_else(|e| {
+            println!(
+                "│ {}",
+                format!("⚠ 告警修复阶段遇到错误: {}", e).yellow()
+            );
+            0
+        });
+    } else {
+        println!("│");
+        println!(
+            "│ {}",
+            "Phase 2: 告警处理已跳过 (C2RUST_PROCESS_WARNINGS=0/false)."
+                .bright_yellow()
+        );
+    }
+
+    // 执行混合构建检查并提交
+    println!("{}", "  → 执行混合构建检查...".bright_blue());
+    crate::common_tasks::execute_hybrid_build_check(feature)?;
+    println!("{}", "  ✓ 混合构建检查通过".bright_green());
+
+    crate::git::git_commit(
+        &format!("Initial verification passed for {}", feature),
+        feature,
+    )?;
+
+    println!("{}", "✓ 初始化验证完成并已提交".bright_green().bold());
+    Ok(())
 }
 
 #[cfg(test)]
