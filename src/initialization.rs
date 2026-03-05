@@ -109,9 +109,7 @@ pub fn check_and_initialize_feature(feature: &str) -> Result<()> {
 
 /// 执行初始化验证
 ///
-/// 在项目初始化后执行完整的代码检查：
-/// - 阶段1：错误检查，支持自动修复和手动修复
-/// - 阶段2：告警检查，支持自动修复和手动修复
+/// 在项目初始化后执行一次完整的代码错误检查，确保项目基础状态正常
 pub fn execute_initial_verification(feature: &str, show_full_output: bool) -> Result<()> {
     util::validate_feature_name(feature)?;
 
@@ -120,10 +118,10 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool) -> Re
         "═══ 初始化验证（初始化后） ═══".bright_magenta().bold()
     );
 
-    // 阶段1：错误检查 + 自动/手动修复循环
     match crate::common_tasks::execute_code_error_check(feature, show_full_output) {
         Ok(_) => {
-            println!("{}", "✓ 初始化错误检查通过".bright_green().bold());
+            println!("{}", "✓ 初始化验证完成并已提交".bright_green().bold());
+            Ok(())
         }
         Err(mut last_error) => {
             loop {
@@ -132,33 +130,6 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool) -> Re
                 println!("{}", "错误详情:".red().bold());
                 println!("{}", format!("{:#}", last_error).red());
                 println!();
-
-                // 先尝试自动修复
-                let error_text = format!("{:#}", last_error);
-                match crate::verification::apply_fixes_for_init(&error_text, feature, show_full_output, false) {
-                    Ok(n) if n > 0 => {
-                        match crate::common_tasks::execute_code_error_check(
-                            feature,
-                            show_full_output,
-                        ) {
-                            Ok(_) => {
-                                println!("{}", "✓ 初始化错误检查通过".bright_green().bold());
-                                break;
-                            }
-                            Err(e) => {
-                                last_error = e;
-                                continue;
-                            }
-                        }
-                    }
-                    Ok(_) => {}
-                    Err(e) => {
-                        println!(
-                            "│ {}",
-                            format!("⚠ 自动修复失败: {}", e).yellow()
-                        );
-                    }
-                }
 
                 let choice = interaction::prompt_failure_choice("初始化验证失败")?;
 
@@ -187,9 +158,9 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool) -> Re
                             Ok(_) => {
                                 println!(
                                     "{}",
-                                    "✓ 初始化错误检查通过".bright_green().bold()
+                                    "✓ 初始化验证完成并已提交".bright_green().bold()
                                 );
-                                break;
+                                return Ok(());
                             }
                             Err(e) => {
                                 last_error = e;
@@ -205,99 +176,6 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool) -> Re
             }
         }
     }
-
-    // 阶段2：告警检查 + 自动/手动修复循环
-    // 当 C2RUST_PROCESS_WARNINGS=0 或 false 时跳过
-    if !crate::should_process_warnings() {
-        println!(
-            "{}",
-            "  → 告警检查已跳过 (C2RUST_PROCESS_WARNINGS=0/false)。"
-                .bright_yellow()
-        );
-        println!("{}", "✓ 初始化验证完成并已提交".bright_green().bold());
-        return Ok(());
-    }
-
-    println!("{}", "  → 执行告警检查...".bright_blue());
-    match crate::common_tasks::execute_code_warning_check(feature, show_full_output) {
-        Ok(_) => {}
-        Err(mut last_warning) => {
-            loop {
-                println!("{}", "⚠ 初始化告警检查发现警告！".yellow().bold());
-                println!();
-                println!("{}", format!("{:#}", last_warning).yellow());
-                println!();
-
-                // 先尝试自动修复
-                let warning_text = format!("{:#}", last_warning);
-                match crate::verification::apply_fixes_for_init(&warning_text, feature, show_full_output, true) {
-                    Ok(n) if n > 0 => {
-                        match crate::common_tasks::execute_code_warning_check(
-                            feature,
-                            show_full_output,
-                        ) {
-                            Ok(_) => {
-                                break;
-                            }
-                            Err(e) => {
-                                last_warning = e;
-                                continue;
-                            }
-                        }
-                    }
-                    Ok(_) => {}
-                    Err(e) => {
-                        println!(
-                            "│ {}",
-                            format!("⚠ 告警自动修复失败: {}", e).yellow()
-                        );
-                    }
-                }
-
-                let choice = interaction::prompt_failure_choice("初始化告警检查")?;
-
-                match choice {
-                    interaction::FailureChoice::Skip => {
-                        println!(
-                            "│ {}",
-                            "跳过告警检查。在文件处理过程中可能会出现问题。".yellow()
-                        );
-                        return Ok(());
-                    }
-                    interaction::FailureChoice::ManualFix => {
-                        let warning_text = format!("{:#}", last_warning);
-                        if !open_failing_files_from_error(&warning_text, feature)? {
-                            println!(
-                                "│ {}",
-                                "无法识别要打开的特定文件。跳过告警检查。".yellow()
-                            );
-                            return Ok(());
-                        }
-                        // Re-run the check; on success break out, on failure loop again
-                        match crate::common_tasks::execute_code_warning_check(
-                            feature,
-                            show_full_output,
-                        ) {
-                            Ok(_) => {
-                                break;
-                            }
-                            Err(e) => {
-                                last_warning = e;
-                                continue;
-                            }
-                        }
-                    }
-                    interaction::FailureChoice::Exit => {
-                        return Err(last_warning).context("初始化告警检查失败，用户选择退出");
-                    }
-                    _ => unreachable!("prompt_failure_choice only returns Skip/ManualFix/Exit"),
-                }
-            }
-        }
-    }
-
-    println!("{}", "✓ 初始化验证完成并已提交".bright_green().bold());
-    Ok(())
 }
 
 #[cfg(test)]
