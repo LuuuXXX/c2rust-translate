@@ -328,6 +328,8 @@ fn handle_skipped_files_loop(
                         save_stats_or_warn(stats, feature);
                         return Err(e);
                     }
+                    // Mark file as processed. mark_processed() is capped at total_count
+                    // so it cannot overflow even if this is a resumed session.
                     progress_state.mark_processed();
                     save_stats_or_warn(stats, feature);
                 }
@@ -417,6 +419,7 @@ fn process_selected_files(
             // Save stats immediately so the skip is persisted.
             save_stats_or_warn(stats, feature);
         } else {
+            // Mark file as processed. mark_processed() is capped at total_count.
             progress_state.mark_processed();
             // Save stats immediately after successful completion.
             save_stats_or_warn(stats, feature);
@@ -625,7 +628,7 @@ fn process_rs_file(
 ///
 /// Set `C2RUST_PROCESS_WARNINGS=0` (or `false`) to skip Phase 2 (warning
 /// detection and auto-fix) for every file processed in a run.
-fn should_process_warnings() -> bool {
+pub(crate) fn should_process_warnings() -> bool {
     match std::env::var("C2RUST_PROCESS_WARNINGS") {
         Ok(val) => {
             let val = val.trim();

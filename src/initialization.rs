@@ -171,12 +171,7 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool) -> Re
                     interaction::FailureChoice::Exit => {
                         return Err(last_error).context("初始化验证失败，用户选择退出");
                     }
-                    interaction::FailureChoice::RetryDirectly
-                    | interaction::FailureChoice::AddSuggestion
-                    | interaction::FailureChoice::FixOtherFile => {
-                        println!("│ {}", "此上下文不支持该选项，视为退出".yellow());
-                        return Err(last_error).context("初始化验证失败");
-                    }
+                    _ => unreachable!("prompt_failure_choice only returns Skip/ManualFix/Exit"),
                 }
             }
         }
