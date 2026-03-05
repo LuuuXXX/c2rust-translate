@@ -17,7 +17,9 @@ use std::path::Path;
 /// 1. 执行 cargo build（抑制警告）
 /// 2. 执行混合构建检查（内部包含代码分析更新）
 /// 3. 提交到 git
-pub fn execute_code_error_check(feature: &str, show_full_output: bool) -> Result<()> {
+///
+/// 当 `skip_test` 为 `true` 时跳过混合构建中的测试阶段。
+pub fn execute_code_error_check(feature: &str, show_full_output: bool, skip_test: bool) -> Result<()> {
     println!("{}", "执行代码错误检查...".bright_blue());
 
     println!("{}", "  → 构建中（抑制警告）...".bright_blue());
@@ -25,7 +27,7 @@ pub fn execute_code_error_check(feature: &str, show_full_output: bool) -> Result
     println!("{}", "  ✓ 构建成功".bright_green());
 
     println!("{}", "  → 执行混合构建检查...".bright_blue());
-    execute_hybrid_build_check(feature)?;
+    execute_hybrid_build_check(feature, skip_test)?;
     println!("{}", "  ✓ 混合构建检查通过".bright_green());
 
     git::git_commit(&format!("Code error check passed for {}", feature), feature)?;
@@ -55,7 +57,7 @@ pub fn execute_code_warning_check(feature: &str, show_full_output: bool) -> Resu
     }
 
     println!("{}", "  → 执行混合构建检查...".bright_blue());
-    execute_hybrid_build_check(feature)?;
+    execute_hybrid_build_check(feature, false)?;
     println!("{}", "  ✓ 混合构建检查通过".bright_green());
 
     git::git_commit(
@@ -72,9 +74,9 @@ pub fn execute_code_warning_check(feature: &str, show_full_output: bool) -> Resu
 /// 流程（仅执行一次代码分析）：
 /// 1. 执行混合构建清除命令
 /// 2. 执行混合构建构建命令
-/// 3. 执行混合构建测试命令
-pub fn execute_hybrid_build_check(feature: &str) -> Result<()> {
-    hybrid_build::execute_hybrid_build_sequence(feature).context("混合构建检查失败")
+/// 3. 执行混合构建测试命令（当 `skip_test` 为 `true` 时跳过）
+pub fn execute_hybrid_build_check(feature: &str, skip_test: bool) -> Result<()> {
+    hybrid_build::execute_hybrid_build_sequence(feature, skip_test).context("混合构建检查失败")
 }
 
 /// 公共任务4：执行翻译任务
@@ -127,7 +129,7 @@ mod tests {
     fn test_execute_code_error_check_signature() {
         fn assert_signature<F>(f: F)
         where
-            F: Fn(&str, bool) -> Result<()>,
+            F: Fn(&str, bool, bool) -> Result<()>,
         {
             let _ = f;
         }
@@ -149,7 +151,7 @@ mod tests {
     fn test_execute_hybrid_build_check_signature() {
         fn assert_signature<F>(f: F)
         where
-            F: Fn(&str) -> Result<()>,
+            F: Fn(&str, bool) -> Result<()>,
         {
             let _ = f;
         }
