@@ -228,37 +228,52 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool) -> Re
 
     let build_successful = match &fallback {
         Some((rs_file, file_type, file_name)) => {
-            // Phase 1: Error check with auto-fix loop
-            println!(
-                "{}",
-                "Phase 1: 检查并修复错误...".bright_blue().bold()
-            );
-            let result = crate::verification::execute_code_error_check_with_fix_loop(
-                feature,
-                file_type,
-                rs_file,
-                file_name,
-                &format_progress,
-                // is_last_attempt=false: allow the fix loop to present and handle
-                // "Retry directly" normally in this initialization context.
-                // attempt_number=1: this is the first attempt for this verification.
-                false, // is_last_attempt
-                1,     // attempt_number
-                MAX_FIX_ATTEMPTS,
-                show_full_output,
-            );
-            match result {
-                Ok((success, _, _)) => success,
-                Err(e) => {
-                    // SkipFileSignal means the user chose to skip this verification
-                    if e.downcast_ref::<crate::verification::SkipFileSignal>().is_some() {
+            // Phase 1: Error check with auto-fix loop.
+            // Loop to handle had_restart=true (user chose "Retry directly"): restart Phase 1
+            // from scratch, which is the correct behaviour in this initialization context.
+            // Cap restarts at MAX_FIX_ATTEMPTS to prevent runaway retries.
+            let mut restarts = 0usize;
+            loop {
+                println!(
+                    "{}",
+                    "Phase 1: 检查并修复错误...".bright_blue().bold()
+                );
+                let result = crate::verification::execute_code_error_check_with_fix_loop(
+                    feature,
+                    file_type,
+                    rs_file,
+                    file_name,
+                    &format_progress,
+                    // is_last_attempt: true once we've exhausted restart budget, so the fix
+                    // loop will reject "Retry directly" rather than looping indefinitely.
+                    // attempt_number=1: this is the first attempt for this verification.
+                    restarts >= MAX_FIX_ATTEMPTS, // is_last_attempt
+                    1,                            // attempt_number
+                    MAX_FIX_ATTEMPTS,
+                    show_full_output,
+                );
+                match result {
+                    // had_restart=true: user chose "Retry directly" — restart Phase 1.
+                    Ok((_success, _fix_attempts, true)) => {
+                        restarts += 1;
                         println!(
                             "│ {}",
-                            "跳过初始化验证。在文件处理过程中可能会出现问题。".yellow()
+                            "重新开始初始化验证...".bright_cyan()
                         );
-                        return Ok(());
+                        continue;
                     }
-                    return Err(e).context("初始化验证失败");
+                    Ok((success, _fix_attempts, false)) => break success,
+                    Err(e) => {
+                        // SkipFileSignal means the user chose to skip this verification
+                        if e.downcast_ref::<crate::verification::SkipFileSignal>().is_some() {
+                            println!(
+                                "│ {}",
+                                "跳过初始化验证。在文件处理过程中可能会出现问题。".yellow()
+                            );
+                            return Ok(());
+                        }
+                        return Err(e).context("初始化验证失败");
+                    }
                 }
             }
         }
