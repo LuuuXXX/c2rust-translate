@@ -152,7 +152,15 @@ fn scan_for_fallback_rs_file(
         let c_companion = path.with_extension("c");
         let c_meta = match std::fs::metadata(&c_companion) {
             Ok(meta) => meta,
-            Err(_) => continue,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => {
+                return Err(e).with_context(|| {
+                    format!(
+                        "failed to read metadata for C companion file: {}",
+                        c_companion.display()
+                    )
+                });
+            }
         };
         if !c_meta.is_file() {
             continue;
@@ -255,64 +263,62 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool) -> Re
             }
         }
         None => {
-            // No fallback file found — fall back to simple error check (original behavior)
-            match crate::common_tasks::execute_code_error_check(feature, show_full_output) {
-                Ok(_) => {
-                    println!("{}", "✓ 初始化验证完成并已提交".bright_green().bold());
-                    return Ok(());
-                }
-                Err(mut last_error) => {
-                    loop {
-                        println!("{}", "✗ 初始化验证失败！".red().bold());
-                        println!();
-                        println!("{}", "错误详情:".red().bold());
-                        println!("{}", format!("{:#}", last_error).red());
-                        println!();
+            // No fallback file found — fall back to simple error check (original behavior).
+            // Use a labeled block so Phase 2 and the commit still run after Phase 1 succeeds.
+            'phase1: {
+                match crate::common_tasks::execute_code_error_check(feature, show_full_output) {
+                    Ok(_) => break 'phase1 true,
+                    Err(mut last_error) => {
+                        loop {
+                            println!("{}", "✗ 初始化验证失败！".red().bold());
+                            println!();
+                            println!("{}", "错误详情:".red().bold());
+                            println!("{}", format!("{:#}", last_error).red());
+                            println!();
 
-                        let choice = interaction::prompt_failure_choice("初始化验证失败")?;
+                            let choice =
+                                interaction::prompt_failure_choice("初始化验证失败")?;
 
-                        match choice {
-                            interaction::FailureChoice::Skip => {
-                                println!(
-                                    "│ {}",
-                                    "跳过初始化验证。在文件处理过程中可能会出现问题。".yellow()
-                                );
-                                return Ok(());
-                            }
-                            interaction::FailureChoice::ManualFix => {
-                                let error_text = format!("{:#}", last_error);
-                                if !open_failing_files_from_error(&error_text, feature)? {
+                            match choice {
+                                interaction::FailureChoice::Skip => {
                                     println!(
                                         "│ {}",
-                                        "无法识别要打开的特定文件。请检查上面的错误。".yellow()
+                                        "跳过初始化验证。在文件处理过程中可能会出现问题。"
+                                            .yellow()
                                     );
-                                    return Err(last_error)
-                                        .context("初始化验证失败 - 未识别到特定文件");
+                                    return Ok(());
                                 }
-                                // Re-run the check; on success break out, on failure loop again
-                                match crate::common_tasks::execute_code_error_check(
-                                    feature,
-                                    show_full_output,
-                                ) {
-                                    Ok(_) => {
+                                interaction::FailureChoice::ManualFix => {
+                                    let error_text = format!("{:#}", last_error);
+                                    if !open_failing_files_from_error(&error_text, feature)? {
                                         println!(
-                                            "{}",
-                                            "✓ 初始化验证完成并已提交".bright_green().bold()
+                                            "│ {}",
+                                            "无法识别要打开的特定文件。请检查上面的错误。"
+                                                .yellow()
                                         );
-                                        return Ok(());
+                                        return Err(last_error)
+                                            .context("初始化验证失败 - 未识别到特定文件");
                                     }
-                                    Err(e) => {
-                                        last_error = e;
-                                        continue;
+                                    // Re-run the check; on success break out, on failure loop
+                                    match crate::common_tasks::execute_code_error_check(
+                                        feature,
+                                        show_full_output,
+                                    ) {
+                                        Ok(_) => break 'phase1 true,
+                                        Err(e) => {
+                                            last_error = e;
+                                            continue;
+                                        }
                                     }
                                 }
+                                interaction::FailureChoice::Exit => {
+                                    return Err(last_error)
+                                        .context("初始化验证失败，用户选择退出");
+                                }
+                                _ => unreachable!(
+                                    "prompt_failure_choice only returns Skip/ManualFix/Exit"
+                                ),
                             }
-                            interaction::FailureChoice::Exit => {
-                                return Err(last_error).context("初始化验证失败，用户选择退出");
-                            }
-                            _ => unreachable!(
-                                "prompt_failure_choice only returns Skip/ManualFix/Exit"
-                            ),
                         }
                     }
                 }
@@ -345,6 +351,37 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool) -> Re
                     );
                     0
                 });
+            } else {
+                println!(
+                    "{}",
+                    "Phase 2: 告警处理已跳过 (C2RUST_PROCESS_WARNINGS=0/false)。"
+                        .bright_yellow()
+                );
+            }
+        } else {
+            // No fallback file for auto-fix; run a basic (non-fatal) warning check.
+            if crate::should_process_warnings() {
+                println!(
+                    "{}",
+                    "Phase 2: 检查警告（无法自动修复）...".bright_blue().bold()
+                );
+                match crate::builder::cargo_build(feature, false, show_full_output) {
+                    Ok(Some(warnings)) => {
+                        println!(
+                            "│ {}",
+                            format!("⚠ 检测到告警（无法自动修复）:\n{}", warnings).yellow()
+                        );
+                    }
+                    Ok(None) => {
+                        println!("{}", "  ✓ 无告警".bright_green());
+                    }
+                    Err(e) => {
+                        println!(
+                            "│ {}",
+                            format!("⚠ 告警检查出现错误: {}", e).yellow()
+                        );
+                    }
+                }
             } else {
                 println!(
                     "{}",
