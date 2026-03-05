@@ -2,6 +2,50 @@ use crate::util;
 use anyhow::{Context, Result};
 use colored::Colorize;
 
+/// 查找初始化验证中兜底用的 .rs 文件和对应的 file_type
+///
+/// 当构建输出无法识别具体出错文件时，apply_fixes_for_messages 需要一个真实存在的 .rs 文件作为兜底。
+/// 优先选择 lib.rs / main.rs（初始化后通常存在），否则扫描 src 目录的第一个 .rs 文件。
+/// 返回 `(path, file_type)`，其中 file_type 由文件名前缀推导（var_/fun_），无法推导时为 ""。
+fn resolve_fallback_rs_file(feature: &str) -> Option<(std::path::PathBuf, &'static str)> {
+    let project_root = util::find_project_root().ok()?;
+    let src_dir = project_root
+        .join(".c2rust")
+        .join(feature)
+        .join("rust")
+        .join("src");
+
+    // 优先：lib.rs（初始化后通常存在）
+    let lib_rs = src_dir.join("lib.rs");
+    if lib_rs.is_file() {
+        return Some((lib_rs, ""));
+    }
+
+    // 其次：main.rs
+    let main_rs = src_dir.join("main.rs");
+    if main_rs.is_file() {
+        return Some((main_rs, ""));
+    }
+
+    // 兜底：src 目录中任意一个 .rs 文件（优先 var_/fun_ 前缀文件以获得正确 file_type）
+    if let Ok(entries) = std::fs::read_dir(&src_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().map_or(false, |ext| ext == "rs") && path.is_file() {
+                let file_type = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .and_then(|stem| crate::file_scanner::extract_file_type(stem))
+                    .map(|(ft, _)| ft)
+                    .unwrap_or("");
+                return Some((path, file_type));
+            }
+        }
+    }
+
+    None
+}
+
 /// 检查并初始化 feature 目录
 ///
 /// 如果 rust 目录不存在，则初始化并提交
@@ -91,9 +135,10 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool) -> Re
 
     // 初始化验证不针对单个特定文件；
     // apply_fixes_for_messages 内部会通过 group_errors_by_file 识别实际出错的文件，
-    // 以下占位值仅在无法识别具体文件时作为兜底。
+    // 以下兜底值仅在无法识别具体文件时使用。
     let max_fix_attempts = 10usize;
-    let fallback_rs_file = std::path::Path::new("");
+    let (fallback_rs_file, fallback_file_type) =
+        resolve_fallback_rs_file(feature).unwrap_or_else(|| (std::path::PathBuf::new(), ""));
     let format_progress = |op: &str| format!("初始化验证 - {}", op);
 
     // Phase 1: 错误检查和修复循环
@@ -104,12 +149,12 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool) -> Re
     );
     let build_loop_result = crate::verification::execute_code_error_check_with_fix_loop(
         feature,
-        "",               // file_type 占位值：初始化验证非单文件场景，实际出错文件由构建输出识别
-        fallback_rs_file,
+        fallback_file_type, // 由兜底文件名推导的 file_type；实际出错文件由构建输出识别
+        &fallback_rs_file,
         "初始化验证",
         &format_progress,
-        true, // is_last_attempt：初始化阶段无翻译重试
-        1,    // attempt_number：初始化阶段固定为第一次（也是唯一一次）尝试
+        false, // is_last_attempt：初始化阶段不存在翻译重试，传 false 以避免 RetryDirectly 报错
+        1,     // attempt_number：初始化阶段固定为第一次（也是唯一一次）尝试
         max_fix_attempts,
         show_full_output,
     );
@@ -128,7 +173,9 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool) -> Re
     let (build_successful, _fix_attempts, _had_restart) = build_loop_result?;
 
     if !build_successful {
-        return Err(anyhow::anyhow!("初始化验证失败：构建错误未能修复"));
+        return Err(anyhow::anyhow!(
+            "初始化验证失败：构建错误未能自动修复。请重新运行并使用 `--show-full-output` 选项（或查看构建日志）以查看最后一次构建错误的详细输出。"
+        ));
     }
 
     // Phase 2: 告警检查和修复（可通过环境变量禁用）
@@ -140,8 +187,8 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool) -> Re
         );
         crate::verification::execute_code_warning_check_with_fix_loop(
             feature,
-            "",               // file_type 占位值：同 Phase 1
-            fallback_rs_file,
+            fallback_file_type, // 同 Phase 1
+            &fallback_rs_file,
             "初始化验证",
             &format_progress,
             max_fix_attempts,
