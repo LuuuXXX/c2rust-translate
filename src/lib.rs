@@ -57,6 +57,9 @@ pub fn translate_feature(
     // Step 2: Run initial verification
     step_2_initial_verification(feature, show_full_output)?;
 
+    // Check test configuration before proceeding with translation loop
+    let skip_test = check_test_configuration(feature)?;
+
     // Step 2.5: Check and load previous translation stats
     let mut stats = step_2_5_load_or_create_stats(feature)?;
 
@@ -72,6 +75,7 @@ pub fn translate_feature(
         max_fix_attempts,
         show_full_output,
         &mut stats,
+        skip_test,
     );
 
     // Print summary even if step 5 fails, so progress is not lost
@@ -108,6 +112,43 @@ fn step_1_initialize(feature: &str) -> Result<()> {
 /// Step 2: Run initial verification
 fn step_2_initial_verification(feature: &str, show_full_output: bool) -> Result<()> {
     initialization::execute_initial_verification(feature, show_full_output)
+}
+
+/// Check test configuration in `.c2rust/config.toml`.
+///
+/// Returns `Ok(false)` if both `test.cmd` and `test.dir` are present and non-empty
+/// (tests will run normally). Returns `Ok(true)` if the configuration is incomplete
+/// and the user chose to continue without tests (skip_test=true). Returns `Err` if
+/// the user chose to exit.
+fn check_test_configuration(feature: &str) -> Result<bool> {
+    let test_cmd = builder::get_config_value("test.cmd", feature);
+    let test_dir = builder::get_config_value("test.dir", feature);
+
+    if test_cmd.is_ok() && test_dir.is_ok() {
+        // `get_config_value` returns Err for missing or empty values, so Ok(_) here
+        // guarantees both keys are present and non-empty in the config file.
+        return Ok(false);
+    }
+
+    // Configuration is incomplete: prompt the user
+    let choice = interaction::prompt_test_config_missing_choice()?;
+
+    match choice {
+        interaction::TestConfigChoice::Exit => {
+            anyhow::bail!(
+                "User chose to exit to configure test settings in .c2rust/config.toml"
+            );
+        }
+        interaction::TestConfigChoice::Continue => {
+            println!(
+                "{}",
+                "✓ Continuing without test phase. Tests will be skipped."
+                    .bright_yellow()
+                    .bold()
+            );
+            Ok(true) // skip_test = true
+        }
+    }
 }
 
 /// Step 2.5: Check for existing stats file and load or create stats
@@ -207,6 +248,7 @@ fn step_5_execute_translation_loop(
     max_fix_attempts: usize,
     show_full_output: bool,
     stats: &mut util::TranslationStats,
+    skip_test: bool,
 ) -> Result<()> {
     println!(
         "\n{}",
@@ -257,6 +299,7 @@ fn step_5_execute_translation_loop(
             max_fix_attempts,
             show_full_output,
             stats,
+            skip_test,
         )?;
     }
 
@@ -268,6 +311,7 @@ fn step_5_execute_translation_loop(
         max_fix_attempts,
         show_full_output,
         stats,
+        skip_test,
     )?;
 
     Ok(())
@@ -286,6 +330,7 @@ fn handle_skipped_files_loop(
     max_fix_attempts: usize,
     show_full_output: bool,
     stats: &mut util::TranslationStats,
+    skip_test: bool,
 ) -> Result<()> {
     loop {
         if stats.skipped_files.is_empty() {
@@ -314,6 +359,7 @@ fn handle_skipped_files_loop(
                         max_fix_attempts,
                         show_full_output,
                         stats,
+                        skip_test,
                     ) {
                         if e.downcast_ref::<verification::SkipFileSignal>().is_some() {
                             // File was re-skipped; already re-recorded in process_rs_file.
@@ -383,6 +429,7 @@ fn process_selected_files(
     max_fix_attempts: usize,
     show_full_output: bool,
     stats: &mut util::TranslationStats,
+    skip_test: bool,
 ) -> Result<()> {
     for &idx in selected_indices.iter() {
         let rs_file = &empty_rs_files[idx];
@@ -411,6 +458,7 @@ fn process_selected_files(
             max_fix_attempts,
             show_full_output,
             stats,
+            skip_test,
         ) {
             if e.downcast_ref::<verification::SkipFileSignal>().is_none() {
                 return Err(e);
@@ -485,6 +533,7 @@ fn process_rs_file(
     max_fix_attempts: usize,
     show_full_output: bool,
     stats: &mut util::TranslationStats,
+    skip_test: bool,
 ) -> Result<()> {
     use util::MAX_TRANSLATION_ATTEMPTS;
 
@@ -543,6 +592,7 @@ fn process_rs_file(
             attempt_number,
             max_fix_attempts,
             show_full_output,
+            skip_test,
         );
 
         // Check if the user chose to skip this file
@@ -603,7 +653,7 @@ fn process_rs_file(
             }
 
             let processing_complete =
-                complete_file_processing(feature, file_name, file_type, rs_file, &format_progress)?;
+                complete_file_processing(feature, file_name, file_type, rs_file, &format_progress, skip_test)?;
             if processing_complete {
                 stats.record_file_completion(
                     file_name.to_string(),
@@ -868,6 +918,7 @@ fn complete_file_processing<F>(
     file_type: &str,
     rs_file: &Path,
     format_progress: &F,
+    skip_test: bool,
 ) -> Result<bool>
 where
     F: Fn(&str) -> String,
@@ -891,7 +942,7 @@ where
     if let Err(build_error) = builder::c2rust_build(feature) {
         println!("│ {}", "✗ Build failed".red().bold());
         let processing_complete =
-            builder::handle_build_failure_interactive(feature, file_type, rs_file, build_error)?;
+            builder::handle_build_failure_interactive(feature, file_type, rs_file, build_error, skip_test)?;
         if !processing_complete {
             return Ok(false); // Retry translation
         }
@@ -899,16 +950,25 @@ where
         println!("│ {}", "✓ Build successful".bright_green().bold());
     }
 
+    if skip_test {
+        println!(
+            "│ {}",
+            "⚠ Skipping test phase (test configuration not available)".yellow()
+        );
+        handle_successful_tests(feature, file_name, file_type, rs_file, format_progress, skip_test)?;
+        return Ok(true);
+    }
+
     // Handle test
     match builder::c2rust_test(feature) {
         Ok(_) => {
             println!("│ {}", "✓ Hybrid build tests passed".bright_green().bold());
-            handle_successful_tests(feature, file_name, file_type, rs_file, format_progress)?;
+            handle_successful_tests(feature, file_name, file_type, rs_file, format_progress, skip_test)?;
             Ok(true) // Processing complete
         }
         Err(test_error) => {
             let processing_complete =
-                builder::handle_test_failure_interactive(feature, file_type, rs_file, test_error)?;
+                builder::handle_test_failure_interactive(feature, file_type, rs_file, test_error, skip_test)?;
             Ok(processing_complete)
         }
     }
@@ -963,6 +1023,7 @@ fn handle_successful_tests<F>(
     file_type: &str,
     rs_file: &Path,
     format_progress: &F,
+    skip_test: bool,
 ) -> Result<()>
 where
     F: Fn(&str) -> String,
@@ -981,52 +1042,108 @@ where
     let c_file = rs_file.with_extension("c");
     interaction::display_file_paths(Some(&c_file), rs_file);
 
-    let success_message = "✓ All tests passed";
-    if let Err(e) = diff_display::display_code_comparison(
-        &c_file,
-        rs_file,
-        success_message,
-        diff_display::ResultType::TestPass,
-    ) {
+    if skip_test {
+        // Tests were skipped: show build-only comparison with a clear warning header
         println!(
             "│ {}",
-            format!("Failed to display comparison: {}", e).yellow()
+            "Hybrid build completed with tests SKIPPED (results are not validated by tests)."
+                .yellow()
+                .bold()
         );
-        println!("│ {}", success_message.bright_green().bold());
-    }
+        if let Err(e) = diff_display::display_code_comparison(
+            &c_file,
+            rs_file,
+            "⚠ Tests skipped (test configuration not available)",
+            diff_display::ResultType::BuildFail,
+        ) {
+            println!(
+                "│ {}",
+                format!("Failed to display comparison: {}", e).yellow()
+            );
+        }
 
-    let choice = interaction::prompt_compile_success_choice()?;
+        let choice = interaction::prompt_build_success_tests_skipped_choice()?;
 
-    match choice {
-        interaction::CompileSuccessChoice::Accept => {
-            println!("│ {}", "You chose: Accept this code".bright_cyan());
-            finalize_file_processing(feature, file_name, format_progress)?;
+        match choice {
+            interaction::CompileSuccessChoice::Accept => {
+                println!("│ {}", "You chose: Accept this code".bright_cyan());
+                finalize_file_processing(feature, file_name, format_progress)?;
+            }
+            interaction::CompileSuccessChoice::AutoAccept => {
+                println!(
+                    "│ {}",
+                    "You chose: Auto-accept all subsequent translations".bright_cyan()
+                );
+                interaction::enable_auto_accept_mode();
+                finalize_file_processing(feature, file_name, format_progress)?;
+            }
+            interaction::CompileSuccessChoice::ManualFix => {
+                println!("│ {}", "You chose: Manual fix".bright_cyan());
+                interaction::open_in_vim(rs_file)?;
+                println!(
+                    "│ {}",
+                    "Running full build after manual changes...".bright_blue()
+                );
+                builder::run_full_build_and_test_interactive(feature, file_type, rs_file, skip_test)?;
+                println!(
+                    "│ {}",
+                    "✓ Build passes after manual changes (tests skipped)".bright_green()
+                );
+                finalize_file_processing(feature, file_name, format_progress)?;
+            }
+            interaction::CompileSuccessChoice::Exit => {
+                println!("│ {}", "You chose: Exit".yellow());
+                anyhow::bail!("User chose to exit after successful build (tests skipped)");
+            }
         }
-        interaction::CompileSuccessChoice::AutoAccept => {
+    } else {
+        let success_message = "✓ All tests passed";
+        if let Err(e) = diff_display::display_code_comparison(
+            &c_file,
+            rs_file,
+            success_message,
+            diff_display::ResultType::TestPass,
+        ) {
             println!(
                 "│ {}",
-                "You chose: Auto-accept all subsequent translations".bright_cyan()
+                format!("Failed to display comparison: {}", e).yellow()
             );
-            interaction::enable_auto_accept_mode();
-            finalize_file_processing(feature, file_name, format_progress)?;
+            println!("│ {}", success_message.bright_green().bold());
         }
-        interaction::CompileSuccessChoice::ManualFix => {
-            println!("│ {}", "You chose: Manual fix".bright_cyan());
-            interaction::open_in_vim(rs_file)?;
-            println!(
-                "│ {}",
-                "Running full build and test after manual changes...".bright_blue()
-            );
-            builder::run_full_build_and_test_interactive(feature, file_type, rs_file)?;
-            println!(
-                "│ {}",
-                "✓ All builds and tests pass after manual changes".bright_green()
-            );
-            finalize_file_processing(feature, file_name, format_progress)?;
-        }
-        interaction::CompileSuccessChoice::Exit => {
-            println!("│ {}", "You chose: Exit".yellow());
-            anyhow::bail!("User chose to exit after successful tests");
+
+        let choice = interaction::prompt_compile_success_choice()?;
+
+        match choice {
+            interaction::CompileSuccessChoice::Accept => {
+                println!("│ {}", "You chose: Accept this code".bright_cyan());
+                finalize_file_processing(feature, file_name, format_progress)?;
+            }
+            interaction::CompileSuccessChoice::AutoAccept => {
+                println!(
+                    "│ {}",
+                    "You chose: Auto-accept all subsequent translations".bright_cyan()
+                );
+                interaction::enable_auto_accept_mode();
+                finalize_file_processing(feature, file_name, format_progress)?;
+            }
+            interaction::CompileSuccessChoice::ManualFix => {
+                println!("│ {}", "You chose: Manual fix".bright_cyan());
+                interaction::open_in_vim(rs_file)?;
+                println!(
+                    "│ {}",
+                    "Running full build and test after manual changes...".bright_blue()
+                );
+                builder::run_full_build_and_test_interactive(feature, file_type, rs_file, skip_test)?;
+                println!(
+                    "│ {}",
+                    "✓ All builds and tests pass after manual changes".bright_green()
+                );
+                finalize_file_processing(feature, file_name, format_progress)?;
+            }
+            interaction::CompileSuccessChoice::Exit => {
+                println!("│ {}", "You chose: Exit".yellow());
+                anyhow::bail!("User chose to exit after successful tests");
+            }
         }
     }
 
