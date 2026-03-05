@@ -90,15 +90,26 @@ pub fn execute_hybrid_build_command(feature: &str, command_type: HybridCommandTy
 ///
 /// 相比于对每个命令分别调用 `execute_hybrid_build_command`，此函数只执行一次
 /// `analyzer::update_code_analysis`，避免重复分析开销。
-pub fn execute_hybrid_build_sequence(feature: &str) -> Result<()> {
+///
+/// 当 `skip_test` 为 `true` 时跳过测试阶段。
+pub fn execute_hybrid_build_sequence(feature: &str, skip_test: bool) -> Result<()> {
     util::validate_feature_name(feature)?;
 
     println!("{}", "Updating code analysis...".bright_blue());
     analyzer::update_code_analysis(feature)?;
     println!("{}", "✓ Code analysis updated".bright_green());
 
+    // Clean and Build always run regardless of skip_test: they validate the build itself
+    // and must succeed even when the test phase is skipped due to missing test configuration.
     run_hybrid_command(feature, HybridCommandType::Clean)?;
     run_hybrid_command(feature, HybridCommandType::Build)?;
+    if skip_test {
+        println!(
+            "{}",
+            "⏭ 跳过测试阶段（测试配置不完整）".bright_yellow()
+        );
+        return Ok(());
+    }
     run_hybrid_command(feature, HybridCommandType::Test)
 }
 
