@@ -158,6 +158,7 @@ pub fn execute_code_error_check_with_fix_loop<F>(
     attempt_number: usize,
     max_fix_attempts: usize,
     show_full_output: bool,
+    skip_test: bool,
 ) -> Result<(bool, usize, bool)>
 where
     F: Fn(&str) -> String,
@@ -197,6 +198,7 @@ where
                             feature,
                             file_type,
                             show_full_output,
+                            skip_test,
                         )?;
                     return Ok((
                         build_successful,
@@ -322,6 +324,7 @@ fn handle_max_fix_attempts_reached(
     feature: &str,
     file_type: &str,
     show_full_output: bool,
+    skip_test: bool,
 ) -> Result<(bool, usize, bool)> {
     println!("│");
     println!("│ {}", "⚠ Maximum fix attempts reached!".red().bold());
@@ -380,9 +383,10 @@ fn handle_max_fix_attempts_reached(
             file_name,
             max_fix_attempts,
             show_full_output,
+            skip_test,
         ),
         interaction::FailureChoice::ManualFix => {
-            handle_manual_fix(feature, file_type, rs_file, &build_error)
+            handle_manual_fix(feature, file_type, rs_file, &build_error, skip_test)
         }
         interaction::FailureChoice::Skip => {
             println!("│ {}", "You chose: Skip this file".bright_cyan());
@@ -462,6 +466,7 @@ fn handle_add_suggestion(
     file_name: &str,
     max_fix_attempts: usize,
     show_full_output: bool,
+    skip_test: bool,
 ) -> Result<(bool, usize, bool)> {
     use crate::util::MAX_TRANSLATION_ATTEMPTS;
 
@@ -531,6 +536,7 @@ fn handle_add_suggestion(
                 attempt_number,
                 max_fix_attempts,
                 show_full_output,
+                skip_test,
             )?;
 
         Ok((build_successful, recursive_fix_attempts, had_restart))
@@ -552,6 +558,7 @@ fn handle_manual_fix(
     file_type: &str,
     rs_file: &Path,
     build_error: &anyhow::Error,
+    skip_test: bool,
 ) -> Result<(bool, usize, bool)> {
     println!("│");
     println!("│ {}", "You chose: Manual fix".bright_cyan());
@@ -569,7 +576,7 @@ fn handle_manual_fix(
                 );
 
                 // 手动编辑后执行完整构建流程
-                match builder::run_full_build_and_test_interactive(feature, file_type, rs_file) {
+                match builder::run_full_build_and_test_interactive(feature, file_type, rs_file, skip_test) {
                     Ok(_) => {
                         println!(
                             "│ {}",

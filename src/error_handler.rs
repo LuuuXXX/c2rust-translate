@@ -342,8 +342,10 @@ pub(crate) fn handle_startup_test_failure_with_files(
                             );
 
                             // 手动编辑后执行完整构建流程
+                            // This is the startup verification context (not the translation loop),
+                            // so skip_test=false: tests always run here.
                             match builder::run_full_build_and_test_interactive(
-                                feature, file_type, file,
+                                feature, file_type, file, false,
                             ) {
                                 Ok(_) => {
                                     // 全部通过，成功退出

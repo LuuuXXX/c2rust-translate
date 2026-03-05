@@ -65,7 +65,7 @@ pub fn cargo_build(
 }
 
 /// 从 c2rust-config 获取特定的配置值
-fn get_config_value(key: &str, feature: &str) -> Result<String> {
+pub(crate) fn get_config_value(key: &str, feature: &str) -> Result<String> {
     let project_root = util::find_project_root()?;
     let c2rust_dir = project_root.join(".c2rust");
 
@@ -440,7 +440,9 @@ pub fn run_hybrid_build_interactive(
             // 仅当我们有文件上下文时才显示交互菜单
             if let (Some(ftype), Some(rfile)) = (file_type, rs_file) {
                 let processing_complete =
-                    handle_build_failure_interactive(feature, ftype, rfile, build_error)?;
+                    // run_hybrid_build_interactive is not part of the translation loop,
+                    // so skip_test=false: tests always run in this standalone context.
+                    handle_build_failure_interactive(feature, ftype, rfile, build_error, false)?;
                 if !processing_complete {
                     // User chose to retry translation - not supported in this context
                     // so treat it as a failure and return early
@@ -470,7 +472,9 @@ pub fn run_hybrid_build_interactive(
             // 仅当我们有文件上下文时才显示交互菜单
             if let (Some(ftype), Some(rfile)) = (file_type, rs_file) {
                 let processing_complete =
-                    handle_test_failure_interactive(feature, ftype, rfile, test_error)?;
+                    // run_hybrid_build_interactive is not part of the translation loop,
+                    // so skip_test=false: tests always run in this standalone context.
+                    handle_test_failure_interactive(feature, ftype, rfile, test_error, false)?;
                 if !processing_complete {
                     // User chose to retry translation - not supported in this context
                     // so treat it as a failure and return early
@@ -544,6 +548,7 @@ pub(crate) fn handle_build_failure_interactive(
     file_type: &str,
     rs_file: &std::path::Path,
     build_error: anyhow::Error,
+    skip_test: bool,
 ) -> Result<bool> {
     use crate::diff_display;
     use crate::interaction;
@@ -655,7 +660,7 @@ pub(crate) fn handle_build_failure_interactive(
                     "Running full build and test...".bright_blue().bold()
                 );
 
-                match run_full_build_and_test_interactive(feature, file_type, rs_file) {
+                match run_full_build_and_test_interactive(feature, file_type, rs_file, skip_test) {
                     Ok(_) => {
                         return Ok(true);
                     }
@@ -706,7 +711,7 @@ pub(crate) fn handle_build_failure_interactive(
 
                                         // 执行完整构建流程（包含 cargo_build）
                                         match run_full_build_and_test_interactive(
-                                            feature, file_type, rs_file,
+                                            feature, file_type, rs_file, skip_test,
                                         ) {
                                             Ok(_) => {
                                                 return Ok(true);
@@ -802,7 +807,7 @@ pub(crate) fn handle_build_failure_interactive(
                         );
 
                         // Vim 编辑后尝试使用混合构建流程进行构建和测试
-                        match run_full_build_and_test_interactive(feature, file_type, rs_file) {
+                        match run_full_build_and_test_interactive(feature, file_type, rs_file, skip_test) {
                             Ok(_) => {
                                 return Ok(true);
                             }
@@ -850,7 +855,7 @@ pub(crate) fn handle_build_failure_interactive(
                                         );
                                         // 递归调用以进入基于建议的交互式修复流程
                                         return handle_build_failure_interactive(
-                                            feature, file_type, rs_file, e,
+                                            feature, file_type, rs_file, e, skip_test,
                                         );
                                     }
                                     interaction::FailureChoice::Skip
@@ -902,6 +907,7 @@ pub(crate) fn handle_test_failure_interactive(
     file_type: &str,
     rs_file: &std::path::Path,
     test_error: anyhow::Error,
+    skip_test: bool,
 ) -> Result<bool> {
     use crate::diff_display;
     use crate::interaction;
@@ -1015,7 +1021,7 @@ pub(crate) fn handle_test_failure_interactive(
                     "Running full build and test...".bright_blue().bold()
                 );
 
-                match run_full_build_and_test_interactive(feature, file_type, rs_file) {
+                match run_full_build_and_test_interactive(feature, file_type, rs_file, skip_test) {
                     Ok(_) => {
                         return Ok(true);
                     }
@@ -1065,7 +1071,7 @@ pub(crate) fn handle_test_failure_interactive(
                                         );
 
                                         match run_full_build_and_test_interactive(
-                                            feature, file_type, rs_file,
+                                            feature, file_type, rs_file, skip_test,
                                         ) {
                                             Ok(_) => {
                                                 return Ok(true);
@@ -1125,7 +1131,7 @@ pub(crate) fn handle_test_failure_interactive(
                         );
 
                         // Vim 编辑后尝试使用混合构建流程进行构建和测试
-                        match run_full_build_and_test_interactive(feature, file_type, rs_file) {
+                        match run_full_build_and_test_interactive(feature, file_type, rs_file, skip_test) {
                             Ok(_) => {
                                 return Ok(true);
                             }
@@ -1210,7 +1216,8 @@ pub(crate) fn handle_test_failure_interactive(
 /// 顺序：update_code_analysis → cargo_build → c2rust_clean → c2rust_build → c2rust_test
 /// 这是主流程中的标准验证流程
 pub fn run_full_build_and_test(feature: &str) -> Result<()> {
-    run_full_build_and_test_interactive(feature, "", std::path::Path::new(""))
+    // This entry point always runs tests; skip_test=false.
+    run_full_build_and_test_interactive(feature, "", std::path::Path::new(""), false)
 }
 
 /// 执行完整的构建和测试流程
@@ -1220,10 +1227,12 @@ pub fn run_full_build_and_test(feature: &str) -> Result<()> {
 /// 调用方负责处理错误并提供交互式修复选项（如需要）。
 ///
 /// 参数 `_file_type` 和 `_rs_file` 保留用于 API 兼容性，当前未使用。
+/// 参数 `skip_test` 为 true 时跳过测试阶段（clean、build、test 中的 test）。
 pub fn run_full_build_and_test_interactive(
     feature: &str,
     _file_type: &str,
     _rs_file: &std::path::Path,
+    skip_test: bool,
 ) -> Result<()> {
     println!("│");
     println!(
@@ -1289,18 +1298,25 @@ pub fn run_full_build_and_test_interactive(
     }
 
     // 4. 运行测试（不调用交互式处理器以避免递归）
-    println!("│ {}", "→ Step 4/4: Running tests...".bright_blue());
-    match c2rust_test(feature) {
-        Ok(_) => {
-            println!("│ {}", "  ✓ All tests passed".bright_green().bold());
-        }
-        Err(e) => {
-            println!("│ {}", "  ✗ Tests failed".red());
-            println!("│");
-            println!("│ {}", "Error details:".red().bold());
-            println!("│ {}", format!("{:#}", e).red());
-            println!("│");
-            return Err(e).context("Tests failed in full build flow");
+    if skip_test {
+        println!(
+            "│ {}",
+            "⚠ Skipping test phase (test configuration not available)".yellow()
+        );
+    } else {
+        println!("│ {}", "→ Step 4/4: Running tests...".bright_blue());
+        match c2rust_test(feature) {
+            Ok(_) => {
+                println!("│ {}", "  ✓ All tests passed".bright_green().bold());
+            }
+            Err(e) => {
+                println!("│ {}", "  ✗ Tests failed".red());
+                println!("│");
+                println!("│ {}", "Error details:".red().bold());
+                println!("│ {}", format!("{:#}", e).red());
+                println!("│");
+                return Err(e).context("Tests failed in full build flow");
+            }
         }
     }
 

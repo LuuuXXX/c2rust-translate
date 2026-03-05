@@ -66,6 +66,13 @@ pub enum ContinueChoice {
     Restart,  // 开始新的翻译会话
 }
 
+/// 测试配置缺失时的用户选择
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TestConfigChoice {
+    Exit,     // 退出并配置测试设置
+    Continue, // 继续但跳过测试阶段
+}
+
 /// 统一的失败场景提示函数
 ///
 /// 在失败时提示并返回 ManualFix/Skip/Exit（上下文仅用于展示提示信息）
@@ -525,6 +532,50 @@ pub fn prompt_continue_or_restart() -> Result<ContinueChoice> {
         0 => Ok(ContinueChoice::Continue),
         1 => Ok(ContinueChoice::Restart),
         _ => unreachable!(),
+    }
+}
+
+/// 测试配置不完整时提示用户
+///
+/// 如果 `.c2rust/config.toml` 中的 `test.cmd` 或 `test.dir` 缺失或为空，
+/// 则显示警告信息并让用户选择退出配置或继续（跳过测试阶段）。
+pub fn prompt_test_config_missing_choice() -> Result<TestConfigChoice> {
+    println!();
+    println!(
+        "{}",
+        "⚠ Warning: Test configuration incomplete in .c2rust/config.toml"
+            .yellow()
+            .bold()
+    );
+    println!(
+        "  {}",
+        "Missing or empty: test.cmd and/or test.dir".yellow()
+    );
+    println!();
+    println!("This configuration is used for hybrid build testing.");
+    println!("Without it, the test phase will be skipped during translation.");
+    println!();
+    println!("What would you like to do?");
+
+    let options = vec![
+        "Exit and configure test settings",
+        "Continue without test phase (tests will be skipped)",
+    ];
+
+    let choice = Select::new("Select an option:", options.clone())
+        .with_vim_mode(true)
+        .prompt()
+        .context("Failed to get user selection")?;
+
+    let choice_index = options
+        .iter()
+        .position(|&o| o == choice)
+        .context("Unexpected selection value")?;
+
+    match choice_index {
+        0 => Ok(TestConfigChoice::Exit),
+        1 => Ok(TestConfigChoice::Continue),
+        _ => unreachable!("Invalid selection index"),
     }
 }
 
