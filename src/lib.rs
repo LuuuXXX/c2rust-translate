@@ -688,6 +688,22 @@ pub(crate) fn should_process_warnings() -> bool {
     }
 }
 
+/// Returns `true` when test failures should not interrupt the workflow.
+///
+/// Set `C2RUST_TEST_CONTINUE_ON_ERROR=1` (or `true`/`yes`) to treat
+/// `c2rust_test` failures as non-fatal warnings, allowing subsequent tasks to
+/// continue running instead of aborting.  By default (env var absent or set to
+/// any other value) a test failure is fatal.
+pub(crate) fn should_continue_on_test_error() -> bool {
+    match std::env::var("C2RUST_TEST_CONTINUE_ON_ERROR") {
+        Ok(val) => {
+            let val = val.trim();
+            val == "1" || val.eq_ignore_ascii_case("true") || val.eq_ignore_ascii_case("yes")
+        }
+        Err(_) => false,
+    }
+}
+
 // ============================================================================
 // File Processing Helper Functions
 // ============================================================================
@@ -967,9 +983,23 @@ where
             Ok(true) // Processing complete
         }
         Err(test_error) => {
-            let processing_complete =
-                builder::handle_test_failure_interactive(feature, file_type, rs_file, test_error, skip_test)?;
-            Ok(processing_complete)
+            if should_continue_on_test_error() {
+                println!(
+                    "│ {}",
+                    format!(
+                        "⚠ Tests failed (continuing due to C2RUST_TEST_CONTINUE_ON_ERROR): {:#}",
+                        test_error
+                    )
+                    .yellow()
+                );
+                finalize_file_processing(feature, file_name, format_progress)?;
+                Ok(true)
+            } else {
+                let processing_complete = builder::handle_test_failure_interactive(
+                    feature, file_type, rs_file, test_error, skip_test,
+                )?;
+                Ok(processing_complete)
+            }
         }
     }
 }
@@ -1260,5 +1290,61 @@ mod tests {
     fn test_should_process_warnings_enabled_with_true() {
         let _guard = EnvGuard::set("C2RUST_PROCESS_WARNINGS", "true");
         assert!(should_process_warnings());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_should_continue_on_test_error_default() {
+        let _guard = EnvGuard::remove("C2RUST_TEST_CONTINUE_ON_ERROR");
+        assert!(!should_continue_on_test_error());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_should_continue_on_test_error_enabled_with_one() {
+        let _guard = EnvGuard::set("C2RUST_TEST_CONTINUE_ON_ERROR", "1");
+        assert!(should_continue_on_test_error());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_should_continue_on_test_error_enabled_with_true() {
+        let _guard = EnvGuard::set("C2RUST_TEST_CONTINUE_ON_ERROR", "true");
+        assert!(should_continue_on_test_error());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_should_continue_on_test_error_enabled_with_true_uppercase() {
+        let _guard = EnvGuard::set("C2RUST_TEST_CONTINUE_ON_ERROR", "TRUE");
+        assert!(should_continue_on_test_error());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_should_continue_on_test_error_enabled_with_yes() {
+        let _guard = EnvGuard::set("C2RUST_TEST_CONTINUE_ON_ERROR", "yes");
+        assert!(should_continue_on_test_error());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_should_continue_on_test_error_enabled_with_yes_uppercase() {
+        let _guard = EnvGuard::set("C2RUST_TEST_CONTINUE_ON_ERROR", "YES");
+        assert!(should_continue_on_test_error());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_should_continue_on_test_error_disabled_with_zero() {
+        let _guard = EnvGuard::set("C2RUST_TEST_CONTINUE_ON_ERROR", "0");
+        assert!(!should_continue_on_test_error());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_should_continue_on_test_error_disabled_with_false() {
+        let _guard = EnvGuard::set("C2RUST_TEST_CONTINUE_ON_ERROR", "false");
+        assert!(!should_continue_on_test_error());
     }
 }

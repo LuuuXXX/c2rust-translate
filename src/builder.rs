@@ -469,7 +469,18 @@ pub fn run_hybrid_build_interactive(
             Ok(())
         }
         Err(test_error) => {
-            // 仅当我们有文件上下文时才显示交互菜单
+            if crate::should_continue_on_test_error() {
+                println!(
+                    "│ {}",
+                    format!(
+                        "⚠ Tests failed (continuing due to C2RUST_TEST_CONTINUE_ON_ERROR): {:#}",
+                        test_error
+                    )
+                    .yellow()
+                );
+                return Ok(());
+            }
+            // Only show interactive menu when we have file context
             if let (Some(ftype), Some(rfile)) = (file_type, rs_file) {
                 let processing_complete =
                     // run_hybrid_build_interactive is not part of the translation loop,
@@ -489,7 +500,7 @@ pub fn run_hybrid_build_interactive(
                 }
                 Ok(())
             } else {
-                // 没有文件上下文，只返回错误
+                // No file context: just return the error
                 Err(test_error)
             }
         }
@@ -1315,7 +1326,15 @@ pub fn run_full_build_and_test_interactive(
                 println!("│ {}", "Error details:".red().bold());
                 println!("│ {}", format!("{:#}", e).red());
                 println!("│");
-                return Err(e).context("Tests failed in full build flow");
+                if crate::should_continue_on_test_error() {
+                    println!(
+                        "│ {}",
+                        "⚠ Continuing despite test failure (C2RUST_TEST_CONTINUE_ON_ERROR is set)."
+                            .yellow()
+                    );
+                } else {
+                    return Err(e).context("Tests failed in full build flow");
+                }
             }
         }
     }

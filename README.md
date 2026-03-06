@@ -136,6 +136,18 @@ c2rust-translate translate --feature myfeature --show-full-output
 | 变量名 | 默认值 | 说明 |
 |--------|--------|------|
 | `C2RUST_PROCESS_WARNINGS` | 启用 | 设为 `0` 或 `false`（大小写不敏感）可跳过 Phase 2（警告检测与自动修复）；其他任何值或未设置均表示启用 |
+| `C2RUST_TEST_CONTINUE_ON_ERROR` | 禁用 | 设为 `1`、`true` 或 `yes`（大小写不敏感）时，`c2rust_test` 失败不会中断流程，仅记录警告并继续执行后续任务。默认情况下（未设置或其他值），测试失败仍为致命错误 |
+
+### 示例：忽略测试失败继续执行
+
+```bash
+# 测试仍然会运行，但失败结果不会中断翻译流程
+export C2RUST_TEST_CONTINUE_ON_ERROR=1
+c2rust-translate translate --feature myfeature
+
+# 或者在单次命令中设置
+C2RUST_TEST_CONTINUE_ON_ERROR=1 c2rust-translate translate --feature myfeature --allow-all
+```
 
 ## 依赖要求
 
