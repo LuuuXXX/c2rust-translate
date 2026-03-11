@@ -758,20 +758,20 @@ pub(crate) fn get_test_interval() -> usize {
 /// - `skip_interval_test` is the inverse of `should_run_test`.
 fn compute_interval_test_decision(translations_since_last_test: usize) -> (bool, bool) {
     let interval = get_test_interval();
-    let proposed_count = translations_since_last_test + 1;
+    let proposed_count = translations_since_last_test.saturating_add(1);
     let should_run_test = proposed_count % interval == 0;
     (should_run_test, !should_run_test)
 }
 
 /// Update the interval counter after a successful translation.
 ///
-/// - Resets the counter to `0` when the test ran (`should_run_test == true`).
-/// - Increments the counter by 1 when the test was skipped due to the interval.
-fn update_interval_counter(translations_since_last_test: &mut usize, should_run_test: bool) {
-    if should_run_test {
+/// - Resets the counter to `0` when tests actually ran (`tests_ran == true`).
+/// - Increments the counter by 1 (with saturation) when tests were not run.
+fn update_interval_counter(translations_since_last_test: &mut usize, tests_ran: bool) {
+    if tests_ran {
         *translations_since_last_test = 0;
     } else {
-        *translations_since_last_test += 1;
+        *translations_since_last_test = translations_since_last_test.saturating_add(1);
     }
 }
 
@@ -1069,6 +1069,10 @@ where
         if !processing_complete {
             return Ok((false, false)); // Retry translation; tests did not run
         }
+        // handle_build_failure_interactive succeeded: it called run_full_build_and_test_interactive
+        // internally, which runs tests when !skip_test.  Return early so we don't fall into the
+        // skip_interval_test branch and incorrectly report tests_ran=false.
+        return Ok((true, !skip_test));
     } else {
         println!("│ {}", "✓ Build successful".bright_green().bold());
     }
