@@ -257,6 +257,11 @@ fn step_5_execute_translation_loop(
             .bold()
     );
 
+    // Tracks how many translations have completed since the last test run.
+    // Shared across all iterations of the main loop and the skipped-files loop so
+    // that the interval is counted consistently across the entire session.
+    let mut translations_since_last_test: usize = 0;
+
     loop {
         // Scan for empty .rs files, then exclude any that have already been skipped
         // by the user so they are only offered again via handle_skipped_files_loop.
@@ -300,6 +305,7 @@ fn step_5_execute_translation_loop(
             show_full_output,
             stats,
             skip_test,
+            &mut translations_since_last_test,
         )?;
     }
 
@@ -312,6 +318,7 @@ fn step_5_execute_translation_loop(
         show_full_output,
         stats,
         skip_test,
+        &mut translations_since_last_test,
     )?;
 
     Ok(())
@@ -331,6 +338,7 @@ fn handle_skipped_files_loop(
     show_full_output: bool,
     stats: &mut util::TranslationStats,
     skip_test: bool,
+    translations_since_last_test: &mut usize,
 ) -> Result<()> {
     loop {
         if stats.skipped_files.is_empty() {
@@ -350,6 +358,10 @@ fn handle_skipped_files_loop(
                     let rs_file = rust_dir.join(&file_name);
                     let pos = idx + 1;
                     print_file_processing_header(pos, total, &file_name);
+
+                    let (should_run_test, skip_interval_test) =
+                        compute_interval_test_decision(*translations_since_last_test);
+
                     if let Err(e) = process_rs_file(
                         feature,
                         &rs_file,
@@ -360,6 +372,7 @@ fn handle_skipped_files_loop(
                         show_full_output,
                         stats,
                         skip_test,
+                        skip_interval_test,
                     ) {
                         if e.downcast_ref::<verification::SkipFileSignal>().is_some() {
                             // File was re-skipped; already re-recorded in process_rs_file.
@@ -377,6 +390,7 @@ fn handle_skipped_files_loop(
                     // Mark file as processed. mark_processed() is capped at total_count
                     // so it cannot overflow even if this is a resumed session.
                     progress_state.mark_processed();
+                    update_interval_counter(translations_since_last_test, should_run_test);
                     save_stats_or_warn(stats, feature);
                 }
                 // Loop again: if any files were skipped during this pass they are now
@@ -430,6 +444,7 @@ fn process_selected_files(
     show_full_output: bool,
     stats: &mut util::TranslationStats,
     skip_test: bool,
+    translations_since_last_test: &mut usize,
 ) -> Result<()> {
     for &idx in selected_indices.iter() {
         let rs_file = &empty_rs_files[idx];
@@ -449,6 +464,9 @@ fn process_selected_files(
 
         print_file_processing_header(current_position, total_count, file_name);
 
+        let (should_run_test, skip_interval_test) =
+            compute_interval_test_decision(*translations_since_last_test);
+
         if let Err(e) = process_rs_file(
             feature,
             rs_file,
@@ -459,6 +477,7 @@ fn process_selected_files(
             show_full_output,
             stats,
             skip_test,
+            skip_interval_test,
         ) {
             if e.downcast_ref::<verification::SkipFileSignal>().is_none() {
                 return Err(e);
@@ -469,6 +488,7 @@ fn process_selected_files(
         } else {
             // Mark file as processed. mark_processed() is capped at total_count.
             progress_state.mark_processed();
+            update_interval_counter(translations_since_last_test, should_run_test);
             // Save stats immediately after successful completion.
             save_stats_or_warn(stats, feature);
         }
@@ -534,6 +554,7 @@ fn process_rs_file(
     show_full_output: bool,
     stats: &mut util::TranslationStats,
     skip_test: bool,
+    skip_interval_test: bool,
 ) -> Result<()> {
     use util::MAX_TRANSLATION_ATTEMPTS;
 
@@ -653,7 +674,7 @@ fn process_rs_file(
             }
 
             let processing_complete =
-                complete_file_processing(feature, file_name, file_type, rs_file, &format_progress, skip_test)?;
+                complete_file_processing(feature, file_name, file_type, rs_file, &format_progress, skip_test, skip_interval_test)?;
             if processing_complete {
                 stats.record_file_completion(
                     file_name.to_string(),
@@ -701,6 +722,48 @@ pub(crate) fn should_continue_on_test_error() -> bool {
             val == "1" || val.eq_ignore_ascii_case("true") || val.eq_ignore_ascii_case("yes")
         }
         Err(_) => false,
+    }
+}
+
+/// Returns the test interval: run hybrid build tests once every N successful translations.
+///
+/// Set `C2RUST_TEST_INTERVAL=N` (a positive integer) to run tests only after every N-th
+/// completed translation instead of after every single translation.  The default is `1`
+/// (run tests after every translation), which preserves the existing behaviour.
+///
+/// Invalid values (zero, non-numeric, or empty) fall back to the default of `1`.
+pub(crate) fn get_test_interval() -> usize {
+    match std::env::var("C2RUST_TEST_INTERVAL") {
+        Ok(val) => match val.trim().parse::<usize>() {
+            Ok(n) if n > 0 => n,
+            _ => 1,
+        },
+        Err(_) => 1,
+    }
+}
+
+/// Determine whether to skip the test phase for the next translation based on the
+/// current interval counter.
+///
+/// Returns `(should_run_test, skip_interval_test)`:
+/// - `should_run_test` is `true` when the interval is reached (test should execute).
+/// - `skip_interval_test` is the inverse of `should_run_test`.
+fn compute_interval_test_decision(translations_since_last_test: usize) -> (bool, bool) {
+    let interval = get_test_interval();
+    let proposed_count = translations_since_last_test + 1;
+    let should_run_test = proposed_count % interval == 0;
+    (should_run_test, !should_run_test)
+}
+
+/// Update the interval counter after a successful translation.
+///
+/// - Resets the counter to `0` when the test ran (`should_run_test == true`).
+/// - Increments the counter by 1 when the test was skipped due to the interval.
+fn update_interval_counter(translations_since_last_test: &mut usize, should_run_test: bool) {
+    if should_run_test {
+        *translations_since_last_test = 0;
+    } else {
+        *translations_since_last_test += 1;
     }
 }
 
@@ -935,6 +998,7 @@ fn complete_file_processing<F>(
     rs_file: &Path,
     format_progress: &F,
     skip_test: bool,
+    skip_interval_test: bool,
 ) -> Result<bool>
 where
     F: Fn(&str) -> String,
@@ -972,6 +1036,20 @@ where
             "⚠ Skipping test phase (test configuration not available)".yellow()
         );
         handle_successful_tests(feature, file_name, file_type, rs_file, format_progress, skip_test)?;
+        return Ok(true);
+    }
+
+    if skip_interval_test {
+        let interval = get_test_interval();
+        println!(
+            "│ {}",
+            format!(
+                "⚠ Skipping test phase (C2RUST_TEST_INTERVAL={}: test runs every {} translation(s))",
+                interval, interval
+            )
+            .yellow()
+        );
+        handle_successful_tests(feature, file_name, file_type, rs_file, format_progress, true)?;
         return Ok(true);
     }
 
@@ -1346,5 +1424,65 @@ mod tests {
     fn test_should_continue_on_test_error_disabled_with_false() {
         let _guard = EnvGuard::set("C2RUST_TEST_CONTINUE_ON_ERROR", "false");
         assert!(!should_continue_on_test_error());
+    }
+
+    // ========================================================================
+    // get_test_interval Tests
+    // ========================================================================
+
+    #[test]
+    #[serial_test::serial]
+    fn test_get_test_interval_default() {
+        let _guard = EnvGuard::remove("C2RUST_TEST_INTERVAL");
+        assert_eq!(get_test_interval(), 1);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_get_test_interval_explicit_one() {
+        let _guard = EnvGuard::set("C2RUST_TEST_INTERVAL", "1");
+        assert_eq!(get_test_interval(), 1);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_get_test_interval_five() {
+        let _guard = EnvGuard::set("C2RUST_TEST_INTERVAL", "5");
+        assert_eq!(get_test_interval(), 5);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_get_test_interval_large_value() {
+        let _guard = EnvGuard::set("C2RUST_TEST_INTERVAL", "100");
+        assert_eq!(get_test_interval(), 100);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_get_test_interval_zero_falls_back_to_default() {
+        let _guard = EnvGuard::set("C2RUST_TEST_INTERVAL", "0");
+        assert_eq!(get_test_interval(), 1);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_get_test_interval_invalid_falls_back_to_default() {
+        let _guard = EnvGuard::set("C2RUST_TEST_INTERVAL", "abc");
+        assert_eq!(get_test_interval(), 1);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_get_test_interval_empty_falls_back_to_default() {
+        let _guard = EnvGuard::set("C2RUST_TEST_INTERVAL", "");
+        assert_eq!(get_test_interval(), 1);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_get_test_interval_whitespace_trimmed() {
+        let _guard = EnvGuard::set("C2RUST_TEST_INTERVAL", "  3  ");
+        assert_eq!(get_test_interval(), 3);
     }
 }
