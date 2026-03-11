@@ -359,10 +359,10 @@ fn handle_skipped_files_loop(
                     let pos = idx + 1;
                     print_file_processing_header(pos, total, &file_name);
 
-                    let (should_run_test, skip_interval_test) =
+                    let (_, skip_interval_test) =
                         compute_interval_test_decision(*translations_since_last_test);
 
-                    if let Err(e) = process_rs_file(
+                    match process_rs_file(
                         feature,
                         &rs_file,
                         &file_name,
@@ -374,25 +374,28 @@ fn handle_skipped_files_loop(
                         skip_test,
                         skip_interval_test,
                     ) {
-                        if e.downcast_ref::<verification::SkipFileSignal>().is_some() {
-                            // File was re-skipped; already re-recorded in process_rs_file.
+                        Err(e) => {
+                            if e.downcast_ref::<verification::SkipFileSignal>().is_some() {
+                                // File was re-skipped; already re-recorded in process_rs_file.
+                                save_stats_or_warn(stats, feature);
+                                continue;
+                            }
+                            // On real error, re-add the current and all remaining files so they are not lost.
+                            stats.record_file_skipped(file_name);
+                            for (_, remaining_file) in iter {
+                                stats.record_file_skipped(remaining_file);
+                            }
                             save_stats_or_warn(stats, feature);
-                            continue;
+                            return Err(e);
                         }
-                        // On real error, re-add the current and all remaining files so they are not lost.
-                        stats.record_file_skipped(file_name);
-                        for (_, remaining_file) in iter {
-                            stats.record_file_skipped(remaining_file);
+                        Ok(tests_ran) => {
+                            // Mark file as processed. mark_processed() is capped at total_count
+                            // so it cannot overflow even if this is a resumed session.
+                            progress_state.mark_processed();
+                            update_interval_counter(translations_since_last_test, tests_ran);
+                            save_stats_or_warn(stats, feature);
                         }
-                        save_stats_or_warn(stats, feature);
-                        return Err(e);
                     }
-                    // Mark file as processed. mark_processed() is capped at total_count
-                    // so it cannot overflow even if this is a resumed session.
-                    progress_state.mark_processed();
-                    let tests_ran = should_run_test && !skip_test;
-                    update_interval_counter(translations_since_last_test, tests_ran);
-                    save_stats_or_warn(stats, feature);
                 }
                 // Loop again: if any files were skipped during this pass they are now
                 // in stats.skipped_files and the user will be prompted again.
@@ -465,10 +468,10 @@ fn process_selected_files(
 
         print_file_processing_header(current_position, total_count, file_name);
 
-        let (should_run_test, skip_interval_test) =
+        let (_, skip_interval_test) =
             compute_interval_test_decision(*translations_since_last_test);
 
-        if let Err(e) = process_rs_file(
+        match process_rs_file(
             feature,
             rs_file,
             file_name,
@@ -480,19 +483,21 @@ fn process_selected_files(
             skip_test,
             skip_interval_test,
         ) {
-            if e.downcast_ref::<verification::SkipFileSignal>().is_none() {
-                return Err(e);
+            Err(e) => {
+                if e.downcast_ref::<verification::SkipFileSignal>().is_none() {
+                    return Err(e);
+                }
+                // File was skipped; already recorded in process_rs_file. Don't mark as processed.
+                // Save stats immediately so the skip is persisted.
+                save_stats_or_warn(stats, feature);
             }
-            // File was skipped; already recorded in process_rs_file. Don't mark as processed.
-            // Save stats immediately so the skip is persisted.
-            save_stats_or_warn(stats, feature);
-        } else {
-            // Mark file as processed. mark_processed() is capped at total_count.
-            progress_state.mark_processed();
-            let tests_may_have_run = !skip_test;
-            update_interval_counter(translations_since_last_test, tests_may_have_run);
-            // Save stats immediately after successful completion.
-            save_stats_or_warn(stats, feature);
+            Ok(tests_ran) => {
+                // Mark file as processed. mark_processed() is capped at total_count.
+                progress_state.mark_processed();
+                update_interval_counter(translations_since_last_test, tests_ran);
+                // Save stats immediately after successful completion.
+                save_stats_or_warn(stats, feature);
+            }
         }
     }
     Ok(())
@@ -544,7 +549,8 @@ fn print_file_processing_header(current_position: usize, total_count: usize, fil
 /// * `show_full_output` - Whether to show full output
 ///
 /// # Returns
-/// * `Ok(())` - File processed successfully
+/// * `Ok(tests_ran)` - File processed successfully; `true` when the test suite executed
+///   for this translation (either automatically or via a Manual Fix), `false` otherwise
 /// * `Err` - Processing failed after all retry attempts
 fn process_rs_file(
     feature: &str,
@@ -557,7 +563,7 @@ fn process_rs_file(
     stats: &mut util::TranslationStats,
     skip_test: bool,
     skip_interval_test: bool,
-) -> Result<()> {
+) -> Result<bool> {
     use util::MAX_TRANSLATION_ATTEMPTS;
 
     let mut total_fix_attempts = 0usize;
@@ -675,7 +681,7 @@ fn process_rs_file(
                 );
             }
 
-            let processing_complete =
+            let (processing_complete, tests_ran) =
                 complete_file_processing(feature, file_name, file_type, rs_file, &format_progress, skip_test, skip_interval_test)?;
             if processing_complete {
                 stats.record_file_completion(
@@ -684,7 +690,7 @@ fn process_rs_file(
                     had_restart,
                     total_fix_attempts,
                 );
-                return Ok(());
+                return Ok(tests_ran);
             }
             // If not complete, retry translation (loop continues)
         }
@@ -990,8 +996,9 @@ where
 /// 4. Commit changes and update code analysis
 ///
 /// # Returns
-/// * `Ok(true)` - File processing completed successfully (continue to next file)
-/// * `Ok(false)` - Translation should be retried from scratch
+/// * `Ok((true, tests_ran))` - File processing completed successfully; `tests_ran` is `true`
+///   when the test suite executed for this translation (either automatically or via ManualFix).
+/// * `Ok((false, false))` - Translation should be retried from scratch
 /// * `Err` - Unrecoverable error occurred
 fn complete_file_processing<F>(
     feature: &str,
@@ -1001,7 +1008,7 @@ fn complete_file_processing<F>(
     format_progress: &F,
     skip_test: bool,
     skip_interval_test: bool,
-) -> Result<bool>
+) -> Result<(bool, bool)>
 where
     F: Fn(&str) -> String,
 {
@@ -1060,7 +1067,7 @@ where
         let processing_complete =
             builder::handle_build_failure_interactive(feature, file_type, rs_file, build_error, skip_test)?;
         if !processing_complete {
-            return Ok(false); // Retry translation
+            return Ok((false, false)); // Retry translation; tests did not run
         }
     } else {
         println!("│ {}", "✓ Build successful".bright_green().bold());
@@ -1071,8 +1078,8 @@ where
             "│ {}",
             "⚠ Skipping test phase (test configuration not available)".yellow()
         );
-        handle_successful_tests(feature, file_name, file_type, rs_file, format_progress, TestStatus::SkippedNoConfig)?;
-        return Ok(true);
+        let tests_ran = handle_successful_tests(feature, file_name, file_type, rs_file, format_progress, TestStatus::SkippedNoConfig)?;
+        return Ok((true, tests_ran));
     }
 
     if skip_interval_test {
@@ -1085,16 +1092,16 @@ where
             )
             .yellow()
         );
-        handle_successful_tests(feature, file_name, file_type, rs_file, format_progress, TestStatus::DeferredByInterval)?;
-        return Ok(true);
+        let tests_ran = handle_successful_tests(feature, file_name, file_type, rs_file, format_progress, TestStatus::DeferredByInterval)?;
+        return Ok((true, tests_ran));
     }
 
     // Handle test
     match builder::c2rust_test(feature) {
         Ok(_) => {
             println!("│ {}", "✓ Hybrid build tests passed".bright_green().bold());
-            handle_successful_tests(feature, file_name, file_type, rs_file, format_progress, TestStatus::Passed)?;
-            Ok(true) // Processing complete
+            let tests_ran = handle_successful_tests(feature, file_name, file_type, rs_file, format_progress, TestStatus::Passed)?;
+            Ok((true, tests_ran)) // Processing complete; tests ran
         }
         Err(test_error) => {
             if should_continue_on_test_error() {
@@ -1107,12 +1114,19 @@ where
                     .yellow()
                 );
                 finalize_file_processing(feature, file_name, format_progress)?;
-                Ok(true)
+                // C2RUST_TEST_CONTINUE_ON_ERROR was set: tests ran (and failed) but we're
+                // treating the failure as non-fatal and accepting the translation anyway.
+                Ok((true, true))
             } else {
                 let processing_complete = builder::handle_test_failure_interactive(
                     feature, file_type, rs_file, test_error, skip_test,
                 )?;
-                Ok(processing_complete)
+                // Tests ran for this translation (they failed). If the user is retrying
+                // (processing_complete=false), tests_ran doesn't influence the counter
+                // (the caller won't update it on retry). If accepted (processing_complete=true),
+                // reset the counter since tests did run—even though they failed.
+                let tests_ran = processing_complete;
+                Ok((processing_complete, tests_ran))
             }
         }
     }
@@ -1172,7 +1186,12 @@ enum TestStatus {
     DeferredByInterval,
 }
 
-/// Handle successful test completion with user interaction
+/// Handle successful test completion with user interaction.
+///
+/// Returns `Ok(true)` when tests actually ran for this translation (either
+/// automatically or via a Manual Fix), and `Ok(false)` when they were skipped
+/// or deferred without being run. Callers use this value to decide whether to
+/// reset the `translations_since_last_test` interval counter.
 fn handle_successful_tests<F>(
     feature: &str,
     file_name: &str,
@@ -1180,7 +1199,7 @@ fn handle_successful_tests<F>(
     rs_file: &Path,
     format_progress: &F,
     test_status: TestStatus,
-) -> Result<()>
+) -> Result<bool>
 where
     F: Fn(&str) -> String,
 {
@@ -1191,7 +1210,10 @@ where
             "Auto-accept mode: automatically accepting translation".bright_green()
         );
         finalize_file_processing(feature, file_name, format_progress)?;
-        return Ok(());
+        // In auto-accept mode we skip user interaction. Tests are considered to have
+        // run only when the status is `Passed` (c2rust_test executed before this call).
+        // `SkippedNoConfig` and `DeferredByInterval` both indicate tests did not run.
+        return Ok(matches!(test_status, TestStatus::Passed));
     }
 
     // Show code comparison and get user choice
@@ -1254,6 +1276,8 @@ where
                     anyhow::bail!("User chose to exit after successful build (tests skipped)");
                 }
             }
+            // Tests were never run in any choice of this path.
+            Ok(false)
         }
         TestStatus::DeferredByInterval => {
             // Build passed but tests were deferred by C2RUST_TEST_INTERVAL.
@@ -1277,10 +1301,13 @@ where
 
             let choice = interaction::prompt_build_success_tests_deferred_choice()?;
 
-            match choice {
+            // Track whether tests actually ran (only true for ManualFix, which runs
+            // run_full_build_and_test_interactive with skip_test=false).
+            let tests_ran = match choice {
                 interaction::CompileSuccessChoice::Accept => {
                     println!("│ {}", "You chose: Accept this code".bright_cyan());
                     finalize_file_processing(feature, file_name, format_progress)?;
+                    false
                 }
                 interaction::CompileSuccessChoice::AutoAccept => {
                     println!(
@@ -1289,6 +1316,7 @@ where
                     );
                     interaction::enable_auto_accept_mode();
                     finalize_file_processing(feature, file_name, format_progress)?;
+                    false
                 }
                 interaction::CompileSuccessChoice::ManualFix => {
                     println!("│ {}", "You chose: Manual fix".bright_cyan());
@@ -1304,6 +1332,7 @@ where
                         "✓ All builds and tests pass after manual changes".bright_green()
                     );
                     finalize_file_processing(feature, file_name, format_progress)?;
+                    true // tests actually ran
                 }
                 interaction::CompileSuccessChoice::Exit => {
                     println!("│ {}", "You chose: Exit".yellow());
@@ -1311,7 +1340,8 @@ where
                         "User chose to exit after successful build (tests deferred by interval)"
                     );
                 }
-            }
+            };
+            Ok(tests_ran)
         }
         TestStatus::Passed => {
             let success_message = "✓ All tests passed";
@@ -1362,10 +1392,10 @@ where
                     anyhow::bail!("User chose to exit after successful tests");
                 }
             }
+            // Tests ran (either automatically or via ManualFix, which also runs tests).
+            Ok(true)
         }
     }
-
-    Ok(())
 }
 
 /// Finalize file processing: commit changes and update analysis
