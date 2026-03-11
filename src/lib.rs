@@ -1057,7 +1057,7 @@ where
             "│ {}",
             "⚠ Skipping test phase (test configuration not available)".yellow()
         );
-        handle_successful_tests(feature, file_name, file_type, rs_file, format_progress, skip_test)?;
+        handle_successful_tests(feature, file_name, file_type, rs_file, format_progress, TestStatus::SkippedNoConfig)?;
         return Ok(true);
     }
 
@@ -1071,11 +1071,7 @@ where
             )
             .yellow()
         );
-        // Pass `skip_test` (not `true`) so that when tests are deferred only due to the
-        // interval (not because config is missing), the interactive "Manual Fix" choice in
-        // handle_successful_tests can still run real hybrid tests (`run_full_build_and_test_interactive`
-        // with skip_test=false).
-        handle_successful_tests(feature, file_name, file_type, rs_file, format_progress, skip_test)?;
+        handle_successful_tests(feature, file_name, file_type, rs_file, format_progress, TestStatus::DeferredByInterval)?;
         return Ok(true);
     }
 
@@ -1083,7 +1079,7 @@ where
     match builder::c2rust_test(feature) {
         Ok(_) => {
             println!("│ {}", "✓ Hybrid build tests passed".bright_green().bold());
-            handle_successful_tests(feature, file_name, file_type, rs_file, format_progress, skip_test)?;
+            handle_successful_tests(feature, file_name, file_type, rs_file, format_progress, TestStatus::Passed)?;
             Ok(true) // Processing complete
         }
         Err(test_error) => {
@@ -1150,6 +1146,18 @@ fn verify_hybrid_build_prerequisites() -> Result<()> {
     }
 }
 
+/// Describes the outcome of the hybrid test phase, used to drive display and
+/// user-interaction in `handle_successful_tests`.
+enum TestStatus {
+    /// Tests ran and passed.
+    Passed,
+    /// Tests were skipped because the test configuration / tooling is not available.
+    SkippedNoConfig,
+    /// Build succeeded but tests were deferred by `C2RUST_TEST_INTERVAL`.
+    /// The user's Manual Fix choice may still run real tests.
+    DeferredByInterval,
+}
+
 /// Handle successful test completion with user interaction
 fn handle_successful_tests<F>(
     feature: &str,
@@ -1157,7 +1165,7 @@ fn handle_successful_tests<F>(
     file_type: &str,
     rs_file: &Path,
     format_progress: &F,
-    skip_test: bool,
+    test_status: TestStatus,
 ) -> Result<()>
 where
     F: Fn(&str) -> String,
@@ -1176,107 +1184,169 @@ where
     let c_file = rs_file.with_extension("c");
     interaction::display_file_paths(Some(&c_file), rs_file);
 
-    if skip_test {
-        // Tests were skipped: show build-only comparison with a clear warning header
-        println!(
-            "│ {}",
-            "Hybrid build completed with tests SKIPPED (results are not validated by tests)."
-                .yellow()
-                .bold()
-        );
-        if let Err(e) = diff_display::display_code_comparison(
-            &c_file,
-            rs_file,
-            "⚠ Tests skipped (test configuration not available)",
-            diff_display::ResultType::BuildFail,
-        ) {
+    match test_status {
+        TestStatus::SkippedNoConfig => {
+            // Tests were skipped because the test config/tool is unavailable.
             println!(
                 "│ {}",
-                format!("Failed to display comparison: {}", e).yellow()
+                "Hybrid build completed with tests SKIPPED (results are not validated by tests)."
+                    .yellow()
+                    .bold()
             );
-        }
+            if let Err(e) = diff_display::display_code_comparison(
+                &c_file,
+                rs_file,
+                "⚠ Tests skipped (test configuration not available)",
+                diff_display::ResultType::BuildFail,
+            ) {
+                println!(
+                    "│ {}",
+                    format!("Failed to display comparison: {}", e).yellow()
+                );
+            }
 
-        let choice = interaction::prompt_build_success_tests_skipped_choice()?;
+            let choice = interaction::prompt_build_success_tests_skipped_choice()?;
 
-        match choice {
-            interaction::CompileSuccessChoice::Accept => {
-                println!("│ {}", "You chose: Accept this code".bright_cyan());
-                finalize_file_processing(feature, file_name, format_progress)?;
-            }
-            interaction::CompileSuccessChoice::AutoAccept => {
-                println!(
-                    "│ {}",
-                    "You chose: Auto-accept all subsequent translations".bright_cyan()
-                );
-                interaction::enable_auto_accept_mode();
-                finalize_file_processing(feature, file_name, format_progress)?;
-            }
-            interaction::CompileSuccessChoice::ManualFix => {
-                println!("│ {}", "You chose: Manual fix".bright_cyan());
-                interaction::open_in_vim(rs_file)?;
-                println!(
-                    "│ {}",
-                    "Running full build after manual changes...".bright_blue()
-                );
-                builder::run_full_build_and_test_interactive(feature, file_type, rs_file, skip_test)?;
-                println!(
-                    "│ {}",
-                    "✓ Build passes after manual changes (tests skipped)".bright_green()
-                );
-                finalize_file_processing(feature, file_name, format_progress)?;
-            }
-            interaction::CompileSuccessChoice::Exit => {
-                println!("│ {}", "You chose: Exit".yellow());
-                anyhow::bail!("User chose to exit after successful build (tests skipped)");
+            match choice {
+                interaction::CompileSuccessChoice::Accept => {
+                    println!("│ {}", "You chose: Accept this code".bright_cyan());
+                    finalize_file_processing(feature, file_name, format_progress)?;
+                }
+                interaction::CompileSuccessChoice::AutoAccept => {
+                    println!(
+                        "│ {}",
+                        "You chose: Auto-accept all subsequent translations".bright_cyan()
+                    );
+                    interaction::enable_auto_accept_mode();
+                    finalize_file_processing(feature, file_name, format_progress)?;
+                }
+                interaction::CompileSuccessChoice::ManualFix => {
+                    println!("│ {}", "You chose: Manual fix".bright_cyan());
+                    interaction::open_in_vim(rs_file)?;
+                    println!(
+                        "│ {}",
+                        "Running full build after manual changes...".bright_blue()
+                    );
+                    // Tests remain skipped: config is still unavailable.
+                    builder::run_full_build_and_test_interactive(feature, file_type, rs_file, true)?;
+                    println!(
+                        "│ {}",
+                        "✓ Build passes after manual changes (tests skipped)".bright_green()
+                    );
+                    finalize_file_processing(feature, file_name, format_progress)?;
+                }
+                interaction::CompileSuccessChoice::Exit => {
+                    println!("│ {}", "You chose: Exit".yellow());
+                    anyhow::bail!("User chose to exit after successful build (tests skipped)");
+                }
             }
         }
-    } else {
-        let success_message = "✓ All tests passed";
-        if let Err(e) = diff_display::display_code_comparison(
-            &c_file,
-            rs_file,
-            success_message,
-            diff_display::ResultType::TestPass,
-        ) {
+        TestStatus::DeferredByInterval => {
+            // Build passed but tests were deferred by C2RUST_TEST_INTERVAL.
             println!(
                 "│ {}",
-                format!("Failed to display comparison: {}", e).yellow()
+                "Hybrid build completed — tests deferred by interval (results not yet validated by tests)."
+                    .yellow()
+                    .bold()
             );
-            println!("│ {}", success_message.bright_green().bold());
+            if let Err(e) = diff_display::display_code_comparison(
+                &c_file,
+                rs_file,
+                "⚠ Tests deferred by C2RUST_TEST_INTERVAL",
+                diff_display::ResultType::BuildFail,
+            ) {
+                println!(
+                    "│ {}",
+                    format!("Failed to display comparison: {}", e).yellow()
+                );
+            }
+
+            let choice = interaction::prompt_build_success_tests_skipped_choice()?;
+
+            match choice {
+                interaction::CompileSuccessChoice::Accept => {
+                    println!("│ {}", "You chose: Accept this code".bright_cyan());
+                    finalize_file_processing(feature, file_name, format_progress)?;
+                }
+                interaction::CompileSuccessChoice::AutoAccept => {
+                    println!(
+                        "│ {}",
+                        "You chose: Auto-accept all subsequent translations".bright_cyan()
+                    );
+                    interaction::enable_auto_accept_mode();
+                    finalize_file_processing(feature, file_name, format_progress)?;
+                }
+                interaction::CompileSuccessChoice::ManualFix => {
+                    println!("│ {}", "You chose: Manual fix".bright_cyan());
+                    interaction::open_in_vim(rs_file)?;
+                    println!(
+                        "│ {}",
+                        "Running full build and test after manual changes...".bright_blue()
+                    );
+                    // Config is available: run real tests during the manual-fix validation.
+                    builder::run_full_build_and_test_interactive(feature, file_type, rs_file, false)?;
+                    println!(
+                        "│ {}",
+                        "✓ All builds and tests pass after manual changes".bright_green()
+                    );
+                    finalize_file_processing(feature, file_name, format_progress)?;
+                }
+                interaction::CompileSuccessChoice::Exit => {
+                    println!("│ {}", "You chose: Exit".yellow());
+                    anyhow::bail!(
+                        "User chose to exit after successful build (tests deferred by interval)"
+                    );
+                }
+            }
         }
+        TestStatus::Passed => {
+            let success_message = "✓ All tests passed";
+            if let Err(e) = diff_display::display_code_comparison(
+                &c_file,
+                rs_file,
+                success_message,
+                diff_display::ResultType::TestPass,
+            ) {
+                println!(
+                    "│ {}",
+                    format!("Failed to display comparison: {}", e).yellow()
+                );
+                println!("│ {}", success_message.bright_green().bold());
+            }
 
-        let choice = interaction::prompt_compile_success_choice()?;
+            let choice = interaction::prompt_compile_success_choice()?;
 
-        match choice {
-            interaction::CompileSuccessChoice::Accept => {
-                println!("│ {}", "You chose: Accept this code".bright_cyan());
-                finalize_file_processing(feature, file_name, format_progress)?;
-            }
-            interaction::CompileSuccessChoice::AutoAccept => {
-                println!(
-                    "│ {}",
-                    "You chose: Auto-accept all subsequent translations".bright_cyan()
-                );
-                interaction::enable_auto_accept_mode();
-                finalize_file_processing(feature, file_name, format_progress)?;
-            }
-            interaction::CompileSuccessChoice::ManualFix => {
-                println!("│ {}", "You chose: Manual fix".bright_cyan());
-                interaction::open_in_vim(rs_file)?;
-                println!(
-                    "│ {}",
-                    "Running full build and test after manual changes...".bright_blue()
-                );
-                builder::run_full_build_and_test_interactive(feature, file_type, rs_file, skip_test)?;
-                println!(
-                    "│ {}",
-                    "✓ All builds and tests pass after manual changes".bright_green()
-                );
-                finalize_file_processing(feature, file_name, format_progress)?;
-            }
-            interaction::CompileSuccessChoice::Exit => {
-                println!("│ {}", "You chose: Exit".yellow());
-                anyhow::bail!("User chose to exit after successful tests");
+            match choice {
+                interaction::CompileSuccessChoice::Accept => {
+                    println!("│ {}", "You chose: Accept this code".bright_cyan());
+                    finalize_file_processing(feature, file_name, format_progress)?;
+                }
+                interaction::CompileSuccessChoice::AutoAccept => {
+                    println!(
+                        "│ {}",
+                        "You chose: Auto-accept all subsequent translations".bright_cyan()
+                    );
+                    interaction::enable_auto_accept_mode();
+                    finalize_file_processing(feature, file_name, format_progress)?;
+                }
+                interaction::CompileSuccessChoice::ManualFix => {
+                    println!("│ {}", "You chose: Manual fix".bright_cyan());
+                    interaction::open_in_vim(rs_file)?;
+                    println!(
+                        "│ {}",
+                        "Running full build and test after manual changes...".bright_blue()
+                    );
+                    builder::run_full_build_and_test_interactive(feature, file_type, rs_file, false)?;
+                    println!(
+                        "│ {}",
+                        "✓ All builds and tests pass after manual changes".bright_green()
+                    );
+                    finalize_file_processing(feature, file_name, format_progress)?;
+                }
+                interaction::CompileSuccessChoice::Exit => {
+                    println!("│ {}", "You chose: Exit".yellow());
+                    anyhow::bail!("User chose to exit after successful tests");
+                }
             }
         }
     }
