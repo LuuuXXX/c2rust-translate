@@ -390,7 +390,8 @@ fn handle_skipped_files_loop(
                     // Mark file as processed. mark_processed() is capped at total_count
                     // so it cannot overflow even if this is a resumed session.
                     progress_state.mark_processed();
-                    update_interval_counter(translations_since_last_test, should_run_test);
+                    let tests_ran = should_run_test && !skip_test;
+                    update_interval_counter(translations_since_last_test, tests_ran);
                     save_stats_or_warn(stats, feature);
                 }
                 // Loop again: if any files were skipped during this pass they are now
@@ -488,7 +489,8 @@ fn process_selected_files(
         } else {
             // Mark file as processed. mark_processed() is capped at total_count.
             progress_state.mark_processed();
-            update_interval_counter(translations_since_last_test, should_run_test);
+            let tests_may_have_run = !skip_test;
+            update_interval_counter(translations_since_last_test, tests_may_have_run);
             // Save stats immediately after successful completion.
             save_stats_or_warn(stats, feature);
         }

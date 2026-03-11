@@ -448,6 +448,7 @@ pub fn prompt_build_success_tests_deferred_choice() -> Result<CompileSuccessChoi
     }
 }
 
+/// 测试失败时提示用户选择下一步操作
 pub fn prompt_test_failure_choice() -> Result<FailureChoice> {
     println!("│");
     println!(
