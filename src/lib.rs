@@ -1004,13 +1004,35 @@ where
     F: Fn(&str) -> String,
 {
     println!("│");
-    println!(
-        "│ {}",
-        format_progress("Hybrid Build Tests")
+    // Choose the progress header based on whether tests will be deferred by interval.
+    if skip_interval_test {
+        let interval = get_test_interval();
+        println!(
+            "│ {}",
+            format_progress(&format!(
+                "Hybrid Build (tests deferred by C2RUST_TEST_INTERVAL={})",
+                interval
+            ))
             .bright_magenta()
             .bold()
-    );
-    println!("│ {}", "Running hybrid build tests...".bright_blue());
+        );
+        println!(
+            "│ {}",
+            format!(
+                "Running clean/build only (tests deferred: every {} translations)...",
+                interval
+            )
+            .bright_blue()
+        );
+    } else {
+        println!(
+            "│ {}",
+            format_progress("Hybrid Build Tests")
+                .bright_magenta()
+                .bold()
+        );
+        println!("│ {}", "Running hybrid build tests...".bright_blue());
+    }
 
     // Pre-check: Verify config and tools are available
     verify_hybrid_build_prerequisites()?;
@@ -1044,12 +1066,16 @@ where
         println!(
             "│ {}",
             format!(
-                "⚠ Skipping test phase (C2RUST_TEST_INTERVAL={}: test runs every {} translation(s))",
+                "⚠ Test phase deferred (C2RUST_TEST_INTERVAL={}: test runs every {} translations)",
                 interval, interval
             )
             .yellow()
         );
-        handle_successful_tests(feature, file_name, file_type, rs_file, format_progress, true)?;
+        // Pass `skip_test` (not `true`) so that when tests are deferred only due to the
+        // interval (not because config is missing), the interactive "Manual Fix" choice in
+        // handle_successful_tests can still run real hybrid tests (`run_full_build_and_test_interactive`
+        // with skip_test=false).
+        handle_successful_tests(feature, file_name, file_type, rs_file, format_progress, skip_test)?;
         return Ok(true);
     }
 
@@ -1484,5 +1510,117 @@ mod tests {
     fn test_get_test_interval_whitespace_trimmed() {
         let _guard = EnvGuard::set("C2RUST_TEST_INTERVAL", "  3  ");
         assert_eq!(get_test_interval(), 3);
+    }
+
+    // ========================================================================
+    // compute_interval_test_decision Tests
+    // ========================================================================
+
+    #[test]
+    #[serial_test::serial]
+    fn test_compute_interval_decision_interval_1_always_runs() {
+        // Interval=1: every translation should run the test.
+        let _guard = EnvGuard::set("C2RUST_TEST_INTERVAL", "1");
+        for counter in 0..5 {
+            let (should_run, skip) = compute_interval_test_decision(counter);
+            assert!(should_run, "counter={}: expected test to run", counter);
+            assert!(!skip, "counter={}: expected skip=false", counter);
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_compute_interval_decision_interval_3() {
+        // Interval=3: test runs when proposed_count (counter+1) is a multiple of 3.
+        let _guard = EnvGuard::set("C2RUST_TEST_INTERVAL", "3");
+        // counter=0 → proposed=1 → 1%3≠0 → skip
+        let (should_run, skip) = compute_interval_test_decision(0);
+        assert!(!should_run);
+        assert!(skip);
+        // counter=1 → proposed=2 → 2%3≠0 → skip
+        let (should_run, skip) = compute_interval_test_decision(1);
+        assert!(!should_run);
+        assert!(skip);
+        // counter=2 → proposed=3 → 3%3=0 → run
+        let (should_run, skip) = compute_interval_test_decision(2);
+        assert!(should_run);
+        assert!(!skip);
+        // counter=3 → proposed=4 → 4%3≠0 → skip (next cycle starts)
+        let (should_run, skip) = compute_interval_test_decision(3);
+        assert!(!should_run);
+        assert!(skip);
+        // counter=5 → proposed=6 → 6%3=0 → run
+        let (should_run, skip) = compute_interval_test_decision(5);
+        assert!(should_run);
+        assert!(!skip);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_compute_interval_decision_returns_inverse_pair() {
+        // should_run and skip must always be exact inverses.
+        let _guard = EnvGuard::set("C2RUST_TEST_INTERVAL", "4");
+        for counter in 0..12 {
+            let (should_run, skip) = compute_interval_test_decision(counter);
+            assert_eq!(should_run, !skip, "counter={}: should_run and skip are not inverses", counter);
+        }
+    }
+
+    // ========================================================================
+    // update_interval_counter Tests
+    // ========================================================================
+
+    #[test]
+    fn test_update_interval_counter_resets_when_test_ran() {
+        let mut counter = 4usize;
+        update_interval_counter(&mut counter, true);
+        assert_eq!(counter, 0);
+    }
+
+    #[test]
+    fn test_update_interval_counter_increments_when_test_skipped() {
+        let mut counter = 2usize;
+        update_interval_counter(&mut counter, false);
+        assert_eq!(counter, 3);
+    }
+
+    #[test]
+    fn test_update_interval_counter_increments_from_zero() {
+        let mut counter = 0usize;
+        update_interval_counter(&mut counter, false);
+        assert_eq!(counter, 1);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_full_interval_cycle_counter_behaviour() {
+        // Simulates 6 successive translations with interval=3 and checks the full
+        // sequence of decisions and counter updates.
+        let _guard = EnvGuard::set("C2RUST_TEST_INTERVAL", "3");
+        let mut counter = 0usize;
+
+        // Translation 1: proposed=1 → skip
+        let (should_run, _) = compute_interval_test_decision(counter);
+        assert!(!should_run);
+        update_interval_counter(&mut counter, should_run);
+        assert_eq!(counter, 1);
+
+        // Translation 2: proposed=2 → skip
+        let (should_run, _) = compute_interval_test_decision(counter);
+        assert!(!should_run);
+        update_interval_counter(&mut counter, should_run);
+        assert_eq!(counter, 2);
+
+        // Translation 3: proposed=3 → run → reset
+        let (should_run, _) = compute_interval_test_decision(counter);
+        assert!(should_run);
+        update_interval_counter(&mut counter, should_run);
+        assert_eq!(counter, 0);
+
+        // Translation 4: proposed=1 → skip (new cycle)
+        let (should_run, _) = compute_interval_test_decision(counter);
+        assert!(!should_run);
+        update_interval_counter(&mut counter, should_run);
+        assert_eq!(counter, 1);
     }
 }
