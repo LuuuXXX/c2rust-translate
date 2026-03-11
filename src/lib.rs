@@ -1004,8 +1004,20 @@ where
     F: Fn(&str) -> String,
 {
     println!("│");
-    // Choose the progress header based on whether tests will be deferred by interval.
-    if skip_interval_test {
+    // Choose the progress header. `skip_test` (config unavailable) takes priority over
+    // `skip_interval_test` so the user sees the correct reason when both flags are true.
+    if skip_test {
+        println!(
+            "│ {}",
+            format_progress("Hybrid Build (tests skipped — config unavailable)")
+                .bright_magenta()
+                .bold()
+        );
+        println!(
+            "│ {}",
+            "Running clean/build only (test configuration not available)...".bright_blue()
+        );
+    } else if skip_interval_test {
         let interval = get_test_interval();
         println!(
             "│ {}",
@@ -1261,7 +1273,7 @@ where
                 );
             }
 
-            let choice = interaction::prompt_build_success_tests_skipped_choice()?;
+            let choice = interaction::prompt_build_success_tests_deferred_choice()?;
 
             match choice {
                 interaction::CompileSuccessChoice::Accept => {
@@ -1664,7 +1676,7 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn test_full_interval_cycle_counter_behaviour() {
-        // Simulates 6 successive translations with interval=3 and checks the full
+        // Simulates 4 successive translations with interval=3 and checks the full
         // sequence of decisions and counter updates.
         let _guard = EnvGuard::set("C2RUST_TEST_INTERVAL", "3");
         let mut counter = 0usize;
