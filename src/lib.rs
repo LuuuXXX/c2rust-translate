@@ -321,6 +321,12 @@ fn step_5_execute_translation_loop(
         &mut translations_since_last_test,
     )?;
 
+    // If C2RUST_TEST_INTERVAL > 1 and the total translation count was not a
+    // multiple of the interval, the last few translations never got a test run.
+    // Run one final test here to make sure every completed translation is
+    // covered by at least one test pass.
+    run_final_interval_test_if_needed(feature, skip_test, translations_since_last_test)?;
+
     Ok(())
 }
 
@@ -401,6 +407,75 @@ fn handle_skipped_files_loop(
                 // in stats.skipped_files and the user will be prompted again.
             }
             interaction::SkippedFilesChoice::ExitForLater => break,
+        }
+    }
+
+    Ok(())
+}
+
+// ============================================================================
+// Final Interval Test
+// ============================================================================
+
+/// Run a final test pass after the translation loop completes, if needed.
+///
+/// When `C2RUST_TEST_INTERVAL > 1` the per-translation test is deferred until
+/// every N-th translation.  If the total number of translations is not a
+/// multiple of the interval the last few translations are never tested by the
+/// per-file test.  This function ensures those translations are covered by
+/// running one extra clean/build/test cycle at the end of the session.
+///
+/// The final test is skipped when:
+/// * `skip_test` is `true` (test configuration is unavailable), or
+/// * `translations_since_last_test == 0` (all translations already had a test).
+pub(crate) fn run_final_interval_test_if_needed(
+    feature: &str,
+    skip_test: bool,
+    translations_since_last_test: usize,
+) -> Result<()> {
+    if skip_test || translations_since_last_test == 0 {
+        return Ok(());
+    }
+
+    println!(
+        "\n{}",
+        format!(
+            "Running final test pass ({} translation(s) untested due to C2RUST_TEST_INTERVAL)…",
+            translations_since_last_test
+        )
+        .bright_cyan()
+        .bold()
+    );
+
+    verify_hybrid_build_prerequisites()?;
+    builder::c2rust_clean(feature)?;
+
+    if let Err(build_error) = builder::c2rust_build(feature) {
+        println!("{}", "✗ Final build failed".red().bold());
+        return Err(build_error);
+    }
+    println!("{}", "✓ Final build successful".bright_green().bold());
+
+    match builder::c2rust_test(feature) {
+        Ok(_) => {
+            println!(
+                "{}",
+                "✓ Final hybrid build tests passed".bright_green().bold()
+            );
+        }
+        Err(test_error) => {
+            if should_continue_on_test_error() {
+                println!(
+                    "{}",
+                    format!(
+                        "⚠ Final tests failed (continuing due to C2RUST_TEST_CONTINUE_ON_ERROR): {:#}",
+                        test_error
+                    )
+                    .yellow()
+                );
+            } else {
+                return Err(test_error);
+            }
         }
     }
 
@@ -1740,5 +1815,31 @@ mod tests {
         assert!(!should_run);
         update_interval_counter(&mut counter, should_run);
         assert_eq!(counter, 1);
+    }
+
+    // run_final_interval_test_if_needed logic tests
+    // (We test the guard conditions; the actual builder calls require integration infra.)
+
+    #[test]
+    fn test_final_interval_test_skipped_when_skip_test_true() {
+        // When skip_test=true the function should return Ok(()) immediately
+        // regardless of the pending-translation count.
+        let result = run_final_interval_test_if_needed("dummy_feature", true, 3);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_final_interval_test_skipped_when_no_pending_translations() {
+        // When translations_since_last_test=0 (all translations already tested)
+        // the function should return Ok(()) immediately.
+        let result = run_final_interval_test_if_needed("dummy_feature", false, 0);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_final_interval_test_skipped_when_both_skip_and_no_pending() {
+        // Both guard conditions true: still Ok(()).
+        let result = run_final_interval_test_if_needed("dummy_feature", true, 0);
+        assert!(result.is_ok());
     }
 }
