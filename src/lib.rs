@@ -428,7 +428,7 @@ fn handle_skipped_files_loop(
 /// The final test is skipped when:
 /// * `skip_test` is `true` (test configuration is unavailable), or
 /// * `translations_since_last_test == 0` (all translations already had a test).
-pub(crate) fn run_final_interval_test_if_needed(
+fn run_final_interval_test_if_needed(
     feature: &str,
     skip_test: bool,
     translations_since_last_test: usize,
@@ -478,6 +478,14 @@ pub(crate) fn run_final_interval_test_if_needed(
             }
         }
     }
+
+    // Commit any analysis changes produced by clean/build/test above so the
+    // working tree is left clean, matching the per-file finalize_file_processing
+    // behaviour.  git_commit handles "nothing to commit" gracefully.
+    git::git_commit(
+        &format!("Update code analysis after final interval test (feature: {})", feature),
+        feature,
+    )?;
 
     Ok(())
 }
