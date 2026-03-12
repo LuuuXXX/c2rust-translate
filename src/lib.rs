@@ -257,6 +257,11 @@ fn step_5_execute_translation_loop(
             .bold()
     );
 
+    // Tracks how many translations have completed since the last test run.
+    // Shared across all iterations of the main loop and the skipped-files loop so
+    // that the interval is counted consistently across the entire session.
+    let mut translations_since_last_test: usize = 0;
+
     loop {
         // Scan for empty .rs files, then exclude any that have already been skipped
         // by the user so they are only offered again via handle_skipped_files_loop.
@@ -300,6 +305,7 @@ fn step_5_execute_translation_loop(
             show_full_output,
             stats,
             skip_test,
+            &mut translations_since_last_test,
         )?;
     }
 
@@ -312,6 +318,7 @@ fn step_5_execute_translation_loop(
         show_full_output,
         stats,
         skip_test,
+        &mut translations_since_last_test,
     )?;
 
     Ok(())
@@ -331,6 +338,7 @@ fn handle_skipped_files_loop(
     show_full_output: bool,
     stats: &mut util::TranslationStats,
     skip_test: bool,
+    translations_since_last_test: &mut usize,
 ) -> Result<()> {
     loop {
         if stats.skipped_files.is_empty() {
@@ -350,7 +358,11 @@ fn handle_skipped_files_loop(
                     let rs_file = rust_dir.join(&file_name);
                     let pos = idx + 1;
                     print_file_processing_header(pos, total, &file_name);
-                    if let Err(e) = process_rs_file(
+
+                    let (_, skip_interval_test) =
+                        compute_interval_test_decision(*translations_since_last_test);
+
+                    match process_rs_file(
                         feature,
                         &rs_file,
                         &file_name,
@@ -360,24 +372,30 @@ fn handle_skipped_files_loop(
                         show_full_output,
                         stats,
                         skip_test,
+                        skip_interval_test,
                     ) {
-                        if e.downcast_ref::<verification::SkipFileSignal>().is_some() {
-                            // File was re-skipped; already re-recorded in process_rs_file.
+                        Err(e) => {
+                            if e.downcast_ref::<verification::SkipFileSignal>().is_some() {
+                                // File was re-skipped; already re-recorded in process_rs_file.
+                                save_stats_or_warn(stats, feature);
+                                continue;
+                            }
+                            // On real error, re-add the current and all remaining files so they are not lost.
+                            stats.record_file_skipped(file_name);
+                            for (_, remaining_file) in iter {
+                                stats.record_file_skipped(remaining_file);
+                            }
                             save_stats_or_warn(stats, feature);
-                            continue;
+                            return Err(e);
                         }
-                        // On real error, re-add the current and all remaining files so they are not lost.
-                        stats.record_file_skipped(file_name);
-                        for (_, remaining_file) in iter {
-                            stats.record_file_skipped(remaining_file);
+                        Ok(tests_ran) => {
+                            // Mark file as processed. mark_processed() is capped at total_count
+                            // so it cannot overflow even if this is a resumed session.
+                            progress_state.mark_processed();
+                            update_interval_counter(translations_since_last_test, tests_ran);
+                            save_stats_or_warn(stats, feature);
                         }
-                        save_stats_or_warn(stats, feature);
-                        return Err(e);
                     }
-                    // Mark file as processed. mark_processed() is capped at total_count
-                    // so it cannot overflow even if this is a resumed session.
-                    progress_state.mark_processed();
-                    save_stats_or_warn(stats, feature);
                 }
                 // Loop again: if any files were skipped during this pass they are now
                 // in stats.skipped_files and the user will be prompted again.
@@ -430,6 +448,7 @@ fn process_selected_files(
     show_full_output: bool,
     stats: &mut util::TranslationStats,
     skip_test: bool,
+    translations_since_last_test: &mut usize,
 ) -> Result<()> {
     for &idx in selected_indices.iter() {
         let rs_file = &empty_rs_files[idx];
@@ -449,7 +468,10 @@ fn process_selected_files(
 
         print_file_processing_header(current_position, total_count, file_name);
 
-        if let Err(e) = process_rs_file(
+        let (_, skip_interval_test) =
+            compute_interval_test_decision(*translations_since_last_test);
+
+        match process_rs_file(
             feature,
             rs_file,
             file_name,
@@ -459,18 +481,23 @@ fn process_selected_files(
             show_full_output,
             stats,
             skip_test,
+            skip_interval_test,
         ) {
-            if e.downcast_ref::<verification::SkipFileSignal>().is_none() {
-                return Err(e);
+            Err(e) => {
+                if e.downcast_ref::<verification::SkipFileSignal>().is_none() {
+                    return Err(e);
+                }
+                // File was skipped; already recorded in process_rs_file. Don't mark as processed.
+                // Save stats immediately so the skip is persisted.
+                save_stats_or_warn(stats, feature);
             }
-            // File was skipped; already recorded in process_rs_file. Don't mark as processed.
-            // Save stats immediately so the skip is persisted.
-            save_stats_or_warn(stats, feature);
-        } else {
-            // Mark file as processed. mark_processed() is capped at total_count.
-            progress_state.mark_processed();
-            // Save stats immediately after successful completion.
-            save_stats_or_warn(stats, feature);
+            Ok(tests_ran) => {
+                // Mark file as processed. mark_processed() is capped at total_count.
+                progress_state.mark_processed();
+                update_interval_counter(translations_since_last_test, tests_ran);
+                // Save stats immediately after successful completion.
+                save_stats_or_warn(stats, feature);
+            }
         }
     }
     Ok(())
@@ -522,7 +549,8 @@ fn print_file_processing_header(current_position: usize, total_count: usize, fil
 /// * `show_full_output` - Whether to show full output
 ///
 /// # Returns
-/// * `Ok(())` - File processed successfully
+/// * `Ok(tests_ran)` - File processed successfully; `true` when the test suite executed
+///   for this translation (either automatically or via a Manual Fix), `false` otherwise
 /// * `Err` - Processing failed after all retry attempts
 fn process_rs_file(
     feature: &str,
@@ -534,7 +562,8 @@ fn process_rs_file(
     show_full_output: bool,
     stats: &mut util::TranslationStats,
     skip_test: bool,
-) -> Result<()> {
+    skip_interval_test: bool,
+) -> Result<bool> {
     use util::MAX_TRANSLATION_ATTEMPTS;
 
     let mut total_fix_attempts = 0usize;
@@ -652,8 +681,8 @@ fn process_rs_file(
                 );
             }
 
-            let processing_complete =
-                complete_file_processing(feature, file_name, file_type, rs_file, &format_progress, skip_test)?;
+            let (processing_complete, tests_ran) =
+                complete_file_processing(feature, file_name, file_type, rs_file, &format_progress, skip_test, skip_interval_test)?;
             if processing_complete {
                 stats.record_file_completion(
                     file_name.to_string(),
@@ -661,7 +690,7 @@ fn process_rs_file(
                     had_restart,
                     total_fix_attempts,
                 );
-                return Ok(());
+                return Ok(tests_ran);
             }
             // If not complete, retry translation (loop continues)
         }
@@ -701,6 +730,48 @@ pub(crate) fn should_continue_on_test_error() -> bool {
             val == "1" || val.eq_ignore_ascii_case("true") || val.eq_ignore_ascii_case("yes")
         }
         Err(_) => false,
+    }
+}
+
+/// Returns the test interval: run hybrid build tests once every N successful translations.
+///
+/// Set `C2RUST_TEST_INTERVAL=N` (a positive integer) to run tests only after every N-th
+/// completed translation instead of after every single translation.  The default is `1`
+/// (run tests after every translation), which preserves the existing behaviour.
+///
+/// Invalid values (zero, non-numeric, or empty) fall back to the default of `1`.
+pub(crate) fn get_test_interval() -> usize {
+    match std::env::var("C2RUST_TEST_INTERVAL") {
+        Ok(val) => match val.trim().parse::<usize>() {
+            Ok(n) if n > 0 => n,
+            _ => 1,
+        },
+        Err(_) => 1,
+    }
+}
+
+/// Determine whether to skip the test phase for the next translation based on the
+/// current interval counter.
+///
+/// Returns `(should_run_test, skip_interval_test)`:
+/// - `should_run_test` is `true` when the interval is reached (test should execute).
+/// - `skip_interval_test` is the inverse of `should_run_test`.
+fn compute_interval_test_decision(translations_since_last_test: usize) -> (bool, bool) {
+    let interval = get_test_interval();
+    let proposed_count = translations_since_last_test.saturating_add(1);
+    let should_run_test = proposed_count % interval == 0;
+    (should_run_test, !should_run_test)
+}
+
+/// Update the interval counter after a successful translation.
+///
+/// - Resets the counter to `0` when tests actually ran (`tests_ran == true`).
+/// - Increments the counter by 1 (with saturation) when tests were not run.
+fn update_interval_counter(translations_since_last_test: &mut usize, tests_ran: bool) {
+    if tests_ran {
+        *translations_since_last_test = 0;
+    } else {
+        *translations_since_last_test = translations_since_last_test.saturating_add(1);
     }
 }
 
@@ -925,8 +996,9 @@ where
 /// 4. Commit changes and update code analysis
 ///
 /// # Returns
-/// * `Ok(true)` - File processing completed successfully (continue to next file)
-/// * `Ok(false)` - Translation should be retried from scratch
+/// * `Ok((true, tests_ran))` - File processing completed successfully; `tests_ran` is `true`
+///   when the test suite executed for this translation (either automatically or via ManualFix).
+/// * `Ok((false, false))` - Translation should be retried from scratch
 /// * `Err` - Unrecoverable error occurred
 fn complete_file_processing<F>(
     feature: &str,
@@ -935,18 +1007,53 @@ fn complete_file_processing<F>(
     rs_file: &Path,
     format_progress: &F,
     skip_test: bool,
-) -> Result<bool>
+    skip_interval_test: bool,
+) -> Result<(bool, bool)>
 where
     F: Fn(&str) -> String,
 {
     println!("│");
-    println!(
-        "│ {}",
-        format_progress("Hybrid Build Tests")
+    // Choose the progress header. `skip_test` (config unavailable) takes priority over
+    // `skip_interval_test` so the user sees the correct reason when both flags are true.
+    if skip_test {
+        println!(
+            "│ {}",
+            format_progress("Hybrid Build (tests skipped — config unavailable)")
+                .bright_magenta()
+                .bold()
+        );
+        println!(
+            "│ {}",
+            "Running clean/build only (test configuration not available)...".bright_blue()
+        );
+    } else if skip_interval_test {
+        let interval = get_test_interval();
+        println!(
+            "│ {}",
+            format_progress(&format!(
+                "Hybrid Build (tests deferred by C2RUST_TEST_INTERVAL={})",
+                interval
+            ))
             .bright_magenta()
             .bold()
-    );
-    println!("│ {}", "Running hybrid build tests...".bright_blue());
+        );
+        println!(
+            "│ {}",
+            format!(
+                "Running clean/build only (tests deferred: every {} translations)...",
+                interval
+            )
+            .bright_blue()
+        );
+    } else {
+        println!(
+            "│ {}",
+            format_progress("Hybrid Build Tests")
+                .bright_magenta()
+                .bold()
+        );
+        println!("│ {}", "Running hybrid build tests...".bright_blue());
+    }
 
     // Pre-check: Verify config and tools are available
     verify_hybrid_build_prerequisites()?;
@@ -960,8 +1067,12 @@ where
         let processing_complete =
             builder::handle_build_failure_interactive(feature, file_type, rs_file, build_error, skip_test)?;
         if !processing_complete {
-            return Ok(false); // Retry translation
+            return Ok((false, false)); // Retry translation; tests did not run
         }
+        // handle_build_failure_interactive succeeded: it called run_full_build_and_test_interactive
+        // internally, which runs tests when !skip_test.  Return early so we don't fall into the
+        // skip_interval_test branch and incorrectly report tests_ran=false.
+        return Ok((true, !skip_test));
     } else {
         println!("│ {}", "✓ Build successful".bright_green().bold());
     }
@@ -971,16 +1082,30 @@ where
             "│ {}",
             "⚠ Skipping test phase (test configuration not available)".yellow()
         );
-        handle_successful_tests(feature, file_name, file_type, rs_file, format_progress, skip_test)?;
-        return Ok(true);
+        let tests_ran = handle_successful_tests(feature, file_name, file_type, rs_file, format_progress, TestStatus::SkippedNoConfig)?;
+        return Ok((true, tests_ran));
+    }
+
+    if skip_interval_test {
+        let interval = get_test_interval();
+        println!(
+            "│ {}",
+            format!(
+                "⚠ Test phase deferred (C2RUST_TEST_INTERVAL={}: test runs every {} translations)",
+                interval, interval
+            )
+            .yellow()
+        );
+        let tests_ran = handle_successful_tests(feature, file_name, file_type, rs_file, format_progress, TestStatus::DeferredByInterval)?;
+        return Ok((true, tests_ran));
     }
 
     // Handle test
     match builder::c2rust_test(feature) {
         Ok(_) => {
             println!("│ {}", "✓ Hybrid build tests passed".bright_green().bold());
-            handle_successful_tests(feature, file_name, file_type, rs_file, format_progress, skip_test)?;
-            Ok(true) // Processing complete
+            let tests_ran = handle_successful_tests(feature, file_name, file_type, rs_file, format_progress, TestStatus::Passed)?;
+            Ok((true, tests_ran)) // Processing complete; tests ran
         }
         Err(test_error) => {
             if should_continue_on_test_error() {
@@ -993,12 +1118,19 @@ where
                     .yellow()
                 );
                 finalize_file_processing(feature, file_name, format_progress)?;
-                Ok(true)
+                // C2RUST_TEST_CONTINUE_ON_ERROR was set: tests ran (and failed) but we're
+                // treating the failure as non-fatal and accepting the translation anyway.
+                Ok((true, true))
             } else {
                 let processing_complete = builder::handle_test_failure_interactive(
                     feature, file_type, rs_file, test_error, skip_test,
                 )?;
-                Ok(processing_complete)
+                // Tests ran for this translation (they failed). If the user is retrying
+                // (processing_complete=false), tests_ran doesn't influence the counter
+                // (the caller won't update it on retry). If accepted (processing_complete=true),
+                // reset the counter since tests did run—even though they failed.
+                let tests_ran = processing_complete;
+                Ok((processing_complete, tests_ran))
             }
         }
     }
@@ -1046,15 +1178,32 @@ fn verify_hybrid_build_prerequisites() -> Result<()> {
     }
 }
 
-/// Handle successful test completion with user interaction
+/// Describes the outcome of the hybrid test phase, used to drive display and
+/// user-interaction in `handle_successful_tests`.
+enum TestStatus {
+    /// Tests ran and passed.
+    Passed,
+    /// Tests were skipped because the test configuration / tooling is not available.
+    SkippedNoConfig,
+    /// Build succeeded but tests were deferred by `C2RUST_TEST_INTERVAL`.
+    /// The user's Manual Fix choice may still run real tests.
+    DeferredByInterval,
+}
+
+/// Handle successful test completion with user interaction.
+///
+/// Returns `Ok(true)` when tests actually ran for this translation (either
+/// automatically or via a Manual Fix), and `Ok(false)` when they were skipped
+/// or deferred without being run. Callers use this value to decide whether to
+/// reset the `translations_since_last_test` interval counter.
 fn handle_successful_tests<F>(
     feature: &str,
     file_name: &str,
     file_type: &str,
     rs_file: &Path,
     format_progress: &F,
-    skip_test: bool,
-) -> Result<()>
+    test_status: TestStatus,
+) -> Result<bool>
 where
     F: Fn(&str) -> String,
 {
@@ -1065,119 +1214,192 @@ where
             "Auto-accept mode: automatically accepting translation".bright_green()
         );
         finalize_file_processing(feature, file_name, format_progress)?;
-        return Ok(());
+        // In auto-accept mode we skip user interaction. Tests are considered to have
+        // run only when the status is `Passed` (c2rust_test executed before this call).
+        // `SkippedNoConfig` and `DeferredByInterval` both indicate tests did not run.
+        return Ok(matches!(test_status, TestStatus::Passed));
     }
 
     // Show code comparison and get user choice
     let c_file = rs_file.with_extension("c");
     interaction::display_file_paths(Some(&c_file), rs_file);
 
-    if skip_test {
-        // Tests were skipped: show build-only comparison with a clear warning header
-        println!(
-            "│ {}",
-            "Hybrid build completed with tests SKIPPED (results are not validated by tests)."
-                .yellow()
-                .bold()
-        );
-        if let Err(e) = diff_display::display_code_comparison(
-            &c_file,
-            rs_file,
-            "⚠ Tests skipped (test configuration not available)",
-            diff_display::ResultType::BuildFail,
-        ) {
+    match test_status {
+        TestStatus::SkippedNoConfig => {
+            // Tests were skipped because the test config/tool is unavailable.
             println!(
                 "│ {}",
-                format!("Failed to display comparison: {}", e).yellow()
+                "Hybrid build completed with tests SKIPPED (results are not validated by tests)."
+                    .yellow()
+                    .bold()
             );
-        }
+            if let Err(e) = diff_display::display_code_comparison(
+                &c_file,
+                rs_file,
+                "⚠ Tests skipped (test configuration not available)",
+                diff_display::ResultType::BuildFail,
+            ) {
+                println!(
+                    "│ {}",
+                    format!("Failed to display comparison: {}", e).yellow()
+                );
+            }
 
-        let choice = interaction::prompt_build_success_tests_skipped_choice()?;
+            let choice = interaction::prompt_build_success_tests_skipped_choice()?;
 
-        match choice {
-            interaction::CompileSuccessChoice::Accept => {
-                println!("│ {}", "You chose: Accept this code".bright_cyan());
-                finalize_file_processing(feature, file_name, format_progress)?;
+            match choice {
+                interaction::CompileSuccessChoice::Accept => {
+                    println!("│ {}", "You chose: Accept this code".bright_cyan());
+                    finalize_file_processing(feature, file_name, format_progress)?;
+                }
+                interaction::CompileSuccessChoice::AutoAccept => {
+                    println!(
+                        "│ {}",
+                        "You chose: Auto-accept all subsequent translations".bright_cyan()
+                    );
+                    interaction::enable_auto_accept_mode();
+                    finalize_file_processing(feature, file_name, format_progress)?;
+                }
+                interaction::CompileSuccessChoice::ManualFix => {
+                    println!("│ {}", "You chose: Manual fix".bright_cyan());
+                    interaction::open_in_vim(rs_file)?;
+                    println!(
+                        "│ {}",
+                        "Running full build after manual changes...".bright_blue()
+                    );
+                    // Tests remain skipped: config is still unavailable.
+                    builder::run_full_build_and_test_interactive(feature, file_type, rs_file, true)?;
+                    println!(
+                        "│ {}",
+                        "✓ Build passes after manual changes (tests skipped)".bright_green()
+                    );
+                    finalize_file_processing(feature, file_name, format_progress)?;
+                }
+                interaction::CompileSuccessChoice::Exit => {
+                    println!("│ {}", "You chose: Exit".yellow());
+                    anyhow::bail!("User chose to exit after successful build (tests skipped)");
+                }
             }
-            interaction::CompileSuccessChoice::AutoAccept => {
-                println!(
-                    "│ {}",
-                    "You chose: Auto-accept all subsequent translations".bright_cyan()
-                );
-                interaction::enable_auto_accept_mode();
-                finalize_file_processing(feature, file_name, format_progress)?;
-            }
-            interaction::CompileSuccessChoice::ManualFix => {
-                println!("│ {}", "You chose: Manual fix".bright_cyan());
-                interaction::open_in_vim(rs_file)?;
-                println!(
-                    "│ {}",
-                    "Running full build after manual changes...".bright_blue()
-                );
-                builder::run_full_build_and_test_interactive(feature, file_type, rs_file, skip_test)?;
-                println!(
-                    "│ {}",
-                    "✓ Build passes after manual changes (tests skipped)".bright_green()
-                );
-                finalize_file_processing(feature, file_name, format_progress)?;
-            }
-            interaction::CompileSuccessChoice::Exit => {
-                println!("│ {}", "You chose: Exit".yellow());
-                anyhow::bail!("User chose to exit after successful build (tests skipped)");
-            }
+            // Tests were never run in any choice of this path.
+            Ok(false)
         }
-    } else {
-        let success_message = "✓ All tests passed";
-        if let Err(e) = diff_display::display_code_comparison(
-            &c_file,
-            rs_file,
-            success_message,
-            diff_display::ResultType::TestPass,
-        ) {
+        TestStatus::DeferredByInterval => {
+            // Build passed but tests were deferred by C2RUST_TEST_INTERVAL.
             println!(
                 "│ {}",
-                format!("Failed to display comparison: {}", e).yellow()
+                "Hybrid build completed — tests deferred by interval (results not yet validated by tests)."
+                    .yellow()
+                    .bold()
             );
-            println!("│ {}", success_message.bright_green().bold());
+            if let Err(e) = diff_display::display_code_comparison(
+                &c_file,
+                rs_file,
+                "⚠ Tests deferred by C2RUST_TEST_INTERVAL",
+                diff_display::ResultType::BuildFail,
+            ) {
+                println!(
+                    "│ {}",
+                    format!("Failed to display comparison: {}", e).yellow()
+                );
+            }
+
+            let choice = interaction::prompt_build_success_tests_deferred_choice()?;
+
+            // Track whether tests actually ran (only true for ManualFix, which runs
+            // run_full_build_and_test_interactive with skip_test=false).
+            let tests_ran = match choice {
+                interaction::CompileSuccessChoice::Accept => {
+                    println!("│ {}", "You chose: Accept this code".bright_cyan());
+                    finalize_file_processing(feature, file_name, format_progress)?;
+                    false
+                }
+                interaction::CompileSuccessChoice::AutoAccept => {
+                    println!(
+                        "│ {}",
+                        "You chose: Auto-accept all subsequent translations".bright_cyan()
+                    );
+                    interaction::enable_auto_accept_mode();
+                    finalize_file_processing(feature, file_name, format_progress)?;
+                    false
+                }
+                interaction::CompileSuccessChoice::ManualFix => {
+                    println!("│ {}", "You chose: Manual fix".bright_cyan());
+                    interaction::open_in_vim(rs_file)?;
+                    println!(
+                        "│ {}",
+                        "Running full build and test after manual changes...".bright_blue()
+                    );
+                    // Config is available: run real tests during the manual-fix validation.
+                    builder::run_full_build_and_test_interactive(feature, file_type, rs_file, false)?;
+                    println!(
+                        "│ {}",
+                        "✓ All builds and tests pass after manual changes".bright_green()
+                    );
+                    finalize_file_processing(feature, file_name, format_progress)?;
+                    true // tests actually ran
+                }
+                interaction::CompileSuccessChoice::Exit => {
+                    println!("│ {}", "You chose: Exit".yellow());
+                    anyhow::bail!(
+                        "User chose to exit after successful build (tests deferred by interval)"
+                    );
+                }
+            };
+            Ok(tests_ran)
         }
+        TestStatus::Passed => {
+            let success_message = "✓ All tests passed";
+            if let Err(e) = diff_display::display_code_comparison(
+                &c_file,
+                rs_file,
+                success_message,
+                diff_display::ResultType::TestPass,
+            ) {
+                println!(
+                    "│ {}",
+                    format!("Failed to display comparison: {}", e).yellow()
+                );
+                println!("│ {}", success_message.bright_green().bold());
+            }
 
-        let choice = interaction::prompt_compile_success_choice()?;
+            let choice = interaction::prompt_compile_success_choice()?;
 
-        match choice {
-            interaction::CompileSuccessChoice::Accept => {
-                println!("│ {}", "You chose: Accept this code".bright_cyan());
-                finalize_file_processing(feature, file_name, format_progress)?;
+            match choice {
+                interaction::CompileSuccessChoice::Accept => {
+                    println!("│ {}", "You chose: Accept this code".bright_cyan());
+                    finalize_file_processing(feature, file_name, format_progress)?;
+                }
+                interaction::CompileSuccessChoice::AutoAccept => {
+                    println!(
+                        "│ {}",
+                        "You chose: Auto-accept all subsequent translations".bright_cyan()
+                    );
+                    interaction::enable_auto_accept_mode();
+                    finalize_file_processing(feature, file_name, format_progress)?;
+                }
+                interaction::CompileSuccessChoice::ManualFix => {
+                    println!("│ {}", "You chose: Manual fix".bright_cyan());
+                    interaction::open_in_vim(rs_file)?;
+                    println!(
+                        "│ {}",
+                        "Running full build and test after manual changes...".bright_blue()
+                    );
+                    builder::run_full_build_and_test_interactive(feature, file_type, rs_file, false)?;
+                    println!(
+                        "│ {}",
+                        "✓ All builds and tests pass after manual changes".bright_green()
+                    );
+                    finalize_file_processing(feature, file_name, format_progress)?;
+                }
+                interaction::CompileSuccessChoice::Exit => {
+                    println!("│ {}", "You chose: Exit".yellow());
+                    anyhow::bail!("User chose to exit after successful tests");
+                }
             }
-            interaction::CompileSuccessChoice::AutoAccept => {
-                println!(
-                    "│ {}",
-                    "You chose: Auto-accept all subsequent translations".bright_cyan()
-                );
-                interaction::enable_auto_accept_mode();
-                finalize_file_processing(feature, file_name, format_progress)?;
-            }
-            interaction::CompileSuccessChoice::ManualFix => {
-                println!("│ {}", "You chose: Manual fix".bright_cyan());
-                interaction::open_in_vim(rs_file)?;
-                println!(
-                    "│ {}",
-                    "Running full build and test after manual changes...".bright_blue()
-                );
-                builder::run_full_build_and_test_interactive(feature, file_type, rs_file, skip_test)?;
-                println!(
-                    "│ {}",
-                    "✓ All builds and tests pass after manual changes".bright_green()
-                );
-                finalize_file_processing(feature, file_name, format_progress)?;
-            }
-            interaction::CompileSuccessChoice::Exit => {
-                println!("│ {}", "You chose: Exit".yellow());
-                anyhow::bail!("User chose to exit after successful tests");
-            }
+            // Tests ran (either automatically or via ManualFix, which also runs tests).
+            Ok(true)
         }
     }
-
-    Ok(())
 }
 
 /// Finalize file processing: commit changes and update analysis
@@ -1346,5 +1568,177 @@ mod tests {
     fn test_should_continue_on_test_error_disabled_with_false() {
         let _guard = EnvGuard::set("C2RUST_TEST_CONTINUE_ON_ERROR", "false");
         assert!(!should_continue_on_test_error());
+    }
+
+    // ========================================================================
+    // get_test_interval Tests
+    // ========================================================================
+
+    #[test]
+    #[serial_test::serial]
+    fn test_get_test_interval_default() {
+        let _guard = EnvGuard::remove("C2RUST_TEST_INTERVAL");
+        assert_eq!(get_test_interval(), 1);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_get_test_interval_explicit_one() {
+        let _guard = EnvGuard::set("C2RUST_TEST_INTERVAL", "1");
+        assert_eq!(get_test_interval(), 1);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_get_test_interval_five() {
+        let _guard = EnvGuard::set("C2RUST_TEST_INTERVAL", "5");
+        assert_eq!(get_test_interval(), 5);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_get_test_interval_large_value() {
+        let _guard = EnvGuard::set("C2RUST_TEST_INTERVAL", "100");
+        assert_eq!(get_test_interval(), 100);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_get_test_interval_zero_falls_back_to_default() {
+        let _guard = EnvGuard::set("C2RUST_TEST_INTERVAL", "0");
+        assert_eq!(get_test_interval(), 1);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_get_test_interval_invalid_falls_back_to_default() {
+        let _guard = EnvGuard::set("C2RUST_TEST_INTERVAL", "abc");
+        assert_eq!(get_test_interval(), 1);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_get_test_interval_empty_falls_back_to_default() {
+        let _guard = EnvGuard::set("C2RUST_TEST_INTERVAL", "");
+        assert_eq!(get_test_interval(), 1);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_get_test_interval_whitespace_trimmed() {
+        let _guard = EnvGuard::set("C2RUST_TEST_INTERVAL", "  3  ");
+        assert_eq!(get_test_interval(), 3);
+    }
+
+    // ========================================================================
+    // compute_interval_test_decision Tests
+    // ========================================================================
+
+    #[test]
+    #[serial_test::serial]
+    fn test_compute_interval_decision_interval_1_always_runs() {
+        // Interval=1: every translation should run the test.
+        let _guard = EnvGuard::set("C2RUST_TEST_INTERVAL", "1");
+        for counter in 0..5 {
+            let (should_run, skip) = compute_interval_test_decision(counter);
+            assert!(should_run, "counter={}: expected test to run", counter);
+            assert!(!skip, "counter={}: expected skip=false", counter);
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_compute_interval_decision_interval_3() {
+        // Interval=3: test runs when proposed_count (counter+1) is a multiple of 3.
+        let _guard = EnvGuard::set("C2RUST_TEST_INTERVAL", "3");
+        // counter=0 → proposed=1 → 1%3≠0 → skip
+        let (should_run, skip) = compute_interval_test_decision(0);
+        assert!(!should_run);
+        assert!(skip);
+        // counter=1 → proposed=2 → 2%3≠0 → skip
+        let (should_run, skip) = compute_interval_test_decision(1);
+        assert!(!should_run);
+        assert!(skip);
+        // counter=2 → proposed=3 → 3%3=0 → run
+        let (should_run, skip) = compute_interval_test_decision(2);
+        assert!(should_run);
+        assert!(!skip);
+        // counter=3 → proposed=4 → 4%3≠0 → skip (next cycle starts)
+        let (should_run, skip) = compute_interval_test_decision(3);
+        assert!(!should_run);
+        assert!(skip);
+        // counter=5 → proposed=6 → 6%3=0 → run
+        let (should_run, skip) = compute_interval_test_decision(5);
+        assert!(should_run);
+        assert!(!skip);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_compute_interval_decision_returns_inverse_pair() {
+        // should_run and skip must always be exact inverses.
+        let _guard = EnvGuard::set("C2RUST_TEST_INTERVAL", "4");
+        for counter in 0..12 {
+            let (should_run, skip) = compute_interval_test_decision(counter);
+            assert_eq!(should_run, !skip, "counter={}: should_run and skip are not inverses", counter);
+        }
+    }
+
+    // ========================================================================
+    // update_interval_counter Tests
+    // ========================================================================
+
+    #[test]
+    fn test_update_interval_counter_resets_when_test_ran() {
+        let mut counter = 4usize;
+        update_interval_counter(&mut counter, true);
+        assert_eq!(counter, 0);
+    }
+
+    #[test]
+    fn test_update_interval_counter_increments_when_test_skipped() {
+        let mut counter = 2usize;
+        update_interval_counter(&mut counter, false);
+        assert_eq!(counter, 3);
+    }
+
+    #[test]
+    fn test_update_interval_counter_increments_from_zero() {
+        let mut counter = 0usize;
+        update_interval_counter(&mut counter, false);
+        assert_eq!(counter, 1);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_full_interval_cycle_counter_behaviour() {
+        // Simulates 4 successive translations with interval=3 and checks the full
+        // sequence of decisions and counter updates.
+        let _guard = EnvGuard::set("C2RUST_TEST_INTERVAL", "3");
+        let mut counter = 0usize;
+
+        // Translation 1: proposed=1 → skip
+        let (should_run, _) = compute_interval_test_decision(counter);
+        assert!(!should_run);
+        update_interval_counter(&mut counter, should_run);
+        assert_eq!(counter, 1);
+
+        // Translation 2: proposed=2 → skip
+        let (should_run, _) = compute_interval_test_decision(counter);
+        assert!(!should_run);
+        update_interval_counter(&mut counter, should_run);
+        assert_eq!(counter, 2);
+
+        // Translation 3: proposed=3 → run → reset
+        let (should_run, _) = compute_interval_test_decision(counter);
+        assert!(should_run);
+        update_interval_counter(&mut counter, should_run);
+        assert_eq!(counter, 0);
+
+        // Translation 4: proposed=1 → skip (new cycle)
+        let (should_run, _) = compute_interval_test_decision(counter);
+        assert!(!should_run);
+        update_interval_counter(&mut counter, should_run);
+        assert_eq!(counter, 1);
     }
 }
