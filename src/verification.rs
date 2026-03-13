@@ -366,6 +366,25 @@ fn handle_max_fix_attempts_reached(
         println!("│ {}", build_error);
     }
 
+    // 当设置了 C2RUST_AUTO_RETRY_ON_MAX_FIX 时，自动选择重试，无需人工干预
+    if crate::should_auto_retry_on_max_fix_attempts() {
+        if is_last_attempt {
+            println!(
+                "│ {}",
+                "Auto-retry enabled (C2RUST_AUTO_RETRY_ON_MAX_FIX): last translation attempt reached, skipping file."
+                    .bright_yellow()
+            );
+            return Err(anyhow::Error::from(SkipFileSignal));
+        } else {
+            println!(
+                "│ {}",
+                "Auto-retry enabled (C2RUST_AUTO_RETRY_ON_MAX_FIX): retrying translation automatically."
+                    .bright_cyan()
+            );
+            return handle_retry_directly(attempt_number, is_last_attempt);
+        }
+    }
+
     // 使用新提示获取用户选择
     let choice = interaction::prompt_compile_failure_choice()?;
 
