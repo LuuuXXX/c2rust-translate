@@ -3,10 +3,12 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use std::path::Path;
 
-/// Signal type returned when the user chooses to skip the current file.
+/// Signal type returned when a file is skipped, either by the user interactively
+/// or automatically (e.g., when `C2RUST_AUTO_RETRY_ON_MAX_FIX` is set and the
+/// last translation attempt is reached).
 ///
 /// This type is used as an `anyhow::Error` payload so that callers can
-/// distinguish a deliberate skip from a genuine build failure.
+/// distinguish a deliberate or automatic skip from a genuine build failure.
 #[derive(Debug)]
 pub struct SkipFileSignal;
 
@@ -29,8 +31,10 @@ enum AutoRetryOutcome {
 
 /// Determine the automatic retry outcome when `C2RUST_AUTO_RETRY_ON_MAX_FIX` is set.
 ///
-/// Returns `Some(AutoRetryOutcome)` when the env var is enabled, or `None` when it is
-/// not set (falling through to the interactive prompt).
+/// Returns `Some(AutoRetryOutcome)` when the env var is enabled (truthy: `1`, `true`,
+/// or `yes`, case-insensitive), or `None` when it is not enabled — including when the
+/// var is absent, empty, or set to a non-truthy value — falling through to the
+/// interactive prompt.
 fn resolve_auto_retry_outcome(is_last_attempt: bool) -> Option<AutoRetryOutcome> {
     if !crate::should_auto_retry_on_max_fix_attempts() {
         return None;
@@ -718,6 +722,16 @@ fn handle_manual_fix(
 mod tests {
     use super::*;
 
+    /// Save the current value of an environment variable and return a `scopeguard`
+    /// that restores it (or removes it if it was absent) when dropped.
+    fn env_guard(key: &'static str) -> impl Drop {
+        let prior = std::env::var(key).ok();
+        scopeguard::guard(prior, move |v| match v {
+            Some(val) => std::env::set_var(key, val),
+            None => std::env::remove_var(key),
+        })
+    }
+
     /// Test that apply_fixes_for_messages returns Err when the target Rust file
     /// does not exist within an otherwise valid project root and feature tree.
     #[test]
@@ -959,6 +973,7 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn test_resolve_auto_retry_outcome_env_unset_returns_none() {
+        let _restore = env_guard("C2RUST_AUTO_RETRY_ON_MAX_FIX");
         std::env::remove_var("C2RUST_AUTO_RETRY_ON_MAX_FIX");
         assert_eq!(resolve_auto_retry_outcome(false), None);
         assert_eq!(resolve_auto_retry_outcome(true), None);
@@ -969,10 +984,9 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn test_resolve_auto_retry_outcome_env_set_not_last_returns_retry() {
+        let _restore = env_guard("C2RUST_AUTO_RETRY_ON_MAX_FIX");
         std::env::set_var("C2RUST_AUTO_RETRY_ON_MAX_FIX", "1");
-        let result = resolve_auto_retry_outcome(false);
-        std::env::remove_var("C2RUST_AUTO_RETRY_ON_MAX_FIX");
-        assert_eq!(result, Some(AutoRetryOutcome::Retry));
+        assert_eq!(resolve_auto_retry_outcome(false), Some(AutoRetryOutcome::Retry));
     }
 
     /// When the env var is set and this is the last attempt,
@@ -980,23 +994,20 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn test_resolve_auto_retry_outcome_env_set_last_attempt_returns_skip() {
+        let _restore = env_guard("C2RUST_AUTO_RETRY_ON_MAX_FIX");
         std::env::set_var("C2RUST_AUTO_RETRY_ON_MAX_FIX", "1");
-        let result = resolve_auto_retry_outcome(true);
-        std::env::remove_var("C2RUST_AUTO_RETRY_ON_MAX_FIX");
-        assert_eq!(result, Some(AutoRetryOutcome::Skip));
+        assert_eq!(resolve_auto_retry_outcome(true), Some(AutoRetryOutcome::Skip));
     }
 
     /// Accepted truthy values ("true", "yes") also trigger auto-retry.
     #[test]
     #[serial_test::serial]
     fn test_resolve_auto_retry_outcome_accepts_true_and_yes() {
+        let _restore = env_guard("C2RUST_AUTO_RETRY_ON_MAX_FIX");
         for val in &["true", "yes", "TRUE", "YES"] {
             std::env::set_var("C2RUST_AUTO_RETRY_ON_MAX_FIX", val);
-            let retry = resolve_auto_retry_outcome(false);
-            let skip = resolve_auto_retry_outcome(true);
-            std::env::remove_var("C2RUST_AUTO_RETRY_ON_MAX_FIX");
-            assert_eq!(retry, Some(AutoRetryOutcome::Retry), "val={val}");
-            assert_eq!(skip, Some(AutoRetryOutcome::Skip), "val={val}");
+            assert_eq!(resolve_auto_retry_outcome(false), Some(AutoRetryOutcome::Retry), "val={val}");
+            assert_eq!(resolve_auto_retry_outcome(true), Some(AutoRetryOutcome::Skip), "val={val}");
         }
     }
 
@@ -1004,9 +1015,8 @@ mod tests {
     #[test]
     #[serial_test::serial]
     fn test_resolve_auto_retry_outcome_non_truthy_returns_none() {
+        let _restore = env_guard("C2RUST_AUTO_RETRY_ON_MAX_FIX");
         std::env::set_var("C2RUST_AUTO_RETRY_ON_MAX_FIX", "0");
-        let result = resolve_auto_retry_outcome(false);
-        std::env::remove_var("C2RUST_AUTO_RETRY_ON_MAX_FIX");
-        assert_eq!(result, None);
+        assert_eq!(resolve_auto_retry_outcome(false), None);
     }
 }
