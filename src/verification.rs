@@ -366,7 +366,8 @@ fn handle_max_fix_attempts_reached(
         println!("│ {}", build_error);
     }
 
-    // 当设置了 C2RUST_AUTO_RETRY_ON_MAX_FIX 时，自动选择重试，无需人工干预
+    // 当设置了 C2RUST_AUTO_RETRY_ON_MAX_FIX 时，根据是否还有重试机会，
+    // 自动选择重新翻译（retries remaining）或跳过文件（last attempt），无需人工干预
     if crate::should_auto_retry_on_max_fix_attempts() {
         if is_last_attempt {
             println!(
@@ -381,7 +382,7 @@ fn handle_max_fix_attempts_reached(
                 "Auto-retry enabled (C2RUST_AUTO_RETRY_ON_MAX_FIX): retrying translation automatically."
                     .bright_cyan()
             );
-            return handle_retry_directly(attempt_number, is_last_attempt);
+            return handle_retry_directly(attempt_number, is_last_attempt, true);
         }
     }
 
@@ -390,7 +391,7 @@ fn handle_max_fix_attempts_reached(
 
     match choice {
         interaction::FailureChoice::RetryDirectly => {
-            handle_retry_directly(attempt_number, is_last_attempt)
+            handle_retry_directly(attempt_number, is_last_attempt, false)
         }
         interaction::FailureChoice::AddSuggestion => handle_add_suggestion(
             feature,
@@ -429,14 +430,22 @@ fn handle_max_fix_attempts_reached(
 fn handle_retry_directly(
     attempt_number: usize,
     is_last_attempt: bool,
+    auto_triggered: bool,
 ) -> Result<(bool, usize, bool)> {
     use crate::util::MAX_TRANSLATION_ATTEMPTS;
 
     println!("│");
-    println!(
-        "│ {}",
-        "You chose: Retry directly without suggestion".bright_cyan()
-    );
+    if auto_triggered {
+        println!(
+            "│ {}",
+            "Auto-selected: Retry directly (C2RUST_AUTO_RETRY_ON_MAX_FIX)".bright_cyan()
+        );
+    } else {
+        println!(
+            "│ {}",
+            "You chose: Retry directly without suggestion".bright_cyan()
+        );
+    }
 
     display_retry_directly_warning();
 
