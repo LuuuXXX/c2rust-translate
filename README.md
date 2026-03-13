@@ -138,6 +138,7 @@ c2rust-translate translate --feature myfeature --show-full-output
 | `C2RUST_PROCESS_WARNINGS` | 启用 | 设为 `0` 或 `false`（大小写不敏感）可跳过 Phase 2（警告检测与自动修复）；其他任何值或未设置均表示启用 |
 | `C2RUST_TEST_CONTINUE_ON_ERROR` | 禁用 | 设为 `1`、`true` 或 `yes`（大小写不敏感）时，`c2rust_test` 失败不会中断流程，仅记录警告并继续执行后续任务。默认情况下（未设置或其他值），测试失败仍为致命错误 |
 | `C2RUST_TEST_INTERVAL` | `1` | 设为正整数 `N`，每完成 N 个翻译后执行一次测试。默认值 `1` 表示每次翻译后都执行测试（与现有行为一致）。设为 `0`、非数字或空值时回退为默认值 `1`。**注意**：所有翻译完成后，如果存在自上次测试以来尚未测试的翻译，工具会自动在最后执行一次额外的测试，以确保每次翻译都至少被测试覆盖一次。 |
+| `C2RUST_AUTO_RETRY_ON_MAX_FIX` | 禁用 | 设为 `1`、`true` 或 `yes`（大小写不敏感）时，当修复尝试次数达到上限后自动选择重新翻译（RetryDirectly），无需人工干预，保证全自动运行。若已是最后一次翻译机会则自动跳过该文件继续处理后续文件。默认情况下（未设置或其他值）会弹出交互式选择提示。 |
 
 ### 示例：忽略测试失败继续执行
 
@@ -159,6 +160,17 @@ c2rust-translate translate --feature myfeature --allow-all
 
 # 或者在单次命令中设置
 C2RUST_TEST_INTERVAL=5 c2rust-translate translate --feature myfeature --allow-all
+```
+
+### 示例：修复次数耗尽时自动重试（全自动无人值守）
+
+```bash
+# 当修复尝试次数达到上限时，自动选择重新翻译，无需人工干预
+export C2RUST_AUTO_RETRY_ON_MAX_FIX=1
+c2rust-translate translate --feature myfeature --allow-all
+
+# 或者在单次命令中设置
+C2RUST_AUTO_RETRY_ON_MAX_FIX=1 c2rust-translate translate --feature myfeature --allow-all
 ```
 
 ## 依赖要求

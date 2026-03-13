@@ -816,6 +816,24 @@ pub(crate) fn should_continue_on_test_error() -> bool {
     }
 }
 
+/// Returns `true` when the process should automatically retry translation upon reaching the
+/// maximum number of fix attempts, without prompting the user.
+///
+/// Set `C2RUST_AUTO_RETRY_ON_MAX_FIX=1` (or `true`/`yes`) to automatically choose
+/// "Retry directly" when fix attempts are exhausted, ensuring fully unattended runs.
+/// When on the last translation attempt (no more retries available), the file is
+/// automatically skipped instead so the overall process can continue.
+/// By default (env var absent or set to any other value) the interactive prompt is shown.
+pub(crate) fn should_auto_retry_on_max_fix_attempts() -> bool {
+    match std::env::var("C2RUST_AUTO_RETRY_ON_MAX_FIX") {
+        Ok(val) => {
+            let val = val.trim();
+            val == "1" || val.eq_ignore_ascii_case("true") || val.eq_ignore_ascii_case("yes")
+        }
+        Err(_) => false,
+    }
+}
+
 /// Returns the test interval: run hybrid build tests once every N successful translations.
 ///
 /// Set `C2RUST_TEST_INTERVAL=N` (a positive integer) to run tests only after every N-th
@@ -1651,6 +1669,66 @@ mod tests {
     fn test_should_continue_on_test_error_disabled_with_false() {
         let _guard = EnvGuard::set("C2RUST_TEST_CONTINUE_ON_ERROR", "false");
         assert!(!should_continue_on_test_error());
+    }
+
+    // ========================================================================
+    // should_auto_retry_on_max_fix_attempts Tests
+    // ========================================================================
+
+    #[test]
+    #[serial_test::serial]
+    fn test_should_auto_retry_on_max_fix_default() {
+        let _guard = EnvGuard::remove("C2RUST_AUTO_RETRY_ON_MAX_FIX");
+        assert!(!should_auto_retry_on_max_fix_attempts());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_should_auto_retry_on_max_fix_enabled_with_one() {
+        let _guard = EnvGuard::set("C2RUST_AUTO_RETRY_ON_MAX_FIX", "1");
+        assert!(should_auto_retry_on_max_fix_attempts());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_should_auto_retry_on_max_fix_enabled_with_true() {
+        let _guard = EnvGuard::set("C2RUST_AUTO_RETRY_ON_MAX_FIX", "true");
+        assert!(should_auto_retry_on_max_fix_attempts());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_should_auto_retry_on_max_fix_enabled_with_true_uppercase() {
+        let _guard = EnvGuard::set("C2RUST_AUTO_RETRY_ON_MAX_FIX", "TRUE");
+        assert!(should_auto_retry_on_max_fix_attempts());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_should_auto_retry_on_max_fix_enabled_with_yes() {
+        let _guard = EnvGuard::set("C2RUST_AUTO_RETRY_ON_MAX_FIX", "yes");
+        assert!(should_auto_retry_on_max_fix_attempts());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_should_auto_retry_on_max_fix_enabled_with_yes_uppercase() {
+        let _guard = EnvGuard::set("C2RUST_AUTO_RETRY_ON_MAX_FIX", "YES");
+        assert!(should_auto_retry_on_max_fix_attempts());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_should_auto_retry_on_max_fix_disabled_with_zero() {
+        let _guard = EnvGuard::set("C2RUST_AUTO_RETRY_ON_MAX_FIX", "0");
+        assert!(!should_auto_retry_on_max_fix_attempts());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn test_should_auto_retry_on_max_fix_disabled_with_false() {
+        let _guard = EnvGuard::set("C2RUST_AUTO_RETRY_ON_MAX_FIX", "false");
+        assert!(!should_auto_retry_on_max_fix_attempts());
     }
 
     // ========================================================================

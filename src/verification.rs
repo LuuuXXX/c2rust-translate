@@ -3,20 +3,48 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use std::path::Path;
 
-/// Signal type returned when the user chooses to skip the current file.
+/// Signal type returned when a file is skipped, either by the user interactively
+/// or automatically (e.g., when `C2RUST_AUTO_RETRY_ON_MAX_FIX` is set and the
+/// last translation attempt is reached).
 ///
 /// This type is used as an `anyhow::Error` payload so that callers can
-/// distinguish a deliberate skip from a genuine build failure.
+/// distinguish a deliberate or automatic skip from a genuine build failure.
 #[derive(Debug)]
 pub struct SkipFileSignal;
 
 impl std::fmt::Display for SkipFileSignal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "File skipped by user")
+        write!(f, "File skipped")
     }
 }
 
 impl std::error::Error for SkipFileSignal {}
+
+/// Outcome of the automatic retry decision when `C2RUST_AUTO_RETRY_ON_MAX_FIX` is set.
+#[derive(Debug, PartialEq)]
+enum AutoRetryOutcome {
+    /// Automatically retry translation from scratch (retries remain).
+    Retry,
+    /// Automatically skip the file (last translation attempt reached).
+    Skip,
+}
+
+/// Determine the automatic retry outcome when `C2RUST_AUTO_RETRY_ON_MAX_FIX` is set.
+///
+/// Returns `Some(AutoRetryOutcome)` when the env var is enabled (truthy: `1`, `true`,
+/// or `yes`, case-insensitive), or `None` when it is not enabled — including when the
+/// var is absent, empty, or set to a non-truthy value — falling through to the
+/// interactive prompt.
+fn resolve_auto_retry_outcome(is_last_attempt: bool) -> Option<AutoRetryOutcome> {
+    if !crate::should_auto_retry_on_max_fix_attempts() {
+        return None;
+    }
+    if is_last_attempt {
+        Some(AutoRetryOutcome::Skip)
+    } else {
+        Some(AutoRetryOutcome::Retry)
+    }
+}
 
 /// Display warning message about retry directly operation
 pub fn display_retry_directly_warning() {
@@ -366,12 +394,35 @@ fn handle_max_fix_attempts_reached(
         println!("│ {}", build_error);
     }
 
+    // 当设置了 C2RUST_AUTO_RETRY_ON_MAX_FIX 时，根据是否还有重试机会，
+    // 自动选择重新翻译（retries remaining）或跳过文件（last attempt），无需人工干预
+    if let Some(outcome) = resolve_auto_retry_outcome(is_last_attempt) {
+        match outcome {
+            AutoRetryOutcome::Skip => {
+                println!(
+                    "│ {}",
+                    "Auto-retry enabled (C2RUST_AUTO_RETRY_ON_MAX_FIX): last translation attempt reached, skipping file."
+                        .bright_yellow()
+                );
+                return Err(anyhow::Error::from(SkipFileSignal));
+            }
+            AutoRetryOutcome::Retry => {
+                println!(
+                    "│ {}",
+                    "Auto-retry enabled (C2RUST_AUTO_RETRY_ON_MAX_FIX): retrying translation automatically."
+                        .bright_cyan()
+                );
+                return handle_retry_directly(attempt_number, is_last_attempt, true);
+            }
+        }
+    }
+
     // 使用新提示获取用户选择
     let choice = interaction::prompt_compile_failure_choice()?;
 
     match choice {
         interaction::FailureChoice::RetryDirectly => {
-            handle_retry_directly(attempt_number, is_last_attempt)
+            handle_retry_directly(attempt_number, is_last_attempt, false)
         }
         interaction::FailureChoice::AddSuggestion => handle_add_suggestion(
             feature,
@@ -410,14 +461,22 @@ fn handle_max_fix_attempts_reached(
 fn handle_retry_directly(
     attempt_number: usize,
     is_last_attempt: bool,
+    auto_triggered: bool,
 ) -> Result<(bool, usize, bool)> {
     use crate::util::MAX_TRANSLATION_ATTEMPTS;
 
     println!("│");
-    println!(
-        "│ {}",
-        "You chose: Retry directly without suggestion".bright_cyan()
-    );
+    if auto_triggered {
+        println!(
+            "│ {}",
+            "Auto-selected: Retry directly (C2RUST_AUTO_RETRY_ON_MAX_FIX)".bright_cyan()
+        );
+    } else {
+        println!(
+            "│ {}",
+            "You chose: Retry directly without suggestion".bright_cyan()
+        );
+    }
 
     display_retry_directly_warning();
 
@@ -663,6 +722,16 @@ fn handle_manual_fix(
 mod tests {
     use super::*;
 
+    /// Save the current value of an environment variable and return a `scopeguard`
+    /// that restores it (or removes it if it was absent) when dropped.
+    fn env_guard(key: &'static str) -> impl Drop {
+        let prior = std::env::var(key).ok();
+        scopeguard::guard(prior, move |v| match v {
+            Some(val) => std::env::set_var(key, val),
+            None => std::env::remove_var(key),
+        })
+    }
+
     /// Test that apply_fixes_for_messages returns Err when the target Rust file
     /// does not exist within an otherwise valid project root and feature tree.
     #[test]
@@ -897,5 +966,57 @@ mod tests {
             result[0].ends_with("var_main.rs"),
             "var_main.rs should be first: {result:?}"
         );
+    }
+
+    /// When the env var is not set, `resolve_auto_retry_outcome` returns `None`
+    /// regardless of whether this is the last attempt.
+    #[test]
+    #[serial_test::serial]
+    fn test_resolve_auto_retry_outcome_env_unset_returns_none() {
+        let _restore = env_guard("C2RUST_AUTO_RETRY_ON_MAX_FIX");
+        std::env::remove_var("C2RUST_AUTO_RETRY_ON_MAX_FIX");
+        assert_eq!(resolve_auto_retry_outcome(false), None);
+        assert_eq!(resolve_auto_retry_outcome(true), None);
+    }
+
+    /// When the env var is set and there are retries remaining (not last attempt),
+    /// `resolve_auto_retry_outcome` returns `Some(AutoRetryOutcome::Retry)`.
+    #[test]
+    #[serial_test::serial]
+    fn test_resolve_auto_retry_outcome_env_set_not_last_returns_retry() {
+        let _restore = env_guard("C2RUST_AUTO_RETRY_ON_MAX_FIX");
+        std::env::set_var("C2RUST_AUTO_RETRY_ON_MAX_FIX", "1");
+        assert_eq!(resolve_auto_retry_outcome(false), Some(AutoRetryOutcome::Retry));
+    }
+
+    /// When the env var is set and this is the last attempt,
+    /// `resolve_auto_retry_outcome` returns `Some(AutoRetryOutcome::Skip)`.
+    #[test]
+    #[serial_test::serial]
+    fn test_resolve_auto_retry_outcome_env_set_last_attempt_returns_skip() {
+        let _restore = env_guard("C2RUST_AUTO_RETRY_ON_MAX_FIX");
+        std::env::set_var("C2RUST_AUTO_RETRY_ON_MAX_FIX", "1");
+        assert_eq!(resolve_auto_retry_outcome(true), Some(AutoRetryOutcome::Skip));
+    }
+
+    /// Accepted truthy values ("true", "yes") also trigger auto-retry.
+    #[test]
+    #[serial_test::serial]
+    fn test_resolve_auto_retry_outcome_accepts_true_and_yes() {
+        let _restore = env_guard("C2RUST_AUTO_RETRY_ON_MAX_FIX");
+        for val in &["true", "yes", "TRUE", "YES"] {
+            std::env::set_var("C2RUST_AUTO_RETRY_ON_MAX_FIX", val);
+            assert_eq!(resolve_auto_retry_outcome(false), Some(AutoRetryOutcome::Retry), "val={val}");
+            assert_eq!(resolve_auto_retry_outcome(true), Some(AutoRetryOutcome::Skip), "val={val}");
+        }
+    }
+
+    /// A non-truthy value leaves the behaviour interactive (`None`).
+    #[test]
+    #[serial_test::serial]
+    fn test_resolve_auto_retry_outcome_non_truthy_returns_none() {
+        let _restore = env_guard("C2RUST_AUTO_RETRY_ON_MAX_FIX");
+        std::env::set_var("C2RUST_AUTO_RETRY_ON_MAX_FIX", "0");
+        assert_eq!(resolve_auto_retry_outcome(false), None);
     }
 }
