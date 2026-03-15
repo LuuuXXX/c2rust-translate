@@ -59,42 +59,70 @@ pub fn git_commit(message: &str, feature: &str) -> Result<()> {
 ///
 /// - `--aggressive`: 更强力的 delta 压缩（耗时稍长，但效果最好）
 /// - `--prune=now`:  立即清理所有不可达对象（而非等待默认的2周宽限期）
+///
+/// 此函数始终返回 `Ok(())`，所有错误（包括 git 未找到等系统错误）均以警告形式打印，不中断主流程。
 pub fn git_gc() -> Result<()> {
-    let project_root = util::find_project_root()?;
+    let project_root = match util::find_project_root() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("Warning: git gc skipped, could not find project root: {}", e);
+            return Ok(());
+        }
+    };
     let c2rust_dir = project_root.join(".c2rust");
 
-    let gc_output = Command::new("git")
+    match Command::new("git")
         .current_dir(&c2rust_dir)
         .args(["gc", "--aggressive", "--prune=now"])
         .output()
-        .context("Failed to run git gc")?;
-
-    if !gc_output.status.success() {
-        let stderr = String::from_utf8_lossy(&gc_output.stderr);
-        // gc 失败不是致命错误，仅打印警告，不中断主流程
-        eprintln!("Warning: git gc failed: {}", stderr);
+    {
+        Err(e) => {
+            // 无法启动 git 进程（如 git 未安装），仅打印警告
+            eprintln!("Warning: failed to run git gc: {}", e);
+        }
+        Ok(gc_output) if !gc_output.status.success() => {
+            let stderr = String::from_utf8_lossy(&gc_output.stderr);
+            // gc 失败不是致命错误，仅打印警告，不中断主流程
+            eprintln!("Warning: git gc failed: {}", stderr);
+        }
+        Ok(_) => {}
     }
 
     Ok(())
 }
 
-/// 清理 .c2rust 仓库的 reflog，释放 reflog 占用的空间。
+/// 清理 .c2rust 仓库中超过 90 天的 reflog 条目，释放部分 reflog 占用的空间。
 ///
-/// 默认情况下 git 保留 90 天 reflog，此函数将其立即过期清理。
-/// 建议在 git_gc() 之前调用，以使 gc 能清理更多不可达对象。
+/// 使用 `--expire=90.days.ago` 保留最近 90 天的 reflog，以维持通过 `HEAD@{n}`
+/// 恢复提交等操作的能力。建议在 git_gc() 之前调用，以使 gc 能清理更多不可达对象。
+///
+/// 此函数始终返回 `Ok(())`，所有错误均以警告形式打印，不中断主流程。
 pub fn git_expire_reflog() -> Result<()> {
-    let project_root = util::find_project_root()?;
+    let project_root = match util::find_project_root() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!(
+                "Warning: git reflog expire skipped, could not find project root: {}",
+                e
+            );
+            return Ok(());
+        }
+    };
     let c2rust_dir = project_root.join(".c2rust");
 
-    let output = Command::new("git")
+    match Command::new("git")
         .current_dir(&c2rust_dir)
-        .args(["reflog", "expire", "--expire=now", "--all"])
+        .args(["reflog", "expire", "--expire=90.days.ago", "--all"])
         .output()
-        .context("Failed to expire reflog")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        eprintln!("Warning: git reflog expire failed: {}", stderr);
+    {
+        Err(e) => {
+            eprintln!("Warning: failed to run git reflog expire: {}", e);
+        }
+        Ok(output) if !output.status.success() => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            eprintln!("Warning: git reflog expire failed: {}", stderr);
+        }
+        Ok(_) => {}
     }
 
     Ok(())

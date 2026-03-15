@@ -1,9 +1,9 @@
-# 对 Rust 和 C 源文件启用语言感知的 diff 和 delta 压缩
+# 对 Rust 和 C 源文件配置语言感知的 diff 驱动（影响 git diff 输出，不影响 pack delta 压缩）
 *.rs  diff=rust
 *.c   diff=c
 *.h   diff=c
 
-# 对二进制/编译产物不做无意义的 delta 压缩
+# 对二进制/编译产物禁用 delta 压缩，避免无意义的 pack 膨胀
 *.o   -delta
 *.a   -delta
 *.so  -delta
