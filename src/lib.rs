@@ -80,10 +80,16 @@ pub fn translate_feature(
 
     // Print summary even if step 5 fails, so progress is not lost
     if let Err(e) = step5_result {
+        // 即使翻译出错中止，也尽量压缩已有历史
+        let _ = git::git_expire_reflog();
+        let _ = git::git_gc();
         stats.print_summary();
         return Err(e);
     }
 
+    // 翻译全部完成后，执行一次最终 gc 确保 .git 尽可能紧凑
+    let _ = git::git_expire_reflog();
+    let _ = git::git_gc();
     stats.print_summary();
     Ok(())
 }
@@ -580,6 +586,14 @@ fn process_selected_files(
                 update_interval_counter(translations_since_last_test, tests_ran);
                 // Save stats immediately after successful completion.
                 save_stats_or_warn(stats, feature);
+                // 每完成 10 个文件触发一次 gc，压缩 .git 体积（失败不影响主流程）
+                const GIT_GC_INTERVAL: usize = 10;
+                if progress_state.processed_count % GIT_GC_INTERVAL == 0
+                    && progress_state.processed_count > 0
+                {
+                    let _ = git::git_expire_reflog();
+                    let _ = git::git_gc();
+                }
             }
         }
     }
