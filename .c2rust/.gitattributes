@@ -1,9 +1,10 @@
-# 对 Rust 和 C 源文件配置语言感知的 diff 驱动（影响 git diff 输出，不影响 pack delta 压缩）
+# Configure language-aware diff drivers for Rust and C source files.
+# This affects `git diff` output only; it does not influence pack delta compression.
 *.rs  diff=rust
 *.c   diff=c
 *.h   diff=c
 
-# 对二进制/编译产物禁用 delta 压缩，避免无意义的 pack 膨胀
+# Disable delta compression for binary/compiled artifacts to avoid meaningless pack bloat.
 *.o   -delta
 *.a   -delta
 *.so  -delta

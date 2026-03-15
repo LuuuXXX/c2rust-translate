@@ -2,15 +2,16 @@ use crate::util;
 use anyhow::{Context, Result};
 use std::process::Command;
 
-/// 使用消息提交更改
-/// 仅暂存 .c2rust/ 目录和特定功能目录，以避免提交无关的更改
+/// Commit changes with a message.
+/// Only stages the `.c2rust/` directory and the specific feature directory to avoid
+/// committing unrelated local modifications.
 pub fn git_commit(message: &str, feature: &str) -> Result<()> {
     let project_root = util::find_project_root()?;
     let c2rust_dir = project_root.join(".c2rust");
 
-    // 仅添加 .c2rust 目录和特定功能目录（而非所有功能）
-    // 这可防止意外提交无关的本地修改
-    // 路径相对于 .c2rust 目录（.c2rust/<feature>/rust/）
+    // Only add the specific feature directory (not all features) to prevent
+    // accidentally committing unrelated local changes.
+    // The path is relative to the .c2rust directory (.c2rust/<feature>/rust/).
     let feature_rust_path = format!("{}/rust/", feature);
     let add_output = Command::new("git")
         .current_dir(&c2rust_dir)
@@ -23,7 +24,7 @@ pub fn git_commit(message: &str, feature: &str) -> Result<()> {
         anyhow::bail!("git add failed: {}", stderr);
     }
 
-    // 从 .c2rust 目录提交
+    // Commit from the .c2rust directory
     let commit_output = Command::new("git")
         .current_dir(&c2rust_dir)
         .args(["commit", "-m", message])
@@ -36,7 +37,7 @@ pub fn git_commit(message: &str, feature: &str) -> Result<()> {
         let combined_output = format!("{}{}", stdout, stderr);
         let exit_code = commit_output.status.code();
 
-        // 如果没有可提交的内容也没关系（git 通常在这里以代码 1 退出）
+        // Nothing to commit is not an error (git exits with code 1 in this case)
         let is_nothing_to_commit =
             exit_code == Some(1) && combined_output.contains("nothing to commit");
 
@@ -52,16 +53,20 @@ pub fn git_commit(message: &str, feature: &str) -> Result<()> {
     Ok(())
 }
 
-/// 对 .c2rust 仓库执行垃圾回收，压缩历史对象、缩减 .git 体积。
+/// Run garbage collection on the `.c2rust` repository to compact history objects
+/// and reduce `.git` size.
 ///
-/// 保留所有 commit 历史，支持完整回退。
-/// 建议在每翻译完 N 个文件（如10个）或整个 feature 翻译完成后调用。
+/// All commit history is preserved; rollback capability is not affected.
+/// Recommended to be called periodically (e.g. every N files) or at the end of a
+/// feature translation.
 ///
-/// - `--aggressive`: 更强力的 delta 压缩（耗时稍长，但效果最好）
-/// - `--prune=now`:  立即清理所有不可达对象（而非等待默认的2周宽限期）
+/// When `aggressive` is `true`, passes `--aggressive` for stronger delta recompression
+/// at the cost of longer runtime. Use `aggressive = false` for cheap periodic runs and
+/// `aggressive = true` for the final end-of-feature cleanup.
 ///
-/// 此函数始终返回 `Ok(())`，所有错误（包括 git 未找到等系统错误）均以警告形式打印，不中断主流程。
-pub fn git_gc() -> Result<()> {
+/// Always returns `Ok(())`. All errors (including a missing git binary) are printed as
+/// warnings and never abort the main workflow.
+pub fn git_gc(aggressive: bool) -> Result<()> {
     let project_root = match util::find_project_root() {
         Ok(p) => p,
         Err(e) => {
@@ -71,18 +76,22 @@ pub fn git_gc() -> Result<()> {
     };
     let c2rust_dir = project_root.join(".c2rust");
 
+    let mut args = vec!["gc", "--prune=now"];
+    if aggressive {
+        args.push("--aggressive");
+    }
+
     match Command::new("git")
         .current_dir(&c2rust_dir)
-        .args(["gc", "--aggressive", "--prune=now"])
+        .args(&args)
         .output()
     {
         Err(e) => {
-            // 无法启动 git 进程（如 git 未安装），仅打印警告
+            // Could not spawn git (e.g. not installed); warn and continue.
             eprintln!("Warning: failed to run git gc: {}", e);
         }
         Ok(gc_output) if !gc_output.status.success() => {
             let stderr = String::from_utf8_lossy(&gc_output.stderr);
-            // gc 失败不是致命错误，仅打印警告，不中断主流程
             eprintln!("Warning: git gc failed: {}", stderr);
         }
         Ok(_) => {}
@@ -91,12 +100,16 @@ pub fn git_gc() -> Result<()> {
     Ok(())
 }
 
-/// 清理 .c2rust 仓库中超过 90 天的 reflog 条目，释放部分 reflog 占用的空间。
+/// Expire old reflog entries in the `.c2rust` repository to allow GC to reclaim
+/// objects that are only referenced by stale reflog entries.
 ///
-/// 使用 `--expire=90.days.ago` 保留最近 90 天的 reflog，以维持通过 `HEAD@{n}`
-/// 恢复提交等操作的能力。建议在 git_gc() 之前调用，以使 gc 能清理更多不可达对象。
+/// Uses `--expire=90.days.ago` to retain recent reflog history, preserving the
+/// ability to recover commits via `HEAD@{n}` or detached-HEAD recovery for the
+/// past 90 days. Call this before [`git_gc`] so that GC can prune a larger set
+/// of unreachable objects.
 ///
-/// 此函数始终返回 `Ok(())`，所有错误均以警告形式打印，不中断主流程。
+/// Always returns `Ok(())`. All errors are printed as warnings and never abort
+/// the main workflow.
 pub fn git_expire_reflog() -> Result<()> {
     let project_root = match util::find_project_root() {
         Ok(p) => p,
