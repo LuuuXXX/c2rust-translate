@@ -11,7 +11,10 @@ fn run_code_analyse(feature: &str, extra_args: &[&str]) -> Result<()> {
     let mut args: Vec<&str> = extra_args.to_vec();
     args.extend_from_slice(&["--feature", feature]);
 
-    let args_display = args.join(" ");
+    // Use debug formatting for an unambiguous representation (handles spaces/special chars).
+    let args_display = format!("{:?}", args);
+
+    println!("Running code_analyse {}", args_display);
 
     let output = Command::new("code_analyse")
         .current_dir(&project_root)
@@ -35,7 +38,6 @@ fn run_code_analyse(feature: &str, extra_args: &[&str]) -> Result<()> {
 
 /// 为功能初始化代码分析
 pub fn initialize_feature(feature: &str) -> Result<()> {
-    println!("Running code_analyse --init --feature {}", feature);
     run_code_analyse(feature, &["--init"])
 }
 
