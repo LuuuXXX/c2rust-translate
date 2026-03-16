@@ -6,6 +6,16 @@ use std::env;
 use std::process::Command;
 use std::time::Instant;
 
+/// Returns the value to use for `RUSTFLAGS` when warnings should be suppressed.
+/// Appends `-A warnings` to the existing `RUSTFLAGS` env var (if set and non-empty)
+/// so that any user-supplied flags are preserved.
+fn merge_rustflags_suppress_warnings() -> String {
+    match std::env::var("RUSTFLAGS") {
+        Ok(existing) if !existing.trim().is_empty() => format!("{} -A warnings", existing),
+        _ => "-A warnings".to_string(),
+    }
+}
+
 /// 统一的 cargo build 函数
 ///
 /// # 参数
@@ -32,8 +42,11 @@ pub fn cargo_build(
     let mut cmd = Command::new("cargo");
     cmd.arg("build").current_dir(&build_dir);
 
+    // 无条件设置 RUSTC_BOOTSTRAP=1，允许使用 nightly-only 特性（如符号弱链接 weak linkage）
+    cmd.env("RUSTC_BOOTSTRAP", "1");
+
     if suppress_warnings {
-        cmd.env("RUSTFLAGS", "-A warnings");
+        cmd.env("RUSTFLAGS", merge_rustflags_suppress_warnings());
     }
 
     let output = cmd.output().context("Failed to execute cargo build")?;
@@ -1319,6 +1332,7 @@ pub fn run_full_build_and_test_interactive(
         match c2rust_test(feature) {
             Ok(_) => {
                 println!("│ {}", "  ✓ All tests passed".bright_green().bold());
+                analyzer::update_code_analysis_build_success(feature)?;
             }
             Err(e) => {
                 println!("│ {}", "  ✗ Tests failed".red());
@@ -1454,5 +1468,47 @@ mod tests {
             })
             .count();
         assert_eq!(count, 1, "rs_file should appear exactly once in the result");
+    }
+
+    /// merge_rustflags_suppress_warnings: when RUSTFLAGS is unset, returns just "-A warnings"
+    #[test]
+    #[serial_test::serial]
+    fn test_merge_rustflags_no_existing() {
+        let original = std::env::var("RUSTFLAGS").ok();
+        std::env::remove_var("RUSTFLAGS");
+        let _restore = scopeguard::guard(original, |v| match v {
+            Some(val) => std::env::set_var("RUSTFLAGS", val),
+            None => std::env::remove_var("RUSTFLAGS"),
+        });
+        assert_eq!(super::merge_rustflags_suppress_warnings(), "-A warnings");
+    }
+
+    /// merge_rustflags_suppress_warnings: when RUSTFLAGS has a value, appends "-A warnings"
+    #[test]
+    #[serial_test::serial]
+    fn test_merge_rustflags_existing_non_empty() {
+        let original = std::env::var("RUSTFLAGS").ok();
+        std::env::set_var("RUSTFLAGS", "--cfg foo");
+        let _restore = scopeguard::guard(original, |v| match v {
+            Some(val) => std::env::set_var("RUSTFLAGS", val),
+            None => std::env::remove_var("RUSTFLAGS"),
+        });
+        assert_eq!(
+            super::merge_rustflags_suppress_warnings(),
+            "--cfg foo -A warnings"
+        );
+    }
+
+    /// merge_rustflags_suppress_warnings: whitespace-only RUSTFLAGS is treated as absent
+    #[test]
+    #[serial_test::serial]
+    fn test_merge_rustflags_whitespace_only() {
+        let original = std::env::var("RUSTFLAGS").ok();
+        std::env::set_var("RUSTFLAGS", "   ");
+        let _restore = scopeguard::guard(original, |v| match v {
+            Some(val) => std::env::set_var("RUSTFLAGS", val),
+            None => std::env::remove_var("RUSTFLAGS"),
+        });
+        assert_eq!(super::merge_rustflags_suppress_warnings(), "-A warnings");
     }
 }
