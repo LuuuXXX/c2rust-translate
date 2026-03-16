@@ -31,7 +31,6 @@ pub fn cargo_build(
 
     let mut cmd = Command::new("cargo");
     cmd.arg("build").current_dir(&build_dir);
-    cmd.env("RUSTC_BOOTSTRAP", "1");
 
     if suppress_warnings {
         cmd.env("RUSTFLAGS", "-A warnings");
@@ -1320,21 +1319,6 @@ pub fn run_full_build_and_test_interactive(
         match c2rust_test(feature) {
             Ok(_) => {
                 println!("│ {}", "  ✓ All tests passed".bright_green().bold());
-                // 测试通过后，标记所有文件构建成功
-                println!("│ {}", "  → Marking build success in code analysis...".bright_blue());
-                match analyzer::update_code_analysis_with_build_success(feature) {
-                    Ok(_) => {
-                        println!("│ {}", "  ✓ Build success marked".bright_green());
-                    }
-                    Err(e) => {
-                        println!("│ {}", "  ✗ Marking build success failed".red());
-                        println!("│");
-                        println!("│ {}", "Error details:".red().bold());
-                        println!("│ {}", format!("{:#}", e).red());
-                        println!("│");
-                        return Err(e).context("Marking build success in code analysis failed");
-                    }
-                }
             }
             Err(e) => {
                 println!("│ {}", "  ✗ Tests failed".red());
