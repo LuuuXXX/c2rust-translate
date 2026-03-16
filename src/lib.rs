@@ -1246,7 +1246,7 @@ where
                     )
                     .yellow()
                 );
-                finalize_file_processing(feature, file_name, format_progress)?;
+                finalize_file_processing(feature, file_name, format_progress, false)?;
                 // C2RUST_TEST_CONTINUE_ON_ERROR was set: tests ran (and failed) but we're
                 // treating the failure as non-fatal and accepting the translation anyway.
                 Ok((true, true))
@@ -1342,7 +1342,12 @@ where
             "│ {}",
             "Auto-accept mode: automatically accepting translation".bright_green()
         );
-        finalize_file_processing(feature, file_name, format_progress)?;
+        finalize_file_processing(
+            feature,
+            file_name,
+            format_progress,
+            matches!(test_status, TestStatus::Passed),
+        )?;
         // In auto-accept mode we skip user interaction. Tests are considered to have
         // run only when the status is `Passed` (c2rust_test executed before this call).
         // `SkippedNoConfig` and `DeferredByInterval` both indicate tests did not run.
@@ -1379,7 +1384,7 @@ where
             match choice {
                 interaction::CompileSuccessChoice::Accept => {
                     println!("│ {}", "You chose: Accept this code".bright_cyan());
-                    finalize_file_processing(feature, file_name, format_progress)?;
+                    finalize_file_processing(feature, file_name, format_progress, false)?;
                 }
                 interaction::CompileSuccessChoice::AutoAccept => {
                     println!(
@@ -1387,7 +1392,7 @@ where
                         "You chose: Auto-accept all subsequent translations".bright_cyan()
                     );
                     interaction::enable_auto_accept_mode();
-                    finalize_file_processing(feature, file_name, format_progress)?;
+                    finalize_file_processing(feature, file_name, format_progress, false)?;
                 }
                 interaction::CompileSuccessChoice::ManualFix => {
                     println!("│ {}", "You chose: Manual fix".bright_cyan());
@@ -1402,7 +1407,7 @@ where
                         "│ {}",
                         "✓ Build passes after manual changes (tests skipped)".bright_green()
                     );
-                    finalize_file_processing(feature, file_name, format_progress)?;
+                    finalize_file_processing(feature, file_name, format_progress, false)?;
                 }
                 interaction::CompileSuccessChoice::Exit => {
                     println!("│ {}", "You chose: Exit".yellow());
@@ -1439,7 +1444,7 @@ where
             let tests_ran = match choice {
                 interaction::CompileSuccessChoice::Accept => {
                     println!("│ {}", "You chose: Accept this code".bright_cyan());
-                    finalize_file_processing(feature, file_name, format_progress)?;
+                    finalize_file_processing(feature, file_name, format_progress, false)?;
                     false
                 }
                 interaction::CompileSuccessChoice::AutoAccept => {
@@ -1448,7 +1453,7 @@ where
                         "You chose: Auto-accept all subsequent translations".bright_cyan()
                     );
                     interaction::enable_auto_accept_mode();
-                    finalize_file_processing(feature, file_name, format_progress)?;
+                    finalize_file_processing(feature, file_name, format_progress, false)?;
                     false
                 }
                 interaction::CompileSuccessChoice::ManualFix => {
@@ -1464,7 +1469,7 @@ where
                         "│ {}",
                         "✓ All builds and tests pass after manual changes".bright_green()
                     );
-                    finalize_file_processing(feature, file_name, format_progress)?;
+                    finalize_file_processing(feature, file_name, format_progress, true)?;
                     true // tests actually ran
                 }
                 interaction::CompileSuccessChoice::Exit => {
@@ -1496,7 +1501,7 @@ where
             match choice {
                 interaction::CompileSuccessChoice::Accept => {
                     println!("│ {}", "You chose: Accept this code".bright_cyan());
-                    finalize_file_processing(feature, file_name, format_progress)?;
+                    finalize_file_processing(feature, file_name, format_progress, true)?;
                 }
                 interaction::CompileSuccessChoice::AutoAccept => {
                     println!(
@@ -1504,7 +1509,7 @@ where
                         "You chose: Auto-accept all subsequent translations".bright_cyan()
                     );
                     interaction::enable_auto_accept_mode();
-                    finalize_file_processing(feature, file_name, format_progress)?;
+                    finalize_file_processing(feature, file_name, format_progress, true)?;
                 }
                 interaction::CompileSuccessChoice::ManualFix => {
                     println!("│ {}", "You chose: Manual fix".bright_cyan());
@@ -1518,7 +1523,7 @@ where
                         "│ {}",
                         "✓ All builds and tests pass after manual changes".bright_green()
                     );
-                    finalize_file_processing(feature, file_name, format_progress)?;
+                    finalize_file_processing(feature, file_name, format_progress, true)?;
                 }
                 interaction::CompileSuccessChoice::Exit => {
                     println!("│ {}", "You chose: Exit".yellow());
@@ -1532,7 +1537,12 @@ where
 }
 
 /// Finalize file processing: commit changes and update analysis
-fn finalize_file_processing<F>(feature: &str, file_name: &str, format_progress: &F) -> Result<()>
+fn finalize_file_processing<F>(
+    feature: &str,
+    file_name: &str,
+    format_progress: &F,
+    tests_passed: bool,
+) -> Result<()>
 where
     F: Fn(&str) -> String,
 {
@@ -1556,7 +1566,11 @@ where
         format_progress("Update Analysis").bright_magenta().bold()
     );
     println!("│ {}", "Updating code analysis...".bright_blue());
-    analyzer::update_code_analysis_build_success(feature)?;
+    if tests_passed {
+        analyzer::update_code_analysis_build_success(feature)?;
+    } else {
+        analyzer::update_code_analysis(feature)?;
+    }
     println!("│ {}", "✓ Code analysis updated".bright_green());
 
     // Commit analysis
