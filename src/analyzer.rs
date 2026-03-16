@@ -3,23 +3,31 @@ use anyhow::{Context, Result};
 use std::process::Command;
 
 /// Validates `feature`, then runs `code_analyse` with the given extra arguments.
+/// `extra_args` are placed before `--feature <feature>` to match the expected CLI ordering.
 fn run_code_analyse(feature: &str, extra_args: &[&str]) -> Result<()> {
     util::validate_feature_name(feature)?;
     let project_root = util::find_project_root()?;
 
-    let mut args = vec!["--feature", feature];
-    args.extend_from_slice(extra_args);
+    let mut args: Vec<&str> = extra_args.to_vec();
+    args.extend_from_slice(&["--feature", feature]);
+
+    let args_display = args.join(" ");
 
     let output = Command::new("code_analyse")
         .current_dir(&project_root)
         .args(&args)
         .output()
-        .context("Failed to execute code_analyse")?;
+        .with_context(|| format!("Failed to execute code_analyse {}", args_display))?;
 
     if !output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("code_analyse failed:\nstdout: {}\nstderr: {}", stdout, stderr);
+        anyhow::bail!(
+            "code_analyse {} failed:\nstdout: {}\nstderr: {}",
+            args_display,
+            stdout,
+            stderr
+        );
     }
 
     Ok(())
