@@ -25,6 +25,10 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use std::path::Path;
 
+/// Interval (in successfully processed files) at which periodic git GC is triggered.
+/// Increasing this value reduces GC frequency; decreasing it compacts the repo more often.
+const GIT_GC_INTERVAL: usize = 10;
+
 /// Main translation workflow for a feature
 ///
 /// Executes the complete C to Rust translation workflow in 5 steps:
@@ -586,8 +590,7 @@ fn process_selected_files(
                 update_interval_counter(translations_since_last_test, tests_ran);
                 // Save stats immediately after successful completion.
                 save_stats_or_warn(stats, feature);
-                // Run a cheap periodic GC every 10 files to keep .git size under control; failures are non-fatal.
-                const GIT_GC_INTERVAL: usize = 10;
+                // Run a cheap periodic GC every GIT_GC_INTERVAL files to keep .git size under control; failures are non-fatal.
                 if progress_state.processed_count % GIT_GC_INTERVAL == 0
                     && progress_state.processed_count > 0
                 {

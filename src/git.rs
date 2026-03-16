@@ -60,8 +60,9 @@ pub fn git_commit(message: &str, feature: &str) -> Result<()> {
 /// Recommended to be called periodically (e.g. every N files) or at the end of a
 /// feature translation.
 ///
-/// When `aggressive` is `true`, passes `--aggressive` for stronger delta recompression
-/// at the cost of longer runtime. Use `aggressive = false` for cheap periodic runs and
+/// When `aggressive` is `true`, passes `--aggressive --prune=now` for stronger delta
+/// recompression and immediate pruning of unreachable objects. Use `aggressive = false`
+/// for cheap periodic runs (Git's default 2-week prune grace period applies) and
 /// `aggressive = true` for the final end-of-feature cleanup.
 ///
 /// Always returns `Ok(())`. All errors (including a missing git binary) are printed as
@@ -76,9 +77,10 @@ pub fn git_gc(aggressive: bool) -> Result<()> {
     };
     let c2rust_dir = project_root.join(".c2rust");
 
-    let mut args = vec!["gc", "--prune=now"];
+    let mut args = vec!["gc"];
     if aggressive {
         args.push("--aggressive");
+        args.push("--prune=now");
     }
 
     match Command::new("git")

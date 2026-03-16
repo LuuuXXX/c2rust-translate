@@ -1,10 +1,11 @@
-# Configure language-aware diff drivers for Rust and C source files.
-# This affects `git diff` output only; it does not influence pack delta compression.
+# `diff=` entries configure language-aware diff drivers for `git diff` output (hunk headers).
+# They do not affect pack delta compression.
 *.rs  diff=rust
 *.c   diff=c
 *.h   diff=c
 
-# Disable delta compression for binary/compiled artifacts to avoid meaningless pack bloat.
+# `-delta` entries disable pack delta compression for binary/compiled artifacts,
+# reducing meaningless pack bloat during git gc/repack.
 *.o   -delta
 *.a   -delta
 *.so  -delta
