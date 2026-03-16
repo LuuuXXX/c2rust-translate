@@ -56,7 +56,9 @@ pub fn git_commit(message: &str, feature: &str) -> Result<()> {
 /// Run garbage collection on the `.c2rust` repository to compact history objects
 /// and reduce `.git` size.
 ///
-/// All commit history is preserved; rollback capability is not affected.
+/// All reachable commits and refs are preserved. Reflog-based recovery of unreachable
+/// commits (e.g. via `HEAD@{n}`) is retained within the reflog expiry window set by
+/// [`git_expire_reflog`] (90 days by default); objects outside that window may be pruned.
 /// Recommended to be called periodically (e.g. every N files) or at the end of a
 /// feature translation.
 ///

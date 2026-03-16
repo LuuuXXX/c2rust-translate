@@ -29,11 +29,12 @@ use std::path::Path;
 /// Increasing this value reduces GC frequency; decreasing it compacts the repo more often.
 const GIT_GC_INTERVAL: usize = 10;
 
-/// Run a cheap periodic `git gc` every [`GIT_GC_INTERVAL`] successfully processed files.
+/// Run periodic `git reflog expire` + `git gc` every [`GIT_GC_INTERVAL`] successfully
+/// processed files to keep the `.c2rust/.git` directory from growing unbounded.
 ///
 /// Should be called after every successful file translation regardless of which loop
 /// produced it, so that long runs with many skipped-file retries also get periodic
-/// compaction.  GC failures are non-fatal (warnings only).
+/// compaction.  Both reflog expiry and GC failures are non-fatal (warnings only).
 fn maybe_run_periodic_git_gc(progress_state: &util::ProgressState) {
     if progress_state.processed_count % GIT_GC_INTERVAL == 0
         && progress_state.processed_count > 0
