@@ -1246,6 +1246,8 @@ where
                     )
                     .yellow()
                 );
+                // tests_passed=false: tests ran but failed; we're only accepting because
+                // C2RUST_TEST_CONTINUE_ON_ERROR is set — this must not emit --build-success.
                 finalize_file_processing(feature, file_name, format_progress, false)?;
                 // C2RUST_TEST_CONTINUE_ON_ERROR was set: tests ran (and failed) but we're
                 // treating the failure as non-fatal and accepting the translation anyway.
@@ -1536,7 +1538,16 @@ where
     }
 }
 
-/// Finalize file processing: commit changes and update analysis
+/// Finalize file processing: commit changes and update code analysis.
+///
+/// `tests_passed` must be `true` only when tests actually ran **and** passed for
+/// this translation — it causes `--build-success` to be forwarded to `code_analyse`
+/// so it can distinguish a verified translation from a skipped/deferred/failed one.
+///
+/// Pass `false` when:
+/// - tests were skipped because the test configuration was unavailable (`SkippedNoConfig`)
+/// - tests were deferred by `C2RUST_TEST_INTERVAL` and no manual re-run was triggered (`DeferredByInterval`)
+/// - tests ran but failed and the caller is continuing due to `C2RUST_TEST_CONTINUE_ON_ERROR`
 fn finalize_file_processing<F>(
     feature: &str,
     file_name: &str,
