@@ -31,6 +31,8 @@ pub fn cargo_build(
 
     let mut cmd = Command::new("cargo");
     cmd.arg("build").current_dir(&build_dir);
+    // Required because translated Rust code may use unstable (nightly-only) features.
+    cmd.env("RUSTC_BOOTSTRAP", "1");
 
     if suppress_warnings {
         cmd.env("RUSTFLAGS", "-A warnings");
