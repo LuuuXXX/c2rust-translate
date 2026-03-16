@@ -42,6 +42,7 @@ pub fn update_code_analysis(feature: &str) -> Result<()> {
 
 /// 为功能更新代码分析，并标记构建成功（所有文件OK）
 pub fn update_code_analysis_with_build_success(feature: &str) -> Result<()> {
+    util::validate_feature_name(feature)?;
     let project_root = util::find_project_root()?;
 
     let output = Command::new("code_analyse")
