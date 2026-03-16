@@ -1,3 +1,4 @@
+use crate::analyzer;
 use crate::util;
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -294,6 +295,9 @@ pub fn translate_c_to_rust(
 
     // 翻译成功后，注入 linkage feature（如需要）
     inject_linkage_feature_if_needed(rs_file)?;
+
+    // 翻译成功后，更新代码分析
+    analyzer::update_code_analysis(feature)?;
 
     // 读取并显示翻译后的 Rust 代码
     display_code(
