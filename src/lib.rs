@@ -25,6 +25,25 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use std::path::Path;
 
+/// Interval (in successfully processed files) at which periodic git GC is triggered.
+/// Increasing this value reduces GC frequency; decreasing it compacts the repo more often.
+const GIT_GC_INTERVAL: usize = 10;
+
+/// Run periodic `git reflog expire` + `git gc` every [`GIT_GC_INTERVAL`] successfully
+/// processed files to keep the `.c2rust/.git` directory from growing unbounded.
+///
+/// Should be called after every successful file translation regardless of which loop
+/// produced it, so that long runs with many skipped-file retries also get periodic
+/// compaction.  Both reflog expiry and GC failures are non-fatal (warnings only).
+fn maybe_run_periodic_git_gc(progress_state: &util::ProgressState) {
+    if progress_state.processed_count % GIT_GC_INTERVAL == 0
+        && progress_state.processed_count > 0
+    {
+        git::git_expire_reflog();
+        git::git_gc(false); // cheap periodic compaction, default prune grace period
+    }
+}
+
 /// Main translation workflow for a feature
 ///
 /// Executes the complete C to Rust translation workflow in 5 steps:
@@ -80,10 +99,16 @@ pub fn translate_feature(
 
     // Print summary even if step 5 fails, so progress is not lost
     if let Err(e) = step5_result {
+        // Compact history even when translation aborts early.
+        git::git_expire_reflog();
+        git::git_gc(true);
         stats.print_summary();
         return Err(e);
     }
 
+    // Run final aggressive GC after all translations complete to keep .git as compact as possible.
+    git::git_expire_reflog();
+    git::git_gc(true);
     stats.print_summary();
     Ok(())
 }
@@ -400,6 +425,7 @@ fn handle_skipped_files_loop(
                             progress_state.mark_processed();
                             update_interval_counter(translations_since_last_test, tests_ran);
                             save_stats_or_warn(stats, feature);
+                            maybe_run_periodic_git_gc(progress_state);
                         }
                     }
                 }
@@ -580,6 +606,7 @@ fn process_selected_files(
                 update_interval_counter(translations_since_last_test, tests_ran);
                 // Save stats immediately after successful completion.
                 save_stats_or_warn(stats, feature);
+                maybe_run_periodic_git_gc(progress_state);
             }
         }
     }

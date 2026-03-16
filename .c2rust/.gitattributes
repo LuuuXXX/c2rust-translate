@@ -1,0 +1,12 @@
+# `diff=` entries configure language-aware diff drivers for `git diff` output (hunk headers).
+# They do not affect pack delta compression.
+*.rs  diff=rust
+*.c   diff=c
+*.h   diff=c
+
+# `-delta` disables delta compression for binary/compiled artifacts. Binary objects
+# such as .o/.a/.so rarely benefit from delta encoding; disabling it avoids wasted
+# CPU during git gc/repack without meaningful impact on pack size.
+*.o   -delta
+*.a   -delta
+*.so  -delta
