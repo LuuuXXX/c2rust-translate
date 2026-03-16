@@ -8,26 +8,20 @@ fn run_code_analyse(feature: &str, extra_args: &[&str]) -> Result<()> {
 
     let mut args = vec!["--update", "--feature", feature];
     args.extend_from_slice(extra_args);
+    let args_display = args.join(" ");
 
     let output = Command::new("code_analyse")
         .current_dir(&project_root)
         .args(&args)
         .output()
-        .with_context(|| {
-            format!(
-                "Failed to execute code_analyse --update --feature {} {}",
-                feature,
-                extra_args.join(" ")
-            )
-        })?;
+        .with_context(|| format!("Failed to execute code_analyse {}", args_display))?;
 
     if !output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
         anyhow::bail!(
-            "code_analyse --update --feature {} {} failed:\nstdout: {}\nstderr: {}",
-            feature,
-            extra_args.join(" "),
+            "code_analyse {} failed:\nstdout: {}\nstderr: {}",
+            args_display,
             stdout,
             stderr
         );
