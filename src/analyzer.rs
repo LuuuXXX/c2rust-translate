@@ -2,14 +2,20 @@ use crate::util;
 use anyhow::{Context, Result};
 use std::process::Command;
 
-/// Validates `feature`, then runs `code_analyse` with the given extra arguments.
-/// `extra_args` are placed before `--feature <feature>` to match the expected CLI ordering.
-fn run_code_analyse(feature: &str, extra_args: &[&str]) -> Result<()> {
+/// Validates `feature`, then runs `code_analyse` with the given arguments.
+/// `pre_feature_args` are placed before `--feature <feature>` and
+/// `post_feature_args` are placed after, allowing callers to control CLI ordering precisely.
+fn run_code_analyse(
+    feature: &str,
+    pre_feature_args: &[&str],
+    post_feature_args: &[&str],
+) -> Result<()> {
     util::validate_feature_name(feature)?;
     let project_root = util::find_project_root()?;
 
-    let mut args: Vec<&str> = extra_args.to_vec();
+    let mut args: Vec<&str> = pre_feature_args.to_vec();
     args.extend_from_slice(&["--feature", feature]);
+    args.extend_from_slice(post_feature_args);
 
     // Use debug formatting for an unambiguous representation (handles spaces/special chars).
     let args_display = format!("{:?}", args);
@@ -38,15 +44,16 @@ fn run_code_analyse(feature: &str, extra_args: &[&str]) -> Result<()> {
 
 /// 为功能初始化代码分析
 pub fn initialize_feature(feature: &str) -> Result<()> {
-    run_code_analyse(feature, &["--init"])
+    run_code_analyse(feature, &["--init"], &[])
 }
 
 /// 为功能更新代码分析
 pub fn update_code_analysis(feature: &str) -> Result<()> {
-    run_code_analyse(feature, &["--update"])
+    run_code_analyse(feature, &["--update"], &[])
 }
 
 /// 为功能更新代码分析，并标记构建成功（所有文件OK）
+/// Invokes: code_analyse --update --feature <feature> --build-success
 pub fn update_code_analysis_with_build_success(feature: &str) -> Result<()> {
-    run_code_analyse(feature, &["--update", "--build-success"])
+    run_code_analyse(feature, &["--update"], &["--build-success"])
 }
