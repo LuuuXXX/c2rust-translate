@@ -32,6 +32,9 @@ pub fn cargo_build(
     let mut cmd = Command::new("cargo");
     cmd.arg("build").current_dir(&build_dir);
 
+    // 无条件设置 RUSTC_BOOTSTRAP=1，允许使用 nightly-only 特性（如符号弱链接 weak linkage）
+    cmd.env("RUSTC_BOOTSTRAP", "1");
+
     if suppress_warnings {
         cmd.env("RUSTFLAGS", "-A warnings");
     }

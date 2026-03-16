@@ -167,6 +167,27 @@ pub(crate) fn display_code(file_path: &Path, header: &str, max_lines: usize, sho
     }
 }
 
+/// 如果翻译后的 Rust 文件中包含 `#[linkage` 属性，
+/// 则自动在文件顶部注入 `#![feature(linkage)]`。
+fn inject_linkage_feature_if_needed(rs_file: &Path) -> Result<()> {
+    let content = std::fs::read_to_string(rs_file)
+        .with_context(|| format!("Failed to read {}", rs_file.display()))?;
+
+    // 如果已经有 feature(linkage) 声明，跳过
+    if content.contains("#![feature(linkage)]") {
+        return Ok(());
+    }
+
+    // 如果有弱链接属性，注入 feature 声明
+    if content.contains("#[linkage") {
+        let new_content = format!("#![feature(linkage)]\n{}", content);
+        std::fs::write(rs_file, new_content)
+            .with_context(|| format!("Failed to write {}", rs_file.display()))?;
+    }
+
+    Ok(())
+}
+
 /// 使用翻译工具将 C 文件翻译为 Rust
 pub fn translate_c_to_rust(
     feature: &str,
@@ -270,6 +291,9 @@ pub fn translate_c_to_rust(
             status.code().unwrap_or(-1)
         );
     }
+
+    // 翻译成功后，注入 linkage feature（如需要）
+    inject_linkage_feature_if_needed(rs_file)?;
 
     // 读取并显示翻译后的 Rust 代码
     display_code(
