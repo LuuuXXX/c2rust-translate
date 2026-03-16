@@ -39,3 +39,21 @@ pub fn update_code_analysis(feature: &str) -> Result<()> {
 
     Ok(())
 }
+
+/// 在所有文件构建和测试通过后，更新代码分析并标记构建成功
+pub fn update_code_analysis_build_success(feature: &str) -> Result<()> {
+    let project_root = util::find_project_root()?;
+
+    let output = Command::new("code_analyse")
+        .current_dir(&project_root)
+        .args(["--update", "--feature", feature, "--build-success"])
+        .output()
+        .context("Failed to execute code_analyse --update --feature --build-success")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("code_analyse update --build-success failed: {}", stderr);
+    }
+
+    Ok(())
+}

@@ -1322,6 +1322,7 @@ pub fn run_full_build_and_test_interactive(
         match c2rust_test(feature) {
             Ok(_) => {
                 println!("│ {}", "  ✓ All tests passed".bright_green().bold());
+                analyzer::update_code_analysis_build_success(feature)?;
             }
             Err(e) => {
                 println!("│ {}", "  ✗ Tests failed".red());

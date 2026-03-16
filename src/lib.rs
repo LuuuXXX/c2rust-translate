@@ -488,6 +488,7 @@ fn run_final_interval_test_if_needed(
                 "{}",
                 "✓ Final hybrid build tests passed".bright_green().bold()
             );
+            analyzer::update_code_analysis_build_success(feature)?;
         }
         Err(test_error) => {
             if should_continue_on_test_error() {
