@@ -103,10 +103,13 @@ pub fn git_gc(aggressive: bool) {
 /// Expire old reflog entries in the `.c2rust` repository to allow GC to reclaim
 /// objects that are only referenced by stale reflog entries.
 ///
-/// Uses `--expire=90.days.ago` to retain recent reflog history, preserving the
-/// ability to recover commits via `HEAD@{n}` or detached-HEAD recovery for the
-/// past 90 days. Call this before [`git_gc`] so that GC can prune a larger set
-/// of unreachable objects.
+/// Uses `--expire=90.days.ago` and `--expire-unreachable=90.days.ago` to retain
+/// recent reflog history for both reachable and unreachable commits, preserving
+/// the ability to recover commits via `HEAD@{n}` or detached-HEAD recovery for
+/// the past 90 days. (Git's default for unreachable entries is typically 30 days,
+/// so the explicit flag is required to match the intended 90-day retention.)
+/// Call this before [`git_gc`] so that GC can prune a larger set of unreachable
+/// objects older than the retention window.
 ///
 /// All errors are printed as warnings and never abort the main workflow.
 pub fn git_expire_reflog() {
@@ -124,7 +127,7 @@ pub fn git_expire_reflog() {
 
     match Command::new("git")
         .current_dir(&c2rust_dir)
-        .args(["reflog", "expire", "--expire=90.days.ago", "--all"])
+        .args(["reflog", "expire", "--expire=90.days.ago", "--expire-unreachable=90.days.ago", "--all"])
         .output()
     {
         Err(e) => {
