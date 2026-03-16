@@ -85,15 +85,15 @@ pub fn translate_feature(
     // Print summary even if step 5 fails, so progress is not lost
     if let Err(e) = step5_result {
         // Compact history even when translation aborts early.
-        let _ = git::git_expire_reflog();
-        let _ = git::git_gc(true);
+        git::git_expire_reflog();
+        git::git_gc(true);
         stats.print_summary();
         return Err(e);
     }
 
     // Run final aggressive GC after all translations complete to keep .git as compact as possible.
-    let _ = git::git_expire_reflog();
-    let _ = git::git_gc(true);
+    git::git_expire_reflog();
+    git::git_gc(true);
     stats.print_summary();
     Ok(())
 }
@@ -594,8 +594,8 @@ fn process_selected_files(
                 if progress_state.processed_count % GIT_GC_INTERVAL == 0
                     && progress_state.processed_count > 0
                 {
-                    let _ = git::git_expire_reflog();
-                    let _ = git::git_gc(false);
+                    git::git_expire_reflog();
+                    git::git_gc(false);
                 }
             }
         }

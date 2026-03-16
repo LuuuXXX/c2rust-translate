@@ -65,14 +65,14 @@ pub fn git_commit(message: &str, feature: &str) -> Result<()> {
 /// for cheap periodic runs (Git's default 2-week prune grace period applies) and
 /// `aggressive = true` for the final end-of-feature cleanup.
 ///
-/// Always returns `Ok(())`. All errors (including a missing git binary) are printed as
-/// warnings and never abort the main workflow.
-pub fn git_gc(aggressive: bool) -> Result<()> {
+/// All errors (including a missing git binary) are printed as warnings and never abort
+/// the main workflow.
+pub fn git_gc(aggressive: bool) {
     let project_root = match util::find_project_root() {
         Ok(p) => p,
         Err(e) => {
             eprintln!("Warning: git gc skipped, could not find project root: {}", e);
-            return Ok(());
+            return;
         }
     };
     let c2rust_dir = project_root.join(".c2rust");
@@ -98,8 +98,6 @@ pub fn git_gc(aggressive: bool) -> Result<()> {
         }
         Ok(_) => {}
     }
-
-    Ok(())
 }
 
 /// Expire old reflog entries in the `.c2rust` repository to allow GC to reclaim
@@ -110,9 +108,8 @@ pub fn git_gc(aggressive: bool) -> Result<()> {
 /// past 90 days. Call this before [`git_gc`] so that GC can prune a larger set
 /// of unreachable objects.
 ///
-/// Always returns `Ok(())`. All errors are printed as warnings and never abort
-/// the main workflow.
-pub fn git_expire_reflog() -> Result<()> {
+/// All errors are printed as warnings and never abort the main workflow.
+pub fn git_expire_reflog() {
     let project_root = match util::find_project_root() {
         Ok(p) => p,
         Err(e) => {
@@ -120,7 +117,7 @@ pub fn git_expire_reflog() -> Result<()> {
                 "Warning: git reflog expire skipped, could not find project root: {}",
                 e
             );
-            return Ok(());
+            return;
         }
     };
     let c2rust_dir = project_root.join(".c2rust");
@@ -139,6 +136,4 @@ pub fn git_expire_reflog() -> Result<()> {
         }
         Ok(_) => {}
     }
-
-    Ok(())
 }

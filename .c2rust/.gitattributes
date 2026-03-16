@@ -4,8 +4,9 @@
 *.c   diff=c
 *.h   diff=c
 
-# `-delta` entries disable pack delta compression for binary/compiled artifacts,
-# reducing meaningless pack bloat during git gc/repack.
+# `-delta` disables delta compression for binary/compiled artifacts. Binary objects
+# such as .o/.a/.so rarely benefit from delta encoding; disabling it avoids wasted
+# CPU during git gc/repack without meaningful impact on pack size.
 *.o   -delta
 *.a   -delta
 *.so  -delta
