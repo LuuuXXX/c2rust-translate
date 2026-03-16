@@ -36,7 +36,11 @@ pub fn cargo_build(
     cmd.env("RUSTC_BOOTSTRAP", "1");
 
     if suppress_warnings {
-        cmd.env("RUSTFLAGS", "-A warnings");
+        let flags = match std::env::var("RUSTFLAGS") {
+            Ok(existing) if !existing.trim().is_empty() => format!("{} -A warnings", existing),
+            _ => "-A warnings".to_string(),
+        };
+        cmd.env("RUSTFLAGS", flags);
     }
 
     let output = cmd.output().context("Failed to execute cargo build")?;
