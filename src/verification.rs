@@ -25,9 +25,11 @@ impl std::error::Error for SkipFileSignal {}
 /// file rather than aborting.
 ///
 /// Unlike [`SkipFileSignal`] (which represents a deliberate, user-chosen or
-/// auto-triggered skip), this signal indicates a real failure that should be
-/// logged and reported separately from intentional skips.  Callers check for
-/// this type to avoid treating translation errors as deliberate skips.
+/// auto-triggered skip), this signal indicates a real failure.  Callers record
+/// the file in [`crate::util::TranslationStats::translation_failed_files`] rather
+/// than in `skipped_files`, so translation failures are reported separately from
+/// intentional skips in the final statistics summary and are not re-offered to the
+/// user in the skipped-files retry loop.
 #[derive(Debug)]
 pub struct TranslationFailedSignal;
 
@@ -782,8 +784,12 @@ mod tests {
     }
 
     /// Test that apply_fixes_for_messages returns Ok(0) when the fix attempt fails
-    /// because the target `.rs` file does not exist (so `fix_translation_error` cannot
-    /// write the fixed output). Fix failures are non-fatal: the function logs a warning
+    /// because the translate script is unavailable (`C2RUST_TRANSLATE_DIR` is not set
+    /// in the test environment).  The warning message points at `src/nonexistent.rs`,
+    /// which exists on disk together with its companion `nonexistent.c` so that
+    /// `group_errors_by_file` resolves the file and calls `apply_warning_fix` for it.
+    /// `fix_translation_error` then fails deterministically when it tries to look up the
+    /// translate-script path.  Fix failures are non-fatal: the function logs a warning
     /// and returns 0 fixes applied so the caller can continue without aborting the
     /// file-processing workflow.
     #[test]
@@ -806,18 +812,21 @@ mod tests {
             .join("src");
         std::fs::create_dir_all(&feature_src_dir).unwrap();
 
-        // Create the companion .c file so fix_translation_error passes its C-file
-        // existence check. The error is triggered by the missing target .rs file,
-        // not by an unavailable translate script.
+        // Create both the target .rs file and its companion .c file so that
+        // group_errors_by_file resolves the path from the warning message and
+        // fix_translation_error passes the C-file existence check.  The fix then
+        // fails deterministically when it looks up the translate-script path
+        // (C2RUST_TRANSLATE_DIR is not set in the test environment), exercising
+        // the non-fatal warning path.
+        std::fs::write(feature_src_dir.join("nonexistent.rs"), "").unwrap();
         std::fs::write(feature_src_dir.join("nonexistent.c"), "").unwrap();
 
-        // Point rs_file at a path under the feature src dir that does NOT exist.
-        // This causes fix_translation_error to fail (no output file to write to),
-        // exercising the non-fatal warning path.
+        // Point the warning message at the .rs file we just created so that
+        // group_errors_by_file finds it and apply_warning_fix is called for it.
         let rs_file = feature_src_dir.join("nonexistent.rs");
 
         let result = apply_fixes_for_messages(
-            "warning: unused\n  --> src/foo.rs:1:1",
+            "warning: unused\n  --> src/nonexistent.rs:1:1",
             &anyhow::anyhow!("dummy"),
             feature,
             "var",

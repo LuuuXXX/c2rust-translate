@@ -122,7 +122,7 @@ c2rust-translate translate --feature myfeature --show-full-output
 
 | 失败类型 | 处理方式 |
 |----------|----------|
-| **翻译失败**（`translate_and_fix.py` 出错）| 文件记录为已跳过，继续处理下一个文件 |
+| **翻译失败**（`translate_and_fix.py` 出错）| 文件记录到 `translation_failed_files`（区别于用户主动跳过的 `skipped_files`），跳过该文件继续处理下一个；最终统计中单独显示 |
 | **修复失败**（`apply_error_fix`/`apply_warning_fix` 出错）| 打印警告，本次修复计数为 0，修复循环继续直到达到最大次数 |
 | **git 提交失败**（`git commit` 出错） | 打印 `⚠ Warning: git commit failed (continuing): ...`，工作树可能保持脏状态，后续提交可能包含额外变更 |
 | **`code_analyse` 失败** | **致命错误，中止整个流程** |

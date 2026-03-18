@@ -189,6 +189,12 @@ fn step_2_5_load_or_create_stats(feature: &str) -> Result<util::TranslationStats
             println!("Previous progress:");
             println!("  - Total files translated: {}", existing_stats.total_files);
             println!("  - Files skipped: {}", existing_stats.skipped_files.len());
+            if !existing_stats.translation_failed_files.is_empty() {
+                println!(
+                    "  - Translation failures: {}",
+                    existing_stats.translation_failed_files.len()
+                );
+            }
 
             let choice = interaction::prompt_continue_or_restart()?;
 
@@ -289,12 +295,18 @@ fn step_5_execute_translation_loop(
 
     loop {
         // Scan for empty .rs files, then exclude any that have already been skipped
-        // by the user so they are only offered again via handle_skipped_files_loop.
+        // by the user or that previously failed to translate.  Skipped files are
+        // offered again via handle_skipped_files_loop; translation-failed files are
+        // reported at the end as unrecoverable and not re-offered.
         // Completed files are already excluded because successfully translated files are
         // non-empty on disk (the existing file-content-based resume mechanism).
         let all_empty_rs_files = file_scanner::find_empty_rs_files(rust_dir)?;
-        let skipped_set: std::collections::HashSet<&str> =
-            stats.skipped_files.iter().map(|s| s.as_str()).collect();
+        let excluded_set: std::collections::HashSet<&str> = stats
+            .skipped_files
+            .iter()
+            .chain(stats.translation_failed_files.iter())
+            .map(|s| s.as_str())
+            .collect();
         let empty_rs_files: Vec<_> = all_empty_rs_files
             .into_iter()
             .filter(|p| {
@@ -303,7 +315,7 @@ fn step_5_execute_translation_loop(
                     .ok()
                     .and_then(|r| r.to_str())
                     .unwrap_or("");
-                !skipped_set.contains(rel)
+                !excluded_set.contains(rel)
             })
             .collect();
 
@@ -409,7 +421,8 @@ fn handle_skipped_files_loop(
                             if e.downcast_ref::<verification::SkipFileSignal>().is_some()
                                 || e.downcast_ref::<verification::TranslationFailedSignal>().is_some()
                             {
-                                // File was re-skipped or translation failed; already re-recorded.
+                                // File was re-skipped or translation failed; already recorded
+                                // by process_rs_file into the appropriate list.
                                 save_stats_or_warn(stats, feature);
                                 continue;
                             }
@@ -747,7 +760,7 @@ fn process_rs_file(
                 format!("Skipping file due to translation failure: {}", file_name)
                     .bright_yellow()
             );
-            stats.record_file_skipped(file_name.to_string());
+            stats.record_file_translation_failed(file_name.to_string());
             return Err(verification::TranslationFailedSignal.into());
         }
 
