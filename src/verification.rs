@@ -794,7 +794,7 @@ mod tests {
     /// file-processing workflow.
     #[test]
     #[serial_test::serial]
-    fn test_apply_fixes_for_messages_fix_failure_missing_rs_file_is_nonfatal() {
+    fn test_apply_fixes_for_messages_fix_failure_missing_translate_script_is_nonfatal() {
         use std::env;
         use tempfile::TempDir;
 
@@ -802,6 +802,9 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let orig_dir = env::current_dir().unwrap();
         env::set_current_dir(tmp.path()).unwrap();
+        let _restore = scopeguard::guard(orig_dir, |dir| {
+            let _ = env::set_current_dir(dir);
+        });
 
         let feature = "test_feature";
         let feature_src_dir = tmp
@@ -835,8 +838,6 @@ mod tests {
             false,
             true,
         );
-
-        env::set_current_dir(orig_dir).unwrap();
 
         // Fix failures are now non-fatal: the function logs a warning and returns
         // Ok(0) (zero fixes applied) instead of propagating the error.
