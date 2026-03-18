@@ -406,8 +406,10 @@ fn handle_skipped_files_loop(
                         skip_interval_test,
                     ) {
                         Err(e) => {
-                            if e.downcast_ref::<verification::SkipFileSignal>().is_some() {
-                                // File was re-skipped; already re-recorded in process_rs_file.
+                            if e.downcast_ref::<verification::SkipFileSignal>().is_some()
+                                || e.downcast_ref::<verification::TranslationFailedSignal>().is_some()
+                            {
+                                // File was re-skipped or translation failed; already re-recorded.
                                 save_stats_or_warn(stats, feature);
                                 continue;
                             }
@@ -506,9 +508,9 @@ fn run_final_interval_test_if_needed(
         }
     }
 
-    // Commit any analysis changes produced by clean/build/test above so the
-    // working tree is left clean, matching the per-file finalize_file_processing
-    // behaviour.  git_commit handles "nothing to commit" gracefully.
+    // Commit any analysis changes produced by clean/build/test above. The commit
+    // is non-fatal: if it fails a warning is printed, the working tree may remain
+    // dirty, and subsequent analysis commits may include extra unintended changes.
     git_commit_or_warn(
         &format!("Update code analysis after final interval test (feature: {})", feature),
         feature,
@@ -527,12 +529,17 @@ fn run_final_interval_test_if_needed(
 /// the commit cannot be recorded (e.g., git is misconfigured or the repo is locked).
 /// Callers that need "nothing to commit" to be silently ignored should use
 /// `git::git_commit` directly, which already handles that case.
-fn git_commit_or_warn(message: &str, feature: &str) {
+///
+/// Returns `true` if the commit succeeded, `false` if it failed (and a warning was printed).
+fn git_commit_or_warn(message: &str, feature: &str) -> bool {
     if let Err(e) = git::git_commit(message, feature) {
         eprintln!(
             "{}",
             format!("⚠ Warning: git commit failed (continuing): {}", e).yellow()
         );
+        false
+    } else {
+        true
     }
 }
 
@@ -609,11 +616,14 @@ fn process_selected_files(
             skip_interval_test,
         ) {
             Err(e) => {
-                if e.downcast_ref::<verification::SkipFileSignal>().is_none() {
+                if e.downcast_ref::<verification::SkipFileSignal>().is_none()
+                    && e.downcast_ref::<verification::TranslationFailedSignal>().is_none()
+                {
                     return Err(e);
                 }
-                // File was skipped; already recorded in process_rs_file. Don't mark as processed.
-                // Save stats immediately so the skip is persisted.
+                // File was skipped (deliberate) or translation failed (non-fatal).
+                // Already recorded in process_rs_file. Don't mark as processed.
+                // Save stats immediately so the outcome is persisted.
                 save_stats_or_warn(stats, feature);
             }
             Ok(tests_ran) => {
@@ -738,7 +748,7 @@ fn process_rs_file(
                     .bright_yellow()
             );
             stats.record_file_skipped(file_name.to_string());
-            return Err(verification::SkipFileSignal.into());
+            return Err(verification::TranslationFailedSignal.into());
         }
 
         // Phase 1: Build and fix errors (warnings suppressed via RUSTFLAGS="-A warnings")
@@ -1588,14 +1598,15 @@ where
     println!("│");
     println!("│ {}", format_progress("Commit").bright_magenta().bold());
     println!("│ {}", "Committing changes...".bright_blue());
-    git_commit_or_warn(
+    if git_commit_or_warn(
         &format!(
             "Translate {} from C to Rust (feature: {})",
             file_name, feature
         ),
         feature,
-    );
-    println!("│ {}", "✓ Changes committed".bright_green());
+    ) {
+        println!("│ {}", "✓ Changes committed".bright_green());
+    }
 
     // Update code analysis
     println!("│");

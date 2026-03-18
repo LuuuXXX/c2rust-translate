@@ -20,6 +20,25 @@ impl std::fmt::Display for SkipFileSignal {
 
 impl std::error::Error for SkipFileSignal {}
 
+/// Signal type returned when a translation step fails (e.g. the Python translate
+/// script exits non-zero), but the overall workflow should continue with the next
+/// file rather than aborting.
+///
+/// Unlike [`SkipFileSignal`] (which represents a deliberate, user-chosen or
+/// auto-triggered skip), this signal indicates a real failure that should be
+/// logged and reported separately from intentional skips.  Callers check for
+/// this type to avoid treating translation errors as deliberate skips.
+#[derive(Debug)]
+pub struct TranslationFailedSignal;
+
+impl std::fmt::Display for TranslationFailedSignal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Translation failed")
+    }
+}
+
+impl std::error::Error for TranslationFailedSignal {}
+
 /// Outcome of the automatic retry decision when `C2RUST_AUTO_RETRY_ON_MAX_FIX` is set.
 #[derive(Debug, PartialEq)]
 enum AutoRetryOutcome {
@@ -762,13 +781,14 @@ mod tests {
         })
     }
 
-    /// Test that apply_fixes_for_messages returns Ok(0) when the fix fails
-    /// (e.g. the translate script is unavailable). Fix failures are non-fatal:
-    /// the function logs a warning and returns 0 fixes applied so the caller
-    /// can continue without aborting the file-processing workflow.
+    /// Test that apply_fixes_for_messages returns Ok(0) when the fix attempt fails
+    /// because the target `.rs` file does not exist (so `fix_translation_error` cannot
+    /// write the fixed output). Fix failures are non-fatal: the function logs a warning
+    /// and returns 0 fixes applied so the caller can continue without aborting the
+    /// file-processing workflow.
     #[test]
     #[serial_test::serial]
-    fn test_apply_fixes_for_messages_fix_failure_is_nonfatal() {
+    fn test_apply_fixes_for_messages_fix_failure_missing_rs_file_is_nonfatal() {
         use std::env;
         use tempfile::TempDir;
 
@@ -787,10 +807,13 @@ mod tests {
         std::fs::create_dir_all(&feature_src_dir).unwrap();
 
         // Create the companion .c file so fix_translation_error passes its C-file
-        // existence check, ensuring the error originates from the missing .rs file.
+        // existence check. The error is triggered by the missing target .rs file,
+        // not by an unavailable translate script.
         std::fs::write(feature_src_dir.join("nonexistent.c"), "").unwrap();
 
         // Point rs_file at a path under the feature src dir that does NOT exist.
+        // This causes fix_translation_error to fail (no output file to write to),
+        // exercising the non-fatal warning path.
         let rs_file = feature_src_dir.join("nonexistent.rs");
 
         let result = apply_fixes_for_messages(
