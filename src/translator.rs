@@ -5,6 +5,29 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+/// Typed error returned when the translate script exits with a non-zero code.
+///
+/// This is the only "expected" translation failure (the script ran but could not
+/// produce valid Rust output). All other errors from `translate_c_to_rust` (missing
+/// project root, invalid feature name, cannot execute Python, etc.) are infrastructure
+/// failures and are **not** wrapped in this type — they propagate as plain `anyhow::Error`.
+#[derive(Debug)]
+pub struct TranslationScriptFailedError {
+    pub exit_code: i32,
+}
+
+impl std::fmt::Display for TranslationScriptFailedError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Translation script exited with code {} (check output above for details)",
+            self.exit_code
+        )
+    }
+}
+
+impl std::error::Error for TranslationScriptFailedError {}
+
 /// 从环境变量获取翻译脚本目录
 ///
 /// 环境变量应包含包含 translate_and_fix.py 脚本的
@@ -265,10 +288,10 @@ pub fn translate_c_to_rust(
         .context("Failed to execute translate_and_fix.py")?;
 
     if !status.success() {
-        anyhow::bail!(
-            "Translation failed with exit code: {} (check output above for details)",
-            status.code().unwrap_or(-1)
-        );
+        return Err(TranslationScriptFailedError {
+            exit_code: status.code().unwrap_or(-1),
+        }
+        .into());
     }
 
     // 读取并显示翻译后的 Rust 代码

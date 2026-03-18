@@ -743,7 +743,11 @@ fn process_rs_file(
             )
         };
 
-        // Translate C to Rust
+        // Translate C to Rust.
+        // Only `TranslationScriptFailedError` (translate script non-zero exit) is treated
+        // as a non-fatal translation failure.  All other errors (missing project root,
+        // invalid feature name, cannot execute Python, empty output, …) are infrastructure
+        // problems and propagate to the caller with `?`.
         if let Err(e) = translate_file(
             feature,
             file_type,
@@ -751,17 +755,21 @@ fn process_rs_file(
             &format_progress,
             show_full_output,
         ) {
-            println!(
-                "│ {}",
-                format!("⚠ Translation failed: {:#}", e).yellow()
-            );
-            println!(
-                "│ {}",
-                format!("Skipping file due to translation failure: {}", file_name)
-                    .bright_yellow()
-            );
-            stats.record_file_translation_failed(file_name.to_string());
-            return Err(verification::TranslationFailedSignal.into());
+            if e.downcast_ref::<translator::TranslationScriptFailedError>().is_some() {
+                println!(
+                    "│ {}",
+                    format!("⚠ Translation failed: {:#}", e).yellow()
+                );
+                println!(
+                    "│ {}",
+                    format!("Skipping file due to translation failure: {}", file_name)
+                        .bright_yellow()
+                );
+                stats.record_file_translation_failed(file_name.to_string());
+                return Err(verification::TranslationFailedSignal.into());
+            } else {
+                return Err(e);
+            }
         }
 
         // Phase 1: Build and fix errors (warnings suppressed via RUSTFLAGS="-A warnings")

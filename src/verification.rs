@@ -798,6 +798,12 @@ mod tests {
         use std::env;
         use tempfile::TempDir;
 
+        // Explicitly unset C2RUST_TRANSLATE_DIR so the translate-script lookup fails
+        // deterministically, regardless of whether the variable happens to be set in
+        // the outer CI/developer environment.
+        let _translate_dir_guard = env_guard("C2RUST_TRANSLATE_DIR");
+        env::remove_var("C2RUST_TRANSLATE_DIR");
+
         // Set up a temporary project root with a valid .c2rust/<feature>/rust/src tree.
         let tmp = TempDir::new().unwrap();
         let orig_dir = env::current_dir().unwrap();

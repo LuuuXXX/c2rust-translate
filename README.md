@@ -6,10 +6,10 @@
 
 ### v0.3.0（当前版本）
 **非致命错误处理改进：**
-- **翻译失败非致命化**：翻译步骤失败时记录警告并跳过该文件，继续处理下一个文件（新增 `TranslationFailedSignal`，与用户主动跳过的 `SkipFileSignal` 区分）
+- **翻译脚本失败非致命化**：`translate_and_fix.py` 非零退出时记录警告并跳过该文件，继续处理下一个文件（新增 `TranslationFailedSignal`，与用户主动跳过的 `SkipFileSignal` 区分）。基础设施错误（找不到项目根目录、无效 feature 名称等）仍为致命错误。
 - **修复步骤失败非致命化**：`apply_error_fix`/`apply_warning_fix` 失败时打印警告，本次修复计数为 0，修复循环继续直至达到最大次数
 - **git 提交失败非致命化**：提交失败时打印 `⚠ Warning: git commit failed (continuing): ...`，工作树可能保持脏状态，但不中止流程；"✓ Changes committed" 仅在提交真正成功时显示
-- **`code_analyse` 失败仍为致命错误**：`update_code_analysis`/`update_code_analysis_build_success` 保持 `?` 传播，是唯一会中止整个流程的错误
+- **仍为致命错误的情况**：`code_analyse` 失败、构建失败后用户选择退出、基础设施错误
 
 ### v0.2.0
 **重大改进：**
@@ -118,14 +118,16 @@ c2rust-translate translate --feature myfeature --show-full-output
 
 ### 错误处理策略
 
-工具采用"尽力而为"的错误处理策略，只有 `code_analyse` 命令失败是致命错误，其余失败均为非致命：
+本 PR 将以下三类失败由致命改为非致命，其余失败类型仍按原有行为处理（可能致命）：
 
 | 失败类型 | 处理方式 |
 |----------|----------|
-| **翻译失败**（`translate_and_fix.py` 出错）| 文件记录到 `translation_failed_files`（区别于用户主动跳过的 `skipped_files`），跳过该文件继续处理下一个；最终统计中单独显示 |
+| **翻译脚本失败**（`translate_and_fix.py` 非零退出）| 文件记录到 `translation_failed_files`（区别于用户主动跳过的 `skipped_files`），跳过该文件继续处理下一个；最终统计中单独显示。注意：基础设施错误（找不到项目根目录、无效 feature 名称、无法执行 Python 等）仍为致命错误。 |
 | **修复失败**（`apply_error_fix`/`apply_warning_fix` 出错）| 打印警告，本次修复计数为 0，修复循环继续直到达到最大次数 |
 | **git 提交失败**（`git commit` 出错） | 打印 `⚠ Warning: git commit failed (continuing): ...`，工作树可能保持脏状态，后续提交可能包含额外变更 |
 | **`code_analyse` 失败** | **致命错误，中止整个流程** |
+| **构建失败后用户选择退出** | **致命错误，中止整个流程** |
+| **基础设施错误**（找不到项目根目录、无效 feature 名等）| **致命错误，中止整个流程** |
 
 ## 交互选项说明
 
