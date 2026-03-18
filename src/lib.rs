@@ -540,19 +540,19 @@ fn run_final_interval_test_if_needed(
 ///
 /// Git commit failures are non-fatal: the translation workflow continues even if
 /// the commit cannot be recorded (e.g., git is misconfigured or the repo is locked).
-/// Callers that need "nothing to commit" to be silently ignored should use
-/// `git::git_commit` directly, which already handles that case.
 ///
-/// Returns `true` if the commit succeeded, `false` if it failed (and a warning was printed).
+/// Returns `true` if a new commit was actually created, `false` if there was nothing
+/// to commit (no-op, no warning printed) or if the commit failed (warning printed).
 fn git_commit_or_warn(message: &str, feature: &str) -> bool {
-    if let Err(e) = git::git_commit(message, feature) {
-        eprintln!(
-            "{}",
-            format!("⚠ Warning: git commit failed (continuing): {}", e).yellow()
-        );
-        false
-    } else {
-        true
+    match git::git_commit(message, feature) {
+        Err(e) => {
+            eprintln!(
+                "{}",
+                format!("⚠ Warning: git commit failed (continuing): {}", e).yellow()
+            );
+            false
+        }
+        Ok(committed) => committed,
     }
 }
 

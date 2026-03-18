@@ -5,7 +5,10 @@ use std::process::Command;
 /// Commit changes with a message.
 /// Only stages the `.c2rust/` directory and the specific feature directory to avoid
 /// committing unrelated local modifications.
-pub fn git_commit(message: &str, feature: &str) -> Result<()> {
+///
+/// Returns `Ok(true)` when a commit was actually created, `Ok(false)` when there
+/// was nothing to commit (no-op), and `Err` for any other failure.
+pub fn git_commit(message: &str, feature: &str) -> Result<bool> {
     let project_root = util::find_project_root()?;
     let c2rust_dir = project_root.join(".c2rust");
 
@@ -48,9 +51,11 @@ pub fn git_commit(message: &str, feature: &str) -> Result<()> {
                 combined_output
             );
         }
+        // No-op: nothing was staged/committed
+        return Ok(false);
     }
 
-    Ok(())
+    Ok(true)
 }
 
 /// Run garbage collection on the `.c2rust` repository to compact history objects
