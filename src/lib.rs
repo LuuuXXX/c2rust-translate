@@ -189,6 +189,12 @@ fn step_2_5_load_or_create_stats(feature: &str) -> Result<util::TranslationStats
             println!("Previous progress:");
             println!("  - Total files translated: {}", existing_stats.total_files);
             println!("  - Files skipped: {}", existing_stats.skipped_files.len());
+            if !existing_stats.translation_failed_files.is_empty() {
+                println!(
+                    "  - Translation failures: {}",
+                    existing_stats.translation_failed_files.len()
+                );
+            }
 
             let choice = interaction::prompt_continue_or_restart()?;
 
@@ -289,12 +295,18 @@ fn step_5_execute_translation_loop(
 
     loop {
         // Scan for empty .rs files, then exclude any that have already been skipped
-        // by the user so they are only offered again via handle_skipped_files_loop.
+        // by the user or that previously failed to translate.  Skipped files are
+        // offered again via handle_skipped_files_loop; translation-failed files are
+        // reported at the end as unrecoverable and not re-offered.
         // Completed files are already excluded because successfully translated files are
         // non-empty on disk (the existing file-content-based resume mechanism).
         let all_empty_rs_files = file_scanner::find_empty_rs_files(rust_dir)?;
-        let skipped_set: std::collections::HashSet<&str> =
-            stats.skipped_files.iter().map(|s| s.as_str()).collect();
+        let excluded_set: std::collections::HashSet<&str> = stats
+            .skipped_files
+            .iter()
+            .chain(stats.translation_failed_files.iter())
+            .map(|s| s.as_str())
+            .collect();
         let empty_rs_files: Vec<_> = all_empty_rs_files
             .into_iter()
             .filter(|p| {
@@ -303,7 +315,7 @@ fn step_5_execute_translation_loop(
                     .ok()
                     .and_then(|r| r.to_str())
                     .unwrap_or("");
-                !skipped_set.contains(rel)
+                !excluded_set.contains(rel)
             })
             .collect();
 
@@ -406,8 +418,11 @@ fn handle_skipped_files_loop(
                         skip_interval_test,
                     ) {
                         Err(e) => {
-                            if e.downcast_ref::<verification::SkipFileSignal>().is_some() {
-                                // File was re-skipped; already re-recorded in process_rs_file.
+                            if e.downcast_ref::<verification::SkipFileSignal>().is_some()
+                                || e.downcast_ref::<verification::TranslationFailedSignal>().is_some()
+                            {
+                                // File was re-skipped or translation failed; already recorded
+                                // by process_rs_file into the appropriate list.
                                 save_stats_or_warn(stats, feature);
                                 continue;
                             }
@@ -506,13 +521,13 @@ fn run_final_interval_test_if_needed(
         }
     }
 
-    // Commit any analysis changes produced by clean/build/test above so the
-    // working tree is left clean, matching the per-file finalize_file_processing
-    // behaviour.  git_commit handles "nothing to commit" gracefully.
-    git::git_commit(
+    // Commit any analysis changes produced by clean/build/test above. The commit
+    // is non-fatal: if it fails a warning is printed, the working tree may remain
+    // dirty, and subsequent analysis commits may include extra unintended changes.
+    git_commit_or_warn(
         &format!("Update code analysis after final interval test (feature: {})", feature),
         feature,
-    )?;
+    );
 
     Ok(())
 }
@@ -520,6 +535,26 @@ fn run_final_interval_test_if_needed(
 // ============================================================================
 // File Processing Functions
 // ============================================================================
+
+/// Attempt a git commit and print a warning if it fails instead of propagating the error.
+///
+/// Git commit failures are non-fatal: the translation workflow continues even if
+/// the commit cannot be recorded (e.g., git is misconfigured or the repo is locked).
+///
+/// Returns `true` if a new commit was actually created, `false` if there was nothing
+/// to commit (no-op, no warning printed) or if the commit failed (warning printed).
+fn git_commit_or_warn(message: &str, feature: &str) -> bool {
+    match git::git_commit(message, feature) {
+        Err(e) => {
+            eprintln!(
+                "{}",
+                format!("⚠ Warning: git commit failed (continuing): {}", e).yellow()
+            );
+            false
+        }
+        Ok(committed) => committed,
+    }
+}
 
 /// Save translation stats and print a warning if saving fails
 fn save_stats_or_warn(stats: &util::TranslationStats, feature: &str) {
@@ -594,11 +629,14 @@ fn process_selected_files(
             skip_interval_test,
         ) {
             Err(e) => {
-                if e.downcast_ref::<verification::SkipFileSignal>().is_none() {
+                if e.downcast_ref::<verification::SkipFileSignal>().is_none()
+                    && e.downcast_ref::<verification::TranslationFailedSignal>().is_none()
+                {
                     return Err(e);
                 }
-                // File was skipped; already recorded in process_rs_file. Don't mark as processed.
-                // Save stats immediately so the skip is persisted.
+                // File was skipped (deliberate) or translation failed (non-fatal).
+                // Already recorded in process_rs_file. Don't mark as processed.
+                // Save stats immediately so the outcome is persisted.
                 save_stats_or_warn(stats, feature);
             }
             Ok(tests_ran) => {
@@ -705,14 +743,34 @@ fn process_rs_file(
             )
         };
 
-        // Translate C to Rust
-        translate_file(
+        // Translate C to Rust.
+        // Only `TranslationScriptFailedError` (translate script non-zero exit) is treated
+        // as a non-fatal translation failure.  All other errors (missing project root,
+        // invalid feature name, cannot execute Python, empty output, …) are infrastructure
+        // problems and propagate to the caller with `?`.
+        if let Err(e) = translate_file(
             feature,
             file_type,
             rs_file,
             &format_progress,
             show_full_output,
-        )?;
+        ) {
+            if e.downcast_ref::<translator::TranslationScriptFailedError>().is_some() {
+                println!(
+                    "│ {}",
+                    format!("⚠ Translation failed: {:#}", e).yellow()
+                );
+                println!(
+                    "│ {}",
+                    format!("Skipping file due to translation failure: {}", file_name)
+                        .bright_yellow()
+                );
+                stats.record_file_translation_failed(file_name.to_string());
+                return Err(verification::TranslationFailedSignal.into());
+            } else {
+                return Err(e);
+            }
+        }
 
         // Phase 1: Build and fix errors (warnings suppressed via RUSTFLAGS="-A warnings")
         println!("│");
@@ -1561,14 +1619,15 @@ where
     println!("│");
     println!("│ {}", format_progress("Commit").bright_magenta().bold());
     println!("│ {}", "Committing changes...".bright_blue());
-    git::git_commit(
+    if git_commit_or_warn(
         &format!(
             "Translate {} from C to Rust (feature: {})",
             file_name, feature
         ),
         feature,
-    )?;
-    println!("│ {}", "✓ Changes committed".bright_green());
+    ) {
+        println!("│ {}", "✓ Changes committed".bright_green());
+    }
 
     // Update code analysis
     println!("│");
@@ -1590,7 +1649,7 @@ where
         "│ {}",
         format_progress("Commit Analysis").bright_magenta().bold()
     );
-    git::git_commit(&format!("Update code analysis for {}", feature), feature)?;
+    git_commit_or_warn(&format!("Update code analysis for {}", feature), feature);
 
     println!("{}", "└─ File processing complete".bright_white().bold());
 

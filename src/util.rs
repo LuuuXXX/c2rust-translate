@@ -48,6 +48,10 @@ pub struct TranslationStats {
     pub file_attempts: HashMap<String, FileAttemptStat>,
     /// 被用户跳过的文件列表（文件名）
     pub skipped_files: Vec<String>,
+    /// 翻译步骤本身失败的文件列表（文件名）。
+    /// 与 `skipped_files`（用户主动/自动跳过）不同，此列表仅记录翻译命令非零退出的情况。
+    #[serde(default)]
+    pub translation_failed_files: Vec<String>,
 }
 
 impl TranslationStats {
@@ -98,6 +102,13 @@ impl TranslationStats {
         }
     }
 
+    /// 记录翻译命令失败（与用户主动跳过区分）
+    pub fn record_file_translation_failed(&mut self, file_name: String) {
+        if !self.translation_failed_files.contains(&file_name) {
+            self.translation_failed_files.push(file_name);
+        }
+    }
+
     /// 打印统计报告
     pub fn print_summary(&self) {
         use colored::Colorize;
@@ -111,7 +122,7 @@ impl TranslationStats {
 
         if self.total_files == 0 {
             println!("\n{}", "No files were successfully translated.".yellow());
-            if self.skipped_files.is_empty() {
+            if self.skipped_files.is_empty() && self.translation_failed_files.is_empty() {
                 println!("\n{}", "═".repeat(80).bright_cyan());
                 return;
             }
@@ -206,6 +217,22 @@ impl TranslationStats {
             println!(
                 "  {}",
                 format!("Total skipped: {}", self.skipped_files.len()).bright_yellow()
+            );
+        }
+
+        // 翻译失败的文件（区别于用户主动跳过）
+        if !self.translation_failed_files.is_empty() {
+            println!("\n{}", "Translation-Failed Files:".bright_red().bold());
+            for (idx, file_name) in self.translation_failed_files.iter().enumerate() {
+                println!("  {}. {}", idx + 1, file_name.bright_red());
+            }
+            println!(
+                "  {}",
+                format!(
+                    "Total translation failures: {}",
+                    self.translation_failed_files.len()
+                )
+                .bright_red()
             );
         }
 
@@ -737,6 +764,24 @@ mod tests {
         assert_eq!(stats.skipped_files.len(), 2);
     }
 
+    #[test]
+    fn test_record_file_translation_failed() {
+        let mut stats = TranslationStats::new();
+        assert!(stats.translation_failed_files.is_empty());
+        assert!(stats.skipped_files.is_empty());
+
+        stats.record_file_translation_failed("bad.rs".to_string());
+        assert_eq!(stats.translation_failed_files.len(), 1);
+        assert_eq!(stats.translation_failed_files[0], "bad.rs");
+
+        // Duplicate entries should not be added
+        stats.record_file_translation_failed("bad.rs".to_string());
+        assert_eq!(stats.translation_failed_files.len(), 1);
+
+        // Should not affect skipped_files
+        assert!(stats.skipped_files.is_empty());
+    }
+
     // ========================================================================
     // TranslationStats Persistence Tests
     // ========================================================================
@@ -791,6 +836,7 @@ mod tests {
         let mut stats = TranslationStats::new();
         stats.record_file_completion("x.rs".to_string(), 3, true, 7);
         stats.record_file_skipped("y.rs".to_string());
+        stats.record_file_translation_failed("z.rs".to_string());
 
         let json = serde_json::to_string(&stats).unwrap();
         let restored: TranslationStats = serde_json::from_str(&json).unwrap();
@@ -799,6 +845,7 @@ mod tests {
         assert_eq!(restored.success_retry_2, 1);
         assert_eq!(restored.restart_count, 1);
         assert_eq!(restored.skipped_files, vec!["y.rs"]);
+        assert_eq!(restored.translation_failed_files, vec!["z.rs"]);
 
         let entry = restored.file_attempts.get("x.rs").unwrap();
         assert_eq!(entry.translation_attempts, 3);

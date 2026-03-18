@@ -20,6 +20,27 @@ impl std::fmt::Display for SkipFileSignal {
 
 impl std::error::Error for SkipFileSignal {}
 
+/// Signal type returned when a translation step fails (e.g. the Python translate
+/// script exits non-zero), but the overall workflow should continue with the next
+/// file rather than aborting.
+///
+/// Unlike [`SkipFileSignal`] (which represents a deliberate, user-chosen or
+/// auto-triggered skip), this signal indicates a real failure.  Callers record
+/// the file in [`crate::util::TranslationStats::translation_failed_files`] rather
+/// than in `skipped_files`, so translation failures are reported separately from
+/// intentional skips in the final statistics summary and are not re-offered to the
+/// user in the skipped-files retry loop.
+#[derive(Debug)]
+pub struct TranslationFailedSignal;
+
+impl std::fmt::Display for TranslationFailedSignal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Translation failed")
+    }
+}
+
+impl std::error::Error for TranslationFailedSignal {}
+
 /// Outcome of the automatic retry decision when `C2RUST_AUTO_RETRY_ON_MAX_FIX` is set.
 #[derive(Debug, PartialEq)]
 enum AutoRetryOutcome {
@@ -123,48 +144,78 @@ where
                 .unwrap_or(file_stem);
             let msg_format_progress = |op: &str| format!("Fixing {} - {}", msg_file_name, op);
             if is_warning {
-                crate::apply_warning_fix(
+                match crate::apply_warning_fix(
                     feature,
                     msg_file_type,
                     msg_file,
                     &msg_error,
                     &msg_format_progress,
                     show_full_output,
-                )?;
+                ) {
+                    Ok(()) => count += 1,
+                    Err(e) => {
+                        println!(
+                            "│ {}",
+                            format!("⚠ Warning fix failed, continuing: {:#}", e).yellow()
+                        );
+                    }
+                }
             } else {
-                crate::apply_error_fix(
+                match crate::apply_error_fix(
                     feature,
                     msg_file_type,
                     msg_file,
                     &msg_error,
                     &msg_format_progress,
                     show_full_output,
-                )?;
+                ) {
+                    Ok(()) => count += 1,
+                    Err(e) => {
+                        println!(
+                            "│ {}",
+                            format!("⚠ Error fix failed, continuing: {:#}", e).yellow()
+                        );
+                    }
+                }
             }
-            count += 1;
         }
     } else {
         // Fall back to single-file fix
         if is_warning {
-            crate::apply_warning_fix(
+            match crate::apply_warning_fix(
                 feature,
                 file_type,
                 rs_file,
                 fallback_error,
                 format_progress,
                 show_full_output,
-            )?;
+            ) {
+                Ok(()) => count += 1,
+                Err(e) => {
+                    println!(
+                        "│ {}",
+                        format!("⚠ Warning fix failed, continuing: {:#}", e).yellow()
+                    );
+                }
+            }
         } else {
-            crate::apply_error_fix(
+            match crate::apply_error_fix(
                 feature,
                 file_type,
                 rs_file,
                 fallback_error,
                 format_progress,
                 show_full_output,
-            )?;
+            ) {
+                Ok(()) => count += 1,
+                Err(e) => {
+                    println!(
+                        "│ {}",
+                        format!("⚠ Error fix failed, continuing: {:#}", e).yellow()
+                    );
+                }
+            }
         }
-        count += 1;
     }
 
     Ok(count)
@@ -732,18 +783,34 @@ mod tests {
         })
     }
 
-    /// Test that apply_fixes_for_messages returns Err when the target Rust file
-    /// does not exist within an otherwise valid project root and feature tree.
+    /// Test that apply_fixes_for_messages returns Ok(0) when the fix attempt fails
+    /// because the translate script is unavailable (`C2RUST_TRANSLATE_DIR` is not set
+    /// in the test environment).  The warning message points at `src/nonexistent.rs`,
+    /// which exists on disk together with its companion `nonexistent.c` so that
+    /// `group_errors_by_file` resolves the file and calls `apply_warning_fix` for it.
+    /// `fix_translation_error` then fails deterministically when it tries to look up the
+    /// translate-script path.  Fix failures are non-fatal: the function logs a warning
+    /// and returns 0 fixes applied so the caller can continue without aborting the
+    /// file-processing workflow.
     #[test]
     #[serial_test::serial]
-    fn test_apply_fixes_for_messages_nonexistent_file_returns_err() {
+    fn test_apply_fixes_for_messages_fix_failure_missing_translate_script_is_nonfatal() {
         use std::env;
         use tempfile::TempDir;
+
+        // Explicitly unset C2RUST_TRANSLATE_DIR so the translate-script lookup fails
+        // deterministically, regardless of whether the variable happens to be set in
+        // the outer CI/developer environment.
+        let _translate_dir_guard = env_guard("C2RUST_TRANSLATE_DIR");
+        env::remove_var("C2RUST_TRANSLATE_DIR");
 
         // Set up a temporary project root with a valid .c2rust/<feature>/rust/src tree.
         let tmp = TempDir::new().unwrap();
         let orig_dir = env::current_dir().unwrap();
         env::set_current_dir(tmp.path()).unwrap();
+        let _restore = scopeguard::guard(orig_dir, |dir| {
+            let _ = env::set_current_dir(dir);
+        });
 
         let feature = "test_feature";
         let feature_src_dir = tmp
@@ -754,15 +821,21 @@ mod tests {
             .join("src");
         std::fs::create_dir_all(&feature_src_dir).unwrap();
 
-        // Create the companion .c file so fix_translation_error passes its C-file
-        // existence check, ensuring the error originates from the missing .rs file.
+        // Create both the target .rs file and its companion .c file so that
+        // group_errors_by_file resolves the path from the warning message and
+        // fix_translation_error passes the C-file existence check.  The fix then
+        // fails deterministically when it looks up the translate-script path
+        // (C2RUST_TRANSLATE_DIR is not set in the test environment), exercising
+        // the non-fatal warning path.
+        std::fs::write(feature_src_dir.join("nonexistent.rs"), "").unwrap();
         std::fs::write(feature_src_dir.join("nonexistent.c"), "").unwrap();
 
-        // Point rs_file at a path under the feature src dir that does NOT exist.
+        // Point the warning message at the .rs file we just created so that
+        // group_errors_by_file finds it and apply_warning_fix is called for it.
         let rs_file = feature_src_dir.join("nonexistent.rs");
 
         let result = apply_fixes_for_messages(
-            "warning: unused\n  --> src/foo.rs:1:1",
+            "warning: unused\n  --> src/nonexistent.rs:1:1",
             &anyhow::anyhow!("dummy"),
             feature,
             "var",
@@ -772,11 +845,10 @@ mod tests {
             true,
         );
 
-        env::set_current_dir(orig_dir).unwrap();
-
-        // With a valid project root and feature tree the error comes from the
-        // missing target file, not from a missing project root.
-        assert!(result.is_err());
+        // Fix failures are now non-fatal: the function logs a warning and returns
+        // Ok(0) (zero fixes applied) instead of propagating the error.
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 0);
     }
 
     /// Test that execute_code_warning_check_with_fix_loop returns Ok(0) when the build fails

@@ -3,19 +3,21 @@ use anyhow::{Context, Result};
 use std::process::Command;
 
 /// Commit changes with a message.
-/// Only stages the `.c2rust/` directory and the specific feature directory to avoid
-/// committing unrelated local modifications.
-pub fn git_commit(message: &str, feature: &str) -> Result<()> {
+/// Stages all pending changes in the `.c2rust/` directory (which is a dedicated
+/// translation-tracking git repo) and creates a commit.  Because `.c2rust/` is
+/// used exclusively by this tool, staging the whole tree does not risk picking up
+/// unrelated local modifications from the host project.
+///
+/// Returns `Ok(true)` when a commit was actually created, `Ok(false)` when there
+/// was nothing to commit (no-op), and `Err` for any other failure.
+pub fn git_commit(message: &str, _feature: &str) -> Result<bool> {
     let project_root = util::find_project_root()?;
     let c2rust_dir = project_root.join(".c2rust");
 
-    // Only add the specific feature directory (not all features) to prevent
-    // accidentally committing unrelated local changes.
-    // The path is relative to the .c2rust directory (.c2rust/<feature>/rust/).
-    let feature_rust_path = format!("{}/rust/", feature);
+    // Stage all changes in the dedicated .c2rust tracking repo.
     let add_output = Command::new("git")
         .current_dir(&c2rust_dir)
-        .args(["add", ".", &feature_rust_path])
+        .args(["add", "."])
         .output()
         .context("Failed to git add")?;
 
@@ -48,9 +50,11 @@ pub fn git_commit(message: &str, feature: &str) -> Result<()> {
                 combined_output
             );
         }
+        // No-op: nothing was staged/committed
+        return Ok(false);
     }
 
-    Ok(())
+    Ok(true)
 }
 
 /// Run garbage collection on the `.c2rust` repository to compact history objects
