@@ -123,48 +123,78 @@ where
                 .unwrap_or(file_stem);
             let msg_format_progress = |op: &str| format!("Fixing {} - {}", msg_file_name, op);
             if is_warning {
-                crate::apply_warning_fix(
+                match crate::apply_warning_fix(
                     feature,
                     msg_file_type,
                     msg_file,
                     &msg_error,
                     &msg_format_progress,
                     show_full_output,
-                )?;
+                ) {
+                    Ok(()) => count += 1,
+                    Err(e) => {
+                        println!(
+                            "│ {}",
+                            format!("⚠ Warning fix failed, continuing: {:#}", e).yellow()
+                        );
+                    }
+                }
             } else {
-                crate::apply_error_fix(
+                match crate::apply_error_fix(
                     feature,
                     msg_file_type,
                     msg_file,
                     &msg_error,
                     &msg_format_progress,
                     show_full_output,
-                )?;
+                ) {
+                    Ok(()) => count += 1,
+                    Err(e) => {
+                        println!(
+                            "│ {}",
+                            format!("⚠ Error fix failed, continuing: {:#}", e).yellow()
+                        );
+                    }
+                }
             }
-            count += 1;
         }
     } else {
         // Fall back to single-file fix
         if is_warning {
-            crate::apply_warning_fix(
+            match crate::apply_warning_fix(
                 feature,
                 file_type,
                 rs_file,
                 fallback_error,
                 format_progress,
                 show_full_output,
-            )?;
+            ) {
+                Ok(()) => count += 1,
+                Err(e) => {
+                    println!(
+                        "│ {}",
+                        format!("⚠ Warning fix failed, continuing: {:#}", e).yellow()
+                    );
+                }
+            }
         } else {
-            crate::apply_error_fix(
+            match crate::apply_error_fix(
                 feature,
                 file_type,
                 rs_file,
                 fallback_error,
                 format_progress,
                 show_full_output,
-            )?;
+            ) {
+                Ok(()) => count += 1,
+                Err(e) => {
+                    println!(
+                        "│ {}",
+                        format!("⚠ Error fix failed, continuing: {:#}", e).yellow()
+                    );
+                }
+            }
         }
-        count += 1;
     }
 
     Ok(count)
@@ -732,11 +762,13 @@ mod tests {
         })
     }
 
-    /// Test that apply_fixes_for_messages returns Err when the target Rust file
-    /// does not exist within an otherwise valid project root and feature tree.
+    /// Test that apply_fixes_for_messages returns Ok(0) when the fix fails
+    /// (e.g. the translate script is unavailable). Fix failures are non-fatal:
+    /// the function logs a warning and returns 0 fixes applied so the caller
+    /// can continue without aborting the file-processing workflow.
     #[test]
     #[serial_test::serial]
-    fn test_apply_fixes_for_messages_nonexistent_file_returns_err() {
+    fn test_apply_fixes_for_messages_fix_failure_is_nonfatal() {
         use std::env;
         use tempfile::TempDir;
 
@@ -774,9 +806,10 @@ mod tests {
 
         env::set_current_dir(orig_dir).unwrap();
 
-        // With a valid project root and feature tree the error comes from the
-        // missing target file, not from a missing project root.
-        assert!(result.is_err());
+        // Fix failures are now non-fatal: the function logs a warning and returns
+        // Ok(0) (zero fixes applied) instead of propagating the error.
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 0);
     }
 
     /// Test that execute_code_warning_check_with_fix_loop returns Ok(0) when the build fails

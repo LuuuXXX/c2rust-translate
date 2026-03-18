@@ -509,10 +509,10 @@ fn run_final_interval_test_if_needed(
     // Commit any analysis changes produced by clean/build/test above so the
     // working tree is left clean, matching the per-file finalize_file_processing
     // behaviour.  git_commit handles "nothing to commit" gracefully.
-    git::git_commit(
+    git_commit_or_warn(
         &format!("Update code analysis after final interval test (feature: {})", feature),
         feature,
-    )?;
+    );
 
     Ok(())
 }
@@ -520,6 +520,21 @@ fn run_final_interval_test_if_needed(
 // ============================================================================
 // File Processing Functions
 // ============================================================================
+
+/// Attempt a git commit and print a warning if it fails instead of propagating the error.
+///
+/// Git commit failures are non-fatal: the translation workflow continues even if
+/// the commit cannot be recorded (e.g., git is misconfigured or the repo is locked).
+/// Callers that need "nothing to commit" to be silently ignored should use
+/// `git::git_commit` directly, which already handles that case.
+fn git_commit_or_warn(message: &str, feature: &str) {
+    if let Err(e) = git::git_commit(message, feature) {
+        eprintln!(
+            "{}",
+            format!("⚠ Warning: git commit failed (continuing): {}", e).yellow()
+        );
+    }
+}
 
 /// Save translation stats and print a warning if saving fails
 fn save_stats_or_warn(stats: &util::TranslationStats, feature: &str) {
@@ -706,13 +721,25 @@ fn process_rs_file(
         };
 
         // Translate C to Rust
-        translate_file(
+        if let Err(e) = translate_file(
             feature,
             file_type,
             rs_file,
             &format_progress,
             show_full_output,
-        )?;
+        ) {
+            println!(
+                "│ {}",
+                format!("⚠ Translation failed: {:#}", e).yellow()
+            );
+            println!(
+                "│ {}",
+                format!("Skipping file due to translation failure: {}", file_name)
+                    .bright_yellow()
+            );
+            stats.record_file_skipped(file_name.to_string());
+            return Err(verification::SkipFileSignal.into());
+        }
 
         // Phase 1: Build and fix errors (warnings suppressed via RUSTFLAGS="-A warnings")
         println!("│");
@@ -1561,13 +1588,13 @@ where
     println!("│");
     println!("│ {}", format_progress("Commit").bright_magenta().bold());
     println!("│ {}", "Committing changes...".bright_blue());
-    git::git_commit(
+    git_commit_or_warn(
         &format!(
             "Translate {} from C to Rust (feature: {})",
             file_name, feature
         ),
         feature,
-    )?;
+    );
     println!("│ {}", "✓ Changes committed".bright_green());
 
     // Update code analysis
@@ -1590,7 +1617,7 @@ where
         "│ {}",
         format_progress("Commit Analysis").bright_magenta().bold()
     );
-    git::git_commit(&format!("Update code analysis for {}", feature), feature)?;
+    git_commit_or_warn(&format!("Update code analysis for {}", feature), feature);
 
     println!("{}", "└─ File processing complete".bright_white().bold());
 
