@@ -8,7 +8,7 @@
 **非致命错误处理改进：**
 - **翻译脚本失败非致命化**：`translate_and_fix.py` 非零退出时记录警告并跳过该文件，继续处理下一个文件（新增 `TranslationFailedSignal`，与用户主动跳过的 `SkipFileSignal` 区分）。基础设施错误（找不到项目根目录、无效 feature 名称等）仍为致命错误。
 - **修复步骤失败非致命化**：`apply_error_fix`/`apply_warning_fix` 失败时打印警告，本次修复计数为 0，修复循环继续直至达到最大次数
-- **git 提交失败非致命化**：提交失败时打印 `⚠ Warning: git commit failed (continuing): ...`，工作树可能保持脏状态，但不中止流程；"✓ Changes committed" 仅在真正有文件被提交时显示（`nothing to commit` 情况不显示）
+- **git 提交失败非致命化（翻译工作流）**：在每个文件的翻译处理流程（`finalize_file_processing`、`run_final_interval_test_if_needed`）中，提交失败时打印 `⚠ Warning: git commit failed (continuing): ...`，工作树可能保持脏状态，但不中止流程；"✓ Changes committed" 仅在真正有文件被提交时显示（`nothing to commit` 情况不显示）。注意：初始化阶段和代码检查阶段（`initialization.rs`、`common_tasks.rs`）的 git 提交失败仍为致命错误。
 - **仍为致命错误的情况**：`code_analyse` 失败、构建失败后用户选择退出、基础设施错误
 
 ### v0.2.0
@@ -124,7 +124,8 @@ c2rust-translate translate --feature myfeature --show-full-output
 |----------|----------|
 | **翻译脚本失败**（`translate_and_fix.py` 非零退出）| 文件记录到 `translation_failed_files`（区别于用户主动跳过的 `skipped_files`），跳过该文件继续处理下一个；最终统计中单独显示。注意：基础设施错误（找不到项目根目录、无效 feature 名称、无法执行 Python 等）仍为致命错误。 |
 | **修复失败**（`apply_error_fix`/`apply_warning_fix` 出错）| 打印警告，本次修复计数为 0，修复循环继续直到达到最大次数 |
-| **git 提交失败**（`git commit` 出错） | 打印 `⚠ Warning: git commit failed (continuing): ...`，工作树可能保持脏状态，后续提交可能包含额外变更 |
+| **git 提交失败（翻译工作流）**（`finalize_file_processing`/`run_final_interval_test_if_needed` 中的 `git commit` 出错）| 打印 `⚠ Warning: git commit failed (continuing): ...`，工作树可能保持脏状态，后续提交可能包含额外变更 |
+| **git 提交失败（初始化/代码检查阶段）**（`initialization.rs`/`common_tasks.rs` 中的 `git commit` 出错）| **致命错误，中止整个流程** |
 | **`code_analyse` 失败** | **致命错误，中止整个流程** |
 | **构建失败后用户选择退出** | **致命错误，中止整个流程** |
 | **基础设施错误**（找不到项目根目录、无效 feature 名等）| **致命错误，中止整个流程** |
