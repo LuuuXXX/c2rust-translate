@@ -80,6 +80,32 @@ pub fn find_empty_rs_files(rust_dir: &Path) -> Result<Vec<PathBuf>> {
     Ok(empty_files)
 }
 
+/// 查找给定目录中已翻译（非空）的 .rs 文件（文件名以 var_ 或 fun_ 开头且内容非空）
+///
+/// 此函数用于合并功能，收集所有已翻译完成、准备合并的 .rs 文件。
+pub fn find_translated_rs_files(rust_dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut translated_files = Vec::new();
+
+    for entry in WalkDir::new(rust_dir) {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_file()
+            && path.extension().is_some_and(|ext| ext == "rs")
+            && is_translatable_rs_file(path)
+        {
+            let metadata = fs::metadata(path)?;
+            if metadata.len() > 0 {
+                translated_files.push(path.to_path_buf());
+            }
+        }
+    }
+
+    // 按路径字母顺序排序，确保合并输出稳定可预测
+    translated_files.sort();
+
+    Ok(translated_files)
+}
+
 /// 从文件名中提取文件类型（var_ 或 fun_ 前缀）
 pub fn extract_file_type(filename: &str) -> Option<(&'static str, &str)> {
     if let Some(stripped) = filename.strip_prefix("var_") {
