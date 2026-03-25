@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
 fn parse_positive_usize(s: &str) -> Result<usize, String> {
     let value: usize = s
@@ -38,6 +39,21 @@ enum Commands {
         #[arg(long)]
         show_full_output: bool,
     },
+
+    /// 将 feature 中分散的 Rust 文件合并为单个文件
+    ///
+    /// 扫描 .c2rust/<feature>/rust/src/ 下所有已翻译的 var_*.rs 和 fun_*.rs
+    /// 文件，提取并去重 use 语句（保留 use core::ffi::*; 等 FFI 导入），然后
+    /// 将代码正文按原顺序拼接，写入合并文件。
+    Merge {
+        /// 功能名称（如未指定则默认为 "default"）
+        #[arg(long, default_value = "default")]
+        feature: String,
+
+        /// 合并输出文件路径（可选；默认为 .c2rust/<feature>/merged.rs）
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
 }
 
 fn main() {
@@ -55,6 +71,9 @@ fn main() {
             max_fix_attempts,
             show_full_output,
         ),
+        Commands::Merge { feature, output } => {
+            c2rust_translate::merge_feature(&feature, output.as_deref())
+        }
     };
 
     if let Err(e) = result {
