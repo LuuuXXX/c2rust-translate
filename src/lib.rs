@@ -11,6 +11,7 @@ pub mod file_scanner;
 pub mod git;
 pub mod hybrid_build;
 pub mod initialization;
+pub mod merger;
 pub mod translator;
 pub mod util;
 pub mod verification;

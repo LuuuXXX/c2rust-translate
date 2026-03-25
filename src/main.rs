@@ -38,6 +38,22 @@ enum Commands {
         #[arg(long)]
         show_full_output: bool,
     },
+
+    /// 将已翻译的 .rs 文件合并为单一输出文件
+    ///
+    /// 读取 .c2rust/<feature>/rust/src/ 下所有已翻译（非空）的 var_/fun_ .rs 文件，
+    /// 合并为一个文件。合并时正确处理 `use` 声明：按名称去重，并对 c_int 等 C FFI
+    /// 类型优先保留最规范的路径（std::ffi > core::ffi > std::os::raw）。
+    Merge {
+        /// 功能名称（如未指定则默认为 "default"）
+        #[arg(long, default_value = "default")]
+        feature: String,
+
+        /// 合并输出文件路径；若未指定，默认写入
+        /// .c2rust/<feature>/rust/src/merged.rs
+        #[arg(long)]
+        output: Option<std::path::PathBuf>,
+    },
 }
 
 fn main() {
@@ -55,6 +71,9 @@ fn main() {
             max_fix_attempts,
             show_full_output,
         ),
+        Commands::Merge { feature, output } => {
+            c2rust_translate::merger::merge_feature(&feature, output.as_deref()).map(|_| ())
+        }
     };
 
     if let Err(e) = result {
