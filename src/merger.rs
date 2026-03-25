@@ -75,6 +75,48 @@ fn canonical_use_key(use_decl: &str) -> String {
         .to_string()
 }
 
+/// 从 glob 导入（`use module::path::*;`）中提取模块前缀（`module::path`）。
+///
+/// 例如：`use core::ffi::*;` → `Some("core::ffi")`
+fn glob_module_prefix(use_decl: &str) -> Option<String> {
+    let stripped = use_decl
+        .trim()
+        .trim_start_matches("pub(crate) ")
+        .trim_start_matches("pub ")
+        .trim_start_matches("use ")
+        .trim_end_matches(';')
+        .trim();
+
+    // Must end with `::*` and contain no braces
+    if !stripped.ends_with("::*") || stripped.contains('{') || stripped.contains('}') {
+        return None;
+    }
+
+    Some(stripped.trim_end_matches("::*").to_string())
+}
+
+/// 判断某个简单 use 声明是否被一个 glob 模块前缀所覆盖。
+///
+/// 例如，`use core::ffi::c_int;` 会被前缀 `core::ffi` 覆盖。
+fn is_covered_by_glob(use_decl: &str, glob_prefix: &str) -> bool {
+    let stripped = use_decl
+        .trim()
+        .trim_start_matches("pub(crate) ")
+        .trim_start_matches("pub ")
+        .trim_start_matches("use ")
+        .trim_end_matches(';')
+        .trim();
+
+    // The simple import must start with `<glob_prefix>::` and have no further `::`
+    // (i.e., it's a direct item of that module, not a nested sub-module import)
+    if let Some(rest) = stripped.strip_prefix(glob_prefix) {
+        if let Some(name_part) = rest.strip_prefix("::") {
+            return !name_part.contains("::") && !name_part.is_empty();
+        }
+    }
+    false
+}
+
 // ============================================================================
 // File parsing
 // ============================================================================
@@ -194,6 +236,18 @@ fn merge_files(files: &[(PathBuf, String)]) -> MergeResult {
         .map(|(decl, _)| decl)
         .collect();
     sorted_named.sort();
+
+    // 收集所有 glob 模块前缀（如 "core::ffi"）
+    let glob_prefixes: Vec<String> = complex_uses
+        .iter()
+        .filter_map(|d| glob_module_prefix(d))
+        .collect();
+
+    // 若某个简单 use 已被 glob 覆盖，则丢弃它，避免 unused_imports 编译错误
+    let sorted_named: Vec<String> = sorted_named
+        .into_iter()
+        .filter(|decl| !glob_prefixes.iter().any(|prefix| is_covered_by_glob(decl, prefix)))
+        .collect();
 
     let mut use_declarations = sorted_named;
     use_declarations.extend(complex_uses);
@@ -648,6 +702,76 @@ mod tests {
             "merged output should contain exactly one use declaration"
         );
         assert_eq!(result.use_declarations[0].trim_end_matches(';'), "use core::ffi::*");
+    }
+
+    /// When one file has `use core::ffi::*;` and another has the explicit
+    /// `use core::ffi::c_int;`, the merged output must contain only the glob —
+    /// the explicit import is redundant and would cause an `unused_imports`
+    /// compile error under `#![deny(unused_imports)]`.
+    #[test]
+    fn test_merge_explicit_import_dropped_when_glob_present() {
+        let file1 = (
+            PathBuf::from("var_x.rs"),
+            "use core::ffi::*;\n\npub static X: c_int = 0;\n".to_string(),
+        );
+        let file2 = (
+            PathBuf::from("fun_foo.rs"),
+            "use core::ffi::c_int;\n\npub fn foo() -> c_int { 0 }\n".to_string(),
+        );
+
+        let result = merge_files(&[file1, file2]);
+
+        // Glob must be present
+        let has_glob = result
+            .use_declarations
+            .iter()
+            .any(|d| d.trim_end_matches(';') == "use core::ffi::*");
+        assert!(has_glob, "glob import must be preserved");
+
+        // Explicit c_int must NOT be present (covered by glob)
+        let has_explicit = result
+            .use_declarations
+            .iter()
+            .any(|d| d.trim_end_matches(';') == "use core::ffi::c_int");
+        assert!(
+            !has_explicit,
+            "explicit core::ffi::c_int must be dropped when glob core::ffi::* is present"
+        );
+
+        // Exactly one use declaration
+        assert_eq!(
+            result.use_declarations.len(),
+            1,
+            "merged output should contain only the glob declaration"
+        );
+    }
+
+    /// Explicit imports from a DIFFERENT module must not be dropped even
+    /// when a glob from another module is present.
+    #[test]
+    fn test_merge_explicit_from_different_module_not_dropped() {
+        let file1 = (
+            PathBuf::from("a.rs"),
+            "use core::ffi::*;\n\npub fn a() {}\n".to_string(),
+        );
+        let file2 = (
+            PathBuf::from("b.rs"),
+            "use std::collections::HashMap;\n\npub fn b() {}\n".to_string(),
+        );
+
+        let result = merge_files(&[file1, file2]);
+
+        let has_glob = result
+            .use_declarations
+            .iter()
+            .any(|d| d.trim_end_matches(';') == "use core::ffi::*");
+        assert!(has_glob, "glob must be preserved");
+
+        let has_hashmap = result
+            .use_declarations
+            .iter()
+            .any(|d| d.contains("HashMap"));
+        assert!(has_hashmap, "HashMap from a different module must be preserved");
     }
 
     // ── merge_feature (integration) ───────────────────────────────────────
