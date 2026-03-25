@@ -11,7 +11,6 @@ pub mod file_scanner;
 pub mod git;
 pub mod hybrid_build;
 pub mod initialization;
-pub mod merger;
 pub mod translator;
 pub mod util;
 pub mod verification;
@@ -43,18 +42,6 @@ fn maybe_run_periodic_git_gc(progress_state: &util::ProgressState) {
         git::git_expire_reflog();
         git::git_gc(false); // cheap periodic compaction, default prune grace period
     }
-}
-
-/// 将 feature 中分散的 Rust 文件合并为单个文件
-///
-/// 委托给 `merger::merge_feature`。合并时保留所有唯一 `use` 语句（包括
-/// `use core::ffi::*;`），不做任何语义层面的冗余分析。
-///
-/// # 参数
-/// * `feature` - feature 名称
-/// * `output_file` - 可选输出路径；若为 `None` 则写入 `.c2rust/<feature>/merged.rs`
-pub fn merge_feature(feature: &str, output_file: Option<&std::path::Path>) -> Result<()> {
-    merger::merge_feature(feature, output_file)
 }
 
 /// Main translation workflow for a feature
