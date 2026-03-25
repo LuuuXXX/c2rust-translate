@@ -589,6 +589,67 @@ mod tests {
         assert_eq!(complex_count, 1, "identical complex use should be deduplicated");
     }
 
+    /// c2rust-generated files typically use `use core::ffi::*;` (glob import).
+    /// After merging, exactly one glob import must remain so that `c_int` and
+    /// other C FFI types remain in scope.
+    #[test]
+    fn test_merge_core_ffi_glob_preserved() {
+        let file1 = (
+            PathBuf::from("var_x.rs"),
+            "use core::ffi::*;\n\npub static X: c_int = 0;\n".to_string(),
+        );
+        let file2 = (
+            PathBuf::from("fun_get_x.rs"),
+            "use core::ffi::*;\n\npub fn get_x() -> c_int { 0 }\n".to_string(),
+        );
+        let file3 = (
+            PathBuf::from("fun_set_x.rs"),
+            "use core::ffi::*;\n\npub fn set_x(_v: c_int) {}\n".to_string(),
+        );
+
+        let result = merge_files(&[file1, file2, file3]);
+
+        // The glob import must appear exactly once — not zero (dropped) or three (duplicated)
+        let glob_count = result
+            .use_declarations
+            .iter()
+            .filter(|d| *d == "use core::ffi::*;" || *d == "use core::ffi::*")
+            .count();
+        assert_eq!(
+            glob_count, 1,
+            "core::ffi::* should be preserved exactly once after merging three files"
+        );
+
+        // Function bodies from all three files must be present
+        assert!(result.merged_body.contains("static X"));
+        assert!(result.merged_body.contains("get_x"));
+        assert!(result.merged_body.contains("set_x"));
+    }
+
+    /// When every translated file uses `use core::ffi::*;`, the merged file
+    /// should not also introduce a duplicate explicit `use core::ffi::c_int;`.
+    #[test]
+    fn test_merge_glob_does_not_produce_duplicate_explicit_import() {
+        let file1 = (
+            PathBuf::from("a.rs"),
+            "use core::ffi::*;\n\npub fn a() -> c_int { 1 }\n".to_string(),
+        );
+        let file2 = (
+            PathBuf::from("b.rs"),
+            "use core::ffi::*;\n\npub fn b() -> c_uint { 2 }\n".to_string(),
+        );
+
+        let result = merge_files(&[file1, file2]);
+
+        // Only one use declaration total (the single glob)
+        assert_eq!(
+            result.use_declarations.len(),
+            1,
+            "merged output should contain exactly one use declaration"
+        );
+        assert_eq!(result.use_declarations[0].trim_end_matches(';'), "use core::ffi::*");
+    }
+
     // ── merge_feature (integration) ───────────────────────────────────────
 
     #[test]
