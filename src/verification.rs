@@ -248,20 +248,20 @@ where
     println!("│ {}", "✓ Code analysis updated".bright_green());
     for attempt in 1..=max_fix_attempts {
         println!("│");
-        println!("│ {}", format_progress("Build").bright_magenta().bold());
+        println!("│ {}", format_progress("Check").bright_magenta().bold());
         println!(
             "│ {}",
             format!(
-                "Building Rust project (attempt {}/{})",
+                "Checking Rust project (attempt {}/{})",
                 attempt, max_fix_attempts
             )
             .bright_blue()
             .bold()
         );
 
-        match builder::cargo_build(feature, true, show_full_output) {
+        match builder::cargo_check(feature, true, show_full_output) {
             Ok(_) => {
-                println!("│ {}", "✓ Build successful!".bright_green().bold());
+                println!("│ {}", "✓ Check successful!".bright_green().bold());
                 return Ok((true, fix_attempts, false));
             }
             Err(build_error) => {
@@ -347,7 +347,7 @@ where
             .bold()
         );
 
-        match builder::cargo_build(feature, false, show_full_output) {
+        match builder::cargo_check(feature, false, show_full_output) {
             Ok(None) => {
                 println!("│ {}", "✓ No warnings found!".bright_green().bold());
                 return Ok(fix_attempts);
@@ -366,11 +366,11 @@ where
                 )?;
             }
             Err(e) => {
-                // Build failed during warning phase -- unexpected since errors were already fixed.
+                // Check failed during warning phase -- unexpected since errors were already fixed.
                 // Treat as non-fatal: log and stop the warning loop but do not abort file processing.
                 println!(
                     "│ {}",
-                    format!("✗ Unexpected build error during warning phase: {}", e).red()
+                    format!("✗ Unexpected check error during warning phase: {}", e).red()
                 );
                 return Ok(fix_attempts);
             }
@@ -856,7 +856,7 @@ mod tests {
     /// The loop should treat this as non-fatal and return Ok(0).
     #[test]
     #[serial_test::serial]
-    fn test_execute_code_warning_check_with_fix_loop_build_failure_is_nonfatal() {
+    fn test_execute_code_warning_check_with_fix_loop_check_failure_is_nonfatal() {
         use std::env;
         use tempfile::TempDir;
 
@@ -865,7 +865,7 @@ mod tests {
         env::set_current_dir(tmp.path()).unwrap();
 
         // Create minimal .c2rust dir so find_project_root works, but do NOT create
-        // the feature build directory so cargo_build will fail.
+        // the feature build directory so cargo_check will fail.
         std::fs::create_dir_all(tmp.path().join(".c2rust")).unwrap();
 
         // Use a path inside tmp so it is portable and clearly non-existent.
@@ -883,7 +883,7 @@ mod tests {
 
         env::set_current_dir(orig).unwrap();
 
-        // Build error during warning phase should be non-fatal → Ok(0)
+        // Check error during warning phase should be non-fatal → Ok(0)
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 0);
     }
