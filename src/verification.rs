@@ -366,11 +366,11 @@ where
                 )?;
             }
             Err(e) => {
-                // Build failed during warning phase -- unexpected since errors were already fixed.
+                // Check failed during warning phase -- unexpected since errors were already fixed.
                 // Treat as non-fatal: log and stop the warning loop but do not abort file processing.
                 println!(
                     "│ {}",
-                    format!("✗ Unexpected build error during warning phase: {}", e).red()
+                    format!("✗ Unexpected check error during warning phase: {}", e).red()
                 );
                 return Ok(fix_attempts);
             }
@@ -856,7 +856,7 @@ mod tests {
     /// The loop should treat this as non-fatal and return Ok(0).
     #[test]
     #[serial_test::serial]
-    fn test_execute_code_warning_check_with_fix_loop_build_failure_is_nonfatal() {
+    fn test_execute_code_warning_check_with_fix_loop_check_failure_is_nonfatal() {
         use std::env;
         use tempfile::TempDir;
 
@@ -883,7 +883,7 @@ mod tests {
 
         env::set_current_dir(orig).unwrap();
 
-        // Build error during warning phase should be non-fatal → Ok(0)
+        // Check error during warning phase should be non-fatal → Ok(0)
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 0);
     }
