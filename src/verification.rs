@@ -259,9 +259,9 @@ where
             .bold()
         );
 
-        match builder::cargo_build(feature, true, show_full_output) {
+        match builder::cargo_check(feature, true, show_full_output) {
             Ok(_) => {
-                println!("│ {}", "✓ Build successful!".bright_green().bold());
+                println!("│ {}", "✓ Check successful!".bright_green().bold());
                 return Ok((true, fix_attempts, false));
             }
             Err(build_error) => {
@@ -347,7 +347,7 @@ where
             .bold()
         );
 
-        match builder::cargo_build(feature, false, show_full_output) {
+        match builder::cargo_check(feature, false, show_full_output) {
             Ok(None) => {
                 println!("│ {}", "✓ No warnings found!".bright_green().bold());
                 return Ok(fix_attempts);
@@ -865,7 +865,7 @@ mod tests {
         env::set_current_dir(tmp.path()).unwrap();
 
         // Create minimal .c2rust dir so find_project_root works, but do NOT create
-        // the feature build directory so cargo_build will fail.
+        // the feature build directory so cargo_check will fail.
         std::fs::create_dir_all(tmp.path().join(".c2rust")).unwrap();
 
         // Use a path inside tmp so it is portable and clearly non-existent.

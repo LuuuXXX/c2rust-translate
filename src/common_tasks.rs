@@ -14,7 +14,7 @@ use std::path::Path;
 /// 公共任务1：执行代码错误检查
 ///
 /// 流程：
-/// 1. 执行 cargo build（抑制警告）
+/// 1. 执行 cargo check（抑制警告）
 /// 2. 执行混合构建检查（内部包含代码分析更新）
 /// 3. 提交到 git
 ///
@@ -22,9 +22,9 @@ use std::path::Path;
 pub fn execute_code_error_check(feature: &str, show_full_output: bool, skip_test: bool) -> Result<()> {
     println!("{}", "执行代码错误检查...".bright_blue());
 
-    println!("{}", "  → 构建中（抑制警告）...".bright_blue());
-    builder::cargo_build(feature, true, show_full_output)?;
-    println!("{}", "  ✓ 构建成功".bright_green());
+    println!("{}", "  → 检查中（抑制警告）...".bright_blue());
+    builder::cargo_check(feature, true, show_full_output)?;
+    println!("{}", "  ✓ 检查成功".bright_green());
 
     println!("{}", "  → 执行混合构建检查...".bright_blue());
     execute_hybrid_build_check(feature, skip_test)?;
@@ -39,20 +39,20 @@ pub fn execute_code_error_check(feature: &str, show_full_output: bool, skip_test
 /// 公共任务2：执行代码告警检查
 ///
 /// 流程：
-/// 1. 执行 cargo build（显示警告）
+/// 1. 执行 cargo check（显示警告）
 /// 2. 执行混合构建检查（内部包含代码分析更新）
 /// 3. 提交到 git
 pub fn execute_code_warning_check(feature: &str, show_full_output: bool) -> Result<()> {
     println!("{}", "执行代码告警检查...".bright_blue());
 
-    println!("{}", "  → 构建中（显示警告）...".bright_blue());
-    match builder::cargo_build(feature, false, show_full_output)? {
+    println!("{}", "  → 检查中（显示警告）...".bright_blue());
+    match builder::cargo_check(feature, false, show_full_output)? {
         Some(warnings) => {
-            println!("{}", "  ⚠ 构建有警告".yellow());
-            anyhow::bail!("检测到构建警告:\n{}", warnings);
+            println!("{}", "  ⚠ 检查有警告".yellow());
+            anyhow::bail!("检测到检查警告:\n{}", warnings);
         }
         None => {
-            println!("{}", "  ✓ 构建成功，无警告".bright_green());
+            println!("{}", "  ✓ 检查成功，无警告".bright_green());
         }
     }
 
