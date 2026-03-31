@@ -501,15 +501,21 @@ fn run_final_interval_test_if_needed(
     );
 
     verify_hybrid_build_prerequisites()?;
-    builder::c2rust_clean(feature)?;
 
-    if let Err(build_error) = builder::c2rust_build(feature) {
+    // 在整个序列开始前统一更新一次代码分析，避免 clean/build/test 各自重复更新
+    println!("{}", "Updating code analysis...".bright_blue());
+    analyzer::update_code_analysis(feature)?;
+    println!("{}", "✓ Code analysis updated".bright_green());
+
+    builder::c2rust_clean_no_analysis(feature)?;
+
+    if let Err(build_error) = builder::c2rust_build_no_analysis(feature) {
         println!("{}", "✗ Final build failed".red().bold());
         return Err(build_error);
     }
     println!("{}", "✓ Final build successful".bright_green().bold());
 
-    match builder::c2rust_test(feature) {
+    match builder::c2rust_test_no_analysis(feature) {
         Ok(_) => {
             println!(
                 "{}",
@@ -1257,11 +1263,16 @@ where
     // Pre-check: Verify config and tools are available
     verify_hybrid_build_prerequisites()?;
 
+    // 在整个序列开始前统一更新一次代码分析，避免 clean/build/test 各自重复更新
+    println!("│ {}", "Updating code analysis...".bright_blue());
+    analyzer::update_code_analysis(feature)?;
+    println!("│ {}", "✓ Code analysis updated".bright_green());
+
     // Run hybrid build clean/build/test
-    builder::c2rust_clean(feature)?;
+    builder::c2rust_clean_no_analysis(feature)?;
 
     // Handle build
-    if let Err(build_error) = builder::c2rust_build(feature) {
+    if let Err(build_error) = builder::c2rust_build_no_analysis(feature) {
         println!("│ {}", "✗ Build failed".red().bold());
         let processing_complete =
             builder::handle_build_failure_interactive(feature, file_type, rs_file, build_error, skip_test)?;
@@ -1300,7 +1311,7 @@ where
     }
 
     // Handle test
-    match builder::c2rust_test(feature) {
+    match builder::c2rust_test_no_analysis(feature) {
         Ok(_) => {
             println!("│ {}", "✓ Hybrid build tests passed".bright_green().bold());
             let tests_ran = handle_successful_tests(feature, file_name, file_type, rs_file, format_progress, TestStatus::Passed)?;
