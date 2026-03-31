@@ -115,7 +115,7 @@ pub fn translate_feature(
 
 /// Run feature initialization and project-level verification without entering
 /// the translation loop.
-pub fn verify_feature(feature: &str, show_full_output: bool) -> Result<()> {
+pub fn verify_feature(feature: &str) -> Result<()> {
     print_workflow_header(feature);
 
     step_1_initialize(feature)?;

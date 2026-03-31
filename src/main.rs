@@ -44,10 +44,6 @@ enum Commands {
         /// 功能名称（如未指定则默认为 "default"）
         #[arg(long, default_value = "default")]
         feature: String,
-
-        /// 显示完整输出，不进行截断
-        #[arg(long)]
-        show_full_output: bool,
     },
 }
 
@@ -68,8 +64,7 @@ fn main() {
         ),
         Commands::Verify {
             feature,
-            show_full_output,
-        } => c2rust_translate::verify_feature(&feature, show_full_output),
+        } => c2rust_translate::verify_feature(&feature),
     };
 
     if let Err(e) = result {
