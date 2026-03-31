@@ -14,17 +14,15 @@ use std::path::Path;
 /// 公共任务1：执行代码错误检查
 ///
 /// 流程：
-/// 1. 执行 cargo check（抑制警告）
-/// 2. 执行混合构建检查（内部包含代码分析更新）
-/// 3. 提交到 git
+/// 1. 执行混合构建检查（内部包含代码分析更新、cargo build、混合链接）
+/// 2. 提交到 git
+///
+/// 注意：不单独执行 cargo check，因为混合构建序列内部的 cargo build 已经包含
+/// 了完整的类型检查（cargo build 是 cargo check 的超集，且还会生成 librust.a）。
 ///
 /// 当 `skip_test` 为 `true` 时跳过混合构建中的测试阶段。
-pub fn execute_code_error_check(feature: &str, show_full_output: bool, skip_test: bool) -> Result<()> {
+pub fn execute_code_error_check(feature: &str, skip_test: bool) -> Result<()> {
     println!("{}", "执行代码错误检查...".bright_blue());
-
-    println!("{}", "  → 检查中（抑制警告）...".bright_blue());
-    builder::cargo_check(feature, true, show_full_output)?;
-    println!("{}", "  ✓ 检查成功".bright_green());
 
     println!("{}", "  → 执行混合构建检查...".bright_blue());
     execute_hybrid_build_check(feature, skip_test)?;
@@ -129,7 +127,7 @@ mod tests {
     fn test_execute_code_error_check_signature() {
         fn assert_signature<F>(f: F)
         where
-            F: Fn(&str, bool, bool) -> Result<()>,
+            F: Fn(&str, bool) -> Result<()>,
         {
             let _ = f;
         }

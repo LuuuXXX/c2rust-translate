@@ -1259,7 +1259,7 @@ pub fn run_full_build_and_test(feature: &str) -> Result<()> {
 }
 
 /// 执行完整的构建和测试流程
-/// 顺序：update_code_analysis → cargo_check → c2rust_clean → c2rust_build → c2rust_test
+/// 顺序：c2rust_clean → c2rust_build（含代码分析更新 + cargo build + 混合链接）→ c2rust_test
 ///
 /// 任何步骤失败时直接返回错误，并打印详细的错误信息。
 /// 调用方负责处理错误并提供交互式修复选项（如需要）。
@@ -1278,30 +1278,8 @@ pub fn run_full_build_and_test_interactive(
         "Running full build and test flow...".bright_blue().bold()
     );
 
-    // 1. 更新代码分析，然后检查 Rust 代码
-    println!(
-        "│ {}",
-        "→ Step 1/4: Updating code analysis and checking Rust code (cargo check)...".bright_blue()
-    );
-    println!("│ {}", "Updating code analysis...".bright_blue());
-    analyzer::update_code_analysis(feature)?;
-    println!("│ {}", "✓ Code analysis updated".bright_green());
-    match cargo_check(feature, true, false) {
-        Ok(_) => {
-            println!("│ {}", "  ✓ Rust check successful".bright_green());
-        }
-        Err(e) => {
-            println!("│ {}", "  ✗ Rust check failed".red());
-            println!("│");
-            println!("│ {}", "Error details:".red().bold());
-            println!("│ {}", format!("{:#}", e).red());
-            println!("│");
-            return Err(e).context("Rust check failed in full build flow");
-        }
-    }
-
-    // 2. 清理混合构建环境
-    println!("│ {}", "→ Step 2/4: Cleaning hybrid build...".bright_blue());
+    // 1. 清理混合构建环境（内部会更新代码分析）
+    println!("│ {}", "→ Step 1/3: Cleaning hybrid build...".bright_blue());
     match c2rust_clean(feature) {
         Ok(_) => {
             println!("│ {}", "  ✓ Clean successful".bright_green());
@@ -1316,10 +1294,10 @@ pub fn run_full_build_and_test_interactive(
         }
     }
 
-    // 3. 混合构建（不调用交互式处理器以避免递归）
+    // 2. 混合构建（内部会更新代码分析 + 执行 cargo build 生成 librust.a）
     println!(
         "│ {}",
-        "→ Step 3/4: Running hybrid build (C + Rust)...".bright_blue()
+        "→ Step 2/3: Running hybrid build (C + Rust)...".bright_blue()
     );
     match c2rust_build(feature) {
         Ok(_) => {
@@ -1335,14 +1313,14 @@ pub fn run_full_build_and_test_interactive(
         }
     }
 
-    // 4. 运行测试（不调用交互式处理器以避免递归）
+    // 3. 运行测试（不调用交互式处理器以避免递归）
     if skip_test {
         println!(
             "│ {}",
             "⚠ Skipping test phase (test configuration not available)".yellow()
         );
     } else {
-        println!("│ {}", "→ Step 4/4: Running tests...".bright_blue());
+        println!("│ {}", "→ Step 3/3: Running tests...".bright_blue());
         match c2rust_test(feature) {
             Ok(_) => {
                 println!("│ {}", "  ✓ All tests passed".bright_green().bold());

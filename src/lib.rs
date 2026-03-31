@@ -77,7 +77,7 @@ pub fn translate_feature(
     let skip_test = check_test_configuration(feature)?;
 
     // Step 2: Run initial verification
-    step_2_initial_verification(feature, show_full_output, skip_test)?;
+    step_2_initial_verification(feature, skip_test)?;
 
     // Step 2.5: Check and load previous translation stats
     let mut stats = step_2_5_load_or_create_stats(feature)?;
@@ -120,7 +120,7 @@ pub fn verify_feature(feature: &str, show_full_output: bool) -> Result<()> {
 
     step_1_initialize(feature)?;
     let skip_test = check_test_configuration(feature)?;
-    step_2_initial_verification(feature, show_full_output, skip_test)?;
+    step_2_initial_verification(feature, skip_test)?;
 
     Ok(())
 }
@@ -147,8 +147,8 @@ fn step_1_initialize(feature: &str) -> Result<()> {
 }
 
 /// Step 2: Run initial verification
-fn step_2_initial_verification(feature: &str, show_full_output: bool, skip_test: bool) -> Result<()> {
-    initialization::execute_initial_verification(feature, show_full_output, skip_test)
+fn step_2_initial_verification(feature: &str, skip_test: bool) -> Result<()> {
+    initialization::execute_initial_verification(feature, skip_test)
 }
 
 /// Check test configuration in `.c2rust/config.toml`.

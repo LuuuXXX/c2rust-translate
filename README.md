@@ -70,9 +70,10 @@
 
 ### 1. 代码错误检查
 包含以下步骤：
-- 执行 cargo check（抑制警告）
-- 执行混合构建检查（clean + build + test，内部会更新代码分析）
+- 执行混合构建检查（clean + cargo build + 混合链接 + test，内部会更新代码分析）
 - 提交到 git
+
+注意：不单独执行 cargo check，因为混合构建内的 cargo build 是 cargo check 的超集（完整类型检查 + 生成 librust.a）。
 
 ### 2. 代码告警检查
 包含以下步骤：
