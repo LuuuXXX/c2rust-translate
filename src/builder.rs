@@ -36,7 +36,7 @@ fn run_cargo_subcommand(
         cmd.env("RUSTFLAGS", "-A warnings");
     }
 
-    let output = cmd.output().context(exec_error_msg.to_string())?;
+    let output = cmd.output().with_context(|| exec_error_msg.to_string())?;
     let duration = start_time.elapsed();
 
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -90,10 +90,11 @@ pub fn cargo_build(
     )
 }
 
-/// 仅做编译检查（不产生构建产物），用于错误/告警验证场景
+/// 仅做编译检查，不生成最终可执行文件或静态库，但仍会在 `target/` 下写入中间构建产物
+/// （例如 `.rmeta` 文件和增量编译状态），用于错误/告警验证场景。
 ///
-/// 相比 `cargo_build`，`cargo check` 跳过代码生成阶段，速度更快，
-/// 适用于只需要验证代码能否通过编译、无需输出二进制/静态库的场景。
+/// 相比 `cargo_build`，`cargo check` 跳过最终产物的代码生成与链接阶段，速度更快，
+/// 适用于只需要验证代码能否通过编译、无需生成二进制/静态库的场景。
 ///
 /// # 参数
 /// - `feature`: 特性名称
