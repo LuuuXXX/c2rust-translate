@@ -248,7 +248,7 @@ where
     println!("│ {}", "✓ Code analysis updated".bright_green());
     for attempt in 1..=max_fix_attempts {
         println!("│");
-        println!("│ {}", format_progress("Build").bright_magenta().bold());
+        println!("│ {}", format_progress("Check").bright_magenta().bold());
         println!(
             "│ {}",
             format!(

@@ -6,6 +6,64 @@ use std::env;
 use std::process::Command;
 use std::time::Instant;
 
+/// 内部辅助函数：执行 cargo 子命令（build 或 check），处理公共逻辑
+///
+/// - `subcommand`: 传给 cargo 的子命令（`"build"` 或 `"check"`）
+/// - `exec_error_msg`: `cmd.output()` 失败时的错误提示
+/// - `failure_label`: 命令执行失败时 bail 消息的前缀（如 `"Build error"` / `"Check error"`）
+/// - `success_label`: 命令执行成功时的提示文字（如 `"Build completed"` / `"Check completed"`）
+fn run_cargo_subcommand(
+    feature: &str,
+    suppress_warnings: bool,
+    subcommand: &str,
+    exec_error_msg: &str,
+    failure_label: &str,
+    success_label: &str,
+) -> Result<Option<String>> {
+    util::validate_feature_name(feature)?;
+
+    let project_root = util::find_project_root()?;
+    let build_dir = project_root.join(".c2rust").join(feature).join("rust");
+
+    let start_time = Instant::now();
+
+    let mut cmd = Command::new("cargo");
+    cmd.arg(subcommand).current_dir(&build_dir);
+    // Required because translated Rust code may use unstable (nightly-only) features.
+    cmd.env("RUSTC_BOOTSTRAP", "1");
+
+    if suppress_warnings {
+        cmd.env("RUSTFLAGS", "-A warnings");
+    }
+
+    let output = cmd.output().context(exec_error_msg.to_string())?;
+    let duration = start_time.elapsed();
+
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    if !output.status.success() {
+        anyhow::bail!("{}: {}", failure_label, stderr);
+    }
+
+    println!(
+        "  {} (took {:.2}s)",
+        success_label.bright_green(),
+        duration.as_secs_f64()
+    );
+
+    if !suppress_warnings {
+        let has_warnings = stderr
+            .lines()
+            .any(|line| line.contains("warning[") || line.contains("warning:"));
+
+        if has_warnings {
+            return Ok(Some(stderr));
+        }
+    }
+
+    Ok(None)
+}
+
 /// 统一的 cargo build 函数（产生构建产物，用于混合链接）
 ///
 /// # 参数
@@ -22,48 +80,14 @@ pub fn cargo_build(
     suppress_warnings: bool,
     _show_full_output: bool,
 ) -> Result<Option<String>> {
-    util::validate_feature_name(feature)?;
-
-    let project_root = util::find_project_root()?;
-    let build_dir = project_root.join(".c2rust").join(feature).join("rust");
-
-    let start_time = Instant::now();
-
-    let mut cmd = Command::new("cargo");
-    cmd.arg("build").current_dir(&build_dir);
-    // Required because translated Rust code may use unstable (nightly-only) features.
-    cmd.env("RUSTC_BOOTSTRAP", "1");
-
-    if suppress_warnings {
-        cmd.env("RUSTFLAGS", "-A warnings");
-    }
-
-    let output = cmd.output().context("Failed to execute cargo build")?;
-    let duration = start_time.elapsed();
-
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-    if !output.status.success() {
-        anyhow::bail!("Build error: {}", stderr);
-    }
-
-    println!(
-        "  {} (took {:.2}s)",
-        "Build completed".bright_green(),
-        duration.as_secs_f64()
-    );
-
-    if !suppress_warnings {
-        let has_warnings = stderr
-            .lines()
-            .any(|line| line.contains("warning[") || line.contains("warning:"));
-
-        if has_warnings {
-            return Ok(Some(stderr));
-        }
-    }
-
-    Ok(None)
+    run_cargo_subcommand(
+        feature,
+        suppress_warnings,
+        "build",
+        "Failed to execute cargo build",
+        "Build error",
+        "Build completed",
+    )
 }
 
 /// 仅做编译检查（不产生构建产物），用于错误/告警验证场景
@@ -85,48 +109,14 @@ pub fn cargo_check(
     suppress_warnings: bool,
     _show_full_output: bool,
 ) -> Result<Option<String>> {
-    util::validate_feature_name(feature)?;
-
-    let project_root = util::find_project_root()?;
-    let build_dir = project_root.join(".c2rust").join(feature).join("rust");
-
-    let start_time = Instant::now();
-
-    let mut cmd = Command::new("cargo");
-    cmd.arg("check").current_dir(&build_dir);
-    // Required because translated Rust code may use unstable (nightly-only) features.
-    cmd.env("RUSTC_BOOTSTRAP", "1");
-
-    if suppress_warnings {
-        cmd.env("RUSTFLAGS", "-A warnings");
-    }
-
-    let output = cmd.output().context("Failed to execute cargo check")?;
-    let duration = start_time.elapsed();
-
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-    if !output.status.success() {
-        anyhow::bail!("Check error: {}", stderr);
-    }
-
-    println!(
-        "  {} (took {:.2}s)",
-        "Check completed".bright_green(),
-        duration.as_secs_f64()
-    );
-
-    if !suppress_warnings {
-        let has_warnings = stderr
-            .lines()
-            .any(|line| line.contains("warning[") || line.contains("warning:"));
-
-        if has_warnings {
-            return Ok(Some(stderr));
-        }
-    }
-
-    Ok(None)
+    run_cargo_subcommand(
+        feature,
+        suppress_warnings,
+        "check",
+        "Failed to execute cargo check",
+        "Check error",
+        "Check completed",
+    )
 }
 
 /// 从 c2rust-config 获取特定的配置值
