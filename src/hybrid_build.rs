@@ -102,6 +102,18 @@ pub fn execute_hybrid_build_sequence(feature: &str, skip_test: bool) -> Result<(
     // Clean and Build always run regardless of skip_test: they validate the build itself
     // and must succeed even when the test phase is skipped due to missing test configuration.
     run_hybrid_command(feature, HybridCommandType::Clean)?;
+
+    // Build the Rust static library before running the hybrid build command.
+    // The hybrid build (with LD_PRELOAD) needs librust.a to exist; `cargo check` only
+    // validates code and does not produce build artifacts, so we must call `cargo build`
+    // explicitly here to generate the static library.
+    println!(
+        "{}",
+        "Rebuilding Rust static library for hybrid link...".bright_blue()
+    );
+    crate::builder::cargo_build_internal(feature)?;
+    println!("{}", "✓ Rust static library refreshed".bright_green());
+
     run_hybrid_command(feature, HybridCommandType::Build)?;
     if skip_test {
         println!(
