@@ -6,7 +6,7 @@ use std::env;
 use std::process::Command;
 use std::time::Instant;
 
-/// 统一的 cargo check 函数
+/// 统一的 cargo build 函数
 ///
 /// # 参数
 /// - `feature`: 特性名称
@@ -14,10 +14,10 @@ use std::time::Instant;
 /// - `_show_full_output`: 保留参数，暂未实现，传入值不影响当前输出行为
 ///
 /// # 返回
-/// - `Ok(None)`: 检查成功且无警告（或警告被抑制）
-/// - `Ok(Some(warnings))`: 检查成功但有警告
-/// - `Err`: 检查失败
-pub fn cargo_check(
+/// - `Ok(None)`: 构建成功且无警告（或警告被抑制）
+/// - `Ok(Some(warnings))`: 构建成功但有警告
+/// - `Err`: 构建失败
+pub fn cargo_build(
     feature: &str,
     suppress_warnings: bool,
     _show_full_output: bool,
@@ -30,7 +30,7 @@ pub fn cargo_check(
     let start_time = Instant::now();
 
     let mut cmd = Command::new("cargo");
-    cmd.arg("check").current_dir(&build_dir);
+    cmd.arg("build").current_dir(&build_dir);
     // Required because translated Rust code may use unstable (nightly-only) features.
     cmd.env("RUSTC_BOOTSTRAP", "1");
 
@@ -38,18 +38,18 @@ pub fn cargo_check(
         cmd.env("RUSTFLAGS", "-A warnings");
     }
 
-    let output = cmd.output().context("Failed to execute cargo check")?;
+    let output = cmd.output().context("Failed to execute cargo build")?;
     let duration = start_time.elapsed();
 
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
     if !output.status.success() {
-        anyhow::bail!("Check error: {}", stderr);
+        anyhow::bail!("Build error: {}", stderr);
     }
 
     println!(
         "  {} (took {:.2}s)",
-        "Check completed".bright_green(),
+        "Build completed".bright_green(),
         duration.as_secs_f64()
     );
 
@@ -64,27 +64,6 @@ pub fn cargo_check(
     }
 
     Ok(None)
-}
-
-/// 内部辅助函数：执行 cargo build 以生成构建产物（如静态库）
-///
-/// 该函数用于需要真正构建产物（而非仅做类型检查）的场景，例如混合链接前的静态库构建。
-fn cargo_build_internal(feature: &str) -> Result<()> {
-    util::validate_feature_name(feature)?;
-    let project_root = util::find_project_root()?;
-    let build_dir = project_root.join(".c2rust").join(feature).join("rust");
-    let output = Command::new("cargo")
-        .arg("build")
-        .current_dir(&build_dir)
-        .env("RUSTC_BOOTSTRAP", "1")
-        .env("RUSTFLAGS", "-A warnings")
-        .output()
-        .context("Failed to execute cargo build")?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        anyhow::bail!("Build error: {}", stderr);
-    }
-    Ok(())
 }
 
 /// 从 c2rust-config 获取特定的配置值
@@ -400,7 +379,7 @@ pub fn c2rust_build(feature: &str) -> Result<()> {
     println!("{}", "✓ Code analysis updated".bright_green());
 
     println!("{}", "Rebuilding Rust static library for hybrid link...".bright_blue());
-    cargo_build_internal(feature)?;
+    cargo_build(feature, true, false)?;
     println!("{}", "✓ Rust static library refreshed".bright_green());
 
     let build_cmd = get_config_value("build.cmd", feature)?;
@@ -747,7 +726,7 @@ pub(crate) fn handle_build_failure_interactive(
                                                 .bold()
                                         );
 
-                                        // 执行完整构建流程（包含 cargo_check）
+                                        // 执行完整构建流程（包含 cargo_build）
                                         match run_full_build_and_test_interactive(
                                             feature, file_type, rs_file, skip_test,
                                         ) {
@@ -1251,7 +1230,7 @@ pub(crate) fn handle_test_failure_interactive(
 }
 
 /// 执行完整的构建和测试流程
-/// 顺序：update_code_analysis → cargo_check → c2rust_clean → c2rust_build → c2rust_test
+/// 顺序：update_code_analysis → cargo_build → c2rust_clean → c2rust_build → c2rust_test
 /// 这是主流程中的标准验证流程
 pub fn run_full_build_and_test(feature: &str) -> Result<()> {
     // This entry point always runs tests; skip_test=false.
@@ -1259,7 +1238,7 @@ pub fn run_full_build_and_test(feature: &str) -> Result<()> {
 }
 
 /// 执行完整的构建和测试流程
-/// 顺序：update_code_analysis → cargo_check → c2rust_clean → c2rust_build → c2rust_test
+/// 顺序：update_code_analysis → cargo_build → c2rust_clean → c2rust_build → c2rust_test
 ///
 /// 任何步骤失败时直接返回错误，并打印详细的错误信息。
 /// 调用方负责处理错误并提供交互式修复选项（如需要）。
@@ -1278,25 +1257,25 @@ pub fn run_full_build_and_test_interactive(
         "Running full build and test flow...".bright_blue().bold()
     );
 
-    // 1. 更新代码分析，然后检查 Rust 代码
+    // 1. 更新代码分析，然后构建 Rust 代码
     println!(
         "│ {}",
-        "→ Step 1/4: Updating code analysis and checking Rust code (cargo check)...".bright_blue()
+        "→ Step 1/4: Updating code analysis and building Rust code (cargo build)...".bright_blue()
     );
     println!("│ {}", "Updating code analysis...".bright_blue());
     analyzer::update_code_analysis(feature)?;
     println!("│ {}", "✓ Code analysis updated".bright_green());
-    match cargo_check(feature, true, false) {
+    match cargo_build(feature, true, false) {
         Ok(_) => {
-            println!("│ {}", "  ✓ Rust check successful".bright_green());
+            println!("│ {}", "  ✓ Rust build successful".bright_green());
         }
         Err(e) => {
-            println!("│ {}", "  ✗ Rust check failed".red());
+            println!("│ {}", "  ✗ Rust build failed".red());
             println!("│");
             println!("│ {}", "Error details:".red().bold());
             println!("│ {}", format!("{:#}", e).red());
             println!("│");
-            return Err(e).context("Rust check failed in full build flow");
+            return Err(e).context("Rust build failed in full build flow");
         }
     }
 
