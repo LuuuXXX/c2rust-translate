@@ -70,6 +70,7 @@ pub fn cargo_check(
 ///
 /// 该函数用于需要真正构建产物（而非仅做类型检查）的场景，例如混合链接前的静态库构建。
 fn cargo_build_internal(feature: &str) -> Result<()> {
+    util::validate_feature_name(feature)?;
     let project_root = util::find_project_root()?;
     let build_dir = project_root.join(".c2rust").join(feature).join("rust");
     let output = Command::new("cargo")
