@@ -115,9 +115,14 @@ pub fn execute_hybrid_build_sequence(feature: &str, skip_test: bool) -> Result<(
 
 /// 执行单个混合构建命令（不更新代码分析）
 fn run_hybrid_command(feature: &str, command_type: HybridCommandType) -> Result<()> {
-    // Fetch and validate config values first so that a missing/invalid config
-    // produces a fast error without wasting a full `cargo build` round.
+    // Fetch and validate both the command and directory config values first so
+    // that a missing/invalid config produces a fast error without wasting a
+    // full `cargo build` round.
     let cmd = get_config_value(command_type.cmd_key(), feature)?;
+    // Validate the working-directory key too; it is consumed later inside
+    // execute_command_in_dir_with_type, but we pre-check it here so that a
+    // bad config fails before the expensive Rust library rebuild.
+    let _dir = get_config_value(command_type.dir_key(), feature)?;
 
     // Build commands require librust.a to exist before linking (LD_PRELOAD).
     // Generate it here so both execute_hybrid_build_command and
