@@ -1251,16 +1251,17 @@ pub(crate) fn handle_test_failure_interactive(
 }
 
 /// 执行完整的构建和测试流程
-/// 顺序：update_code_analysis → cargo_check → c2rust_clean → c2rust_build → c2rust_test
-/// 这是主流程中的标准验证流程
+/// 顺序：c2rust_clean → c2rust_build → c2rust_test
+/// 每个步骤内部均会调用 update_code_analysis；这是主流程中的标准验证流程
 pub fn run_full_build_and_test(feature: &str) -> Result<()> {
     // This entry point always runs tests; skip_test=false.
     run_full_build_and_test_interactive(feature, "", std::path::Path::new(""), false)
 }
 
 /// 执行完整的构建和测试流程
-/// 顺序：c2rust_clean → c2rust_build（含代码分析更新 + cargo build + 混合链接）→ c2rust_test
+/// 顺序：c2rust_clean → c2rust_build → c2rust_test
 ///
+/// 三个步骤各自内部均会调用 `analyzer::update_code_analysis`。
 /// 任何步骤失败时直接返回错误，并打印详细的错误信息。
 /// 调用方负责处理错误并提供交互式修复选项（如需要）。
 ///
