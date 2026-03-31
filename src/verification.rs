@@ -252,16 +252,16 @@ where
         println!(
             "│ {}",
             format!(
-                "Building Rust project (attempt {}/{})",
+                "Checking Rust project (attempt {}/{})",
                 attempt, max_fix_attempts
             )
             .bright_blue()
             .bold()
         );
 
-        match builder::cargo_build(feature, true, show_full_output) {
+        match builder::cargo_check(feature, true, show_full_output) {
             Ok(_) => {
-                println!("│ {}", "✓ Build successful!".bright_green().bold());
+                println!("│ {}", "✓ Check successful!".bright_green().bold());
                 return Ok((true, fix_attempts, false));
             }
             Err(build_error) => {
@@ -308,14 +308,14 @@ where
     Ok((false, fix_attempts, false))
 }
 
-/// 在循环中构建并修复警告（第二阶段）
+/// 在循环中检查并修复警告（第二阶段）
 ///
 /// 在所有错误都已修复后运行（execute_code_error_check_with_fix_loop 成功后），
-/// 此函数运行不带 -A warnings 的构建并修复剩余的警告。
+/// 此函数运行不带 -A warnings 的 cargo check 并修复剩余的警告。
 ///
 /// 此函数为非致命性的：
 /// - 如果修复超过 max_fix_attempts 次仍有剩余警告，继续并返回已应用的修复次数
-/// - 如果警告阶段出现意外构建错误，记录日志后继续（不中断文件处理）
+/// - 如果警告阶段出现意外检查错误，记录日志后继续（不中断文件处理）
 ///
 /// 返回 Ok(fix_attempts)：警告修复阶段中应用的修复次数
 pub fn execute_code_warning_check_with_fix_loop<F>(
@@ -347,7 +347,7 @@ where
             .bold()
         );
 
-        match builder::cargo_build(feature, false, show_full_output) {
+        match builder::cargo_check(feature, false, show_full_output) {
             Ok(None) => {
                 println!("│ {}", "✓ No warnings found!".bright_green().bold());
                 return Ok(fix_attempts);
@@ -366,11 +366,11 @@ where
                 )?;
             }
             Err(e) => {
-                // Build failed during warning phase -- unexpected since errors were already fixed.
+                // Check failed during warning phase -- unexpected since errors were already fixed.
                 // Treat as non-fatal: log and stop the warning loop but do not abort file processing.
                 println!(
                     "│ {}",
-                    format!("✗ Unexpected build error during warning phase: {}", e).red()
+                    format!("✗ Unexpected check error during warning phase: {}", e).red()
                 );
                 return Ok(fix_attempts);
             }
