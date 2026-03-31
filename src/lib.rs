@@ -48,7 +48,7 @@ fn maybe_run_periodic_git_gc(progress_state: &util::ProgressState) {
 ///
 /// Executes the complete C to Rust translation workflow in 5 steps:
 /// 1. Find project root and initialize feature directory
-/// 2. Run gate verification (cargo build, code analysis, hybrid build/test)
+/// 2. Run gate verification (cargo check, code analysis, hybrid build/test)
 /// 3. Scan for files to translate and initialize progress tracking
 /// 4. Display current progress status
 /// 5. Execute translation loop (select and process files interactively or auto-all)
