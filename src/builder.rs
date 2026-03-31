@@ -471,9 +471,9 @@ pub fn run_hybrid_build_interactive(
     }
 
     // 在整个序列开始前统一更新一次代码分析，避免 clean/build/test 各自重复更新
-    println!("{}", "Updating code analysis...".bright_blue());
+    println!("│ {}", "Updating code analysis...".bright_blue());
     analyzer::update_code_analysis(feature)?;
-    println!("{}", "✓ Code analysis updated".bright_green());
+    println!("│ {}", "✓ Code analysis updated".bright_green());
 
     // 执行命令
     println!("│ {}", "Running hybrid build tests...".bright_blue().bold());
