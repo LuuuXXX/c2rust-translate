@@ -6,7 +6,65 @@ use std::env;
 use std::process::Command;
 use std::time::Instant;
 
-/// 统一的 cargo build 函数
+/// 内部辅助函数：执行 cargo 子命令（build 或 check），处理公共逻辑
+///
+/// - `subcommand`: 传给 cargo 的子命令（`"build"` 或 `"check"`）
+/// - `exec_error_msg`: `cmd.output()` 失败时的错误提示
+/// - `failure_label`: 命令执行失败时 bail 消息的前缀（如 `"Build error"` / `"Check error"`）
+/// - `success_label`: 命令执行成功时的提示文字（如 `"Build completed"` / `"Check completed"`）
+fn run_cargo_subcommand(
+    feature: &str,
+    suppress_warnings: bool,
+    subcommand: &str,
+    exec_error_msg: &str,
+    failure_label: &str,
+    success_label: &str,
+) -> Result<Option<String>> {
+    util::validate_feature_name(feature)?;
+
+    let project_root = util::find_project_root()?;
+    let build_dir = project_root.join(".c2rust").join(feature).join("rust");
+
+    let start_time = Instant::now();
+
+    let mut cmd = Command::new("cargo");
+    cmd.arg(subcommand).current_dir(&build_dir);
+    // Required because translated Rust code may use unstable (nightly-only) features.
+    cmd.env("RUSTC_BOOTSTRAP", "1");
+
+    if suppress_warnings {
+        cmd.env("RUSTFLAGS", "-A warnings");
+    }
+
+    let output = cmd.output().with_context(|| exec_error_msg.to_string())?;
+    let duration = start_time.elapsed();
+
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    if !output.status.success() {
+        anyhow::bail!("{}: {}", failure_label, stderr);
+    }
+
+    println!(
+        "  {} (took {:.2}s)",
+        success_label.bright_green(),
+        duration.as_secs_f64()
+    );
+
+    if !suppress_warnings {
+        let has_warnings = stderr
+            .lines()
+            .any(|line| line.contains("warning[") || line.contains("warning:"));
+
+        if has_warnings {
+            return Ok(Some(stderr));
+        }
+    }
+
+    Ok(None)
+}
+
+/// 统一的 cargo build 函数（产生构建产物，用于混合链接）
 ///
 /// # 参数
 /// - `feature`: 特性名称
@@ -22,48 +80,44 @@ pub fn cargo_build(
     suppress_warnings: bool,
     _show_full_output: bool,
 ) -> Result<Option<String>> {
-    util::validate_feature_name(feature)?;
+    run_cargo_subcommand(
+        feature,
+        suppress_warnings,
+        "build",
+        "Failed to execute cargo build",
+        "Build error",
+        "Build completed",
+    )
+}
 
-    let project_root = util::find_project_root()?;
-    let build_dir = project_root.join(".c2rust").join(feature).join("rust");
-
-    let start_time = Instant::now();
-
-    let mut cmd = Command::new("cargo");
-    cmd.arg("build").current_dir(&build_dir);
-    // Required because translated Rust code may use unstable (nightly-only) features.
-    cmd.env("RUSTC_BOOTSTRAP", "1");
-
-    if suppress_warnings {
-        cmd.env("RUSTFLAGS", "-A warnings");
-    }
-
-    let output = cmd.output().context("Failed to execute cargo build")?;
-    let duration = start_time.elapsed();
-
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-    if !output.status.success() {
-        anyhow::bail!("Build error: {}", stderr);
-    }
-
-    println!(
-        "  {} (took {:.2}s)",
-        "Build completed".bright_green(),
-        duration.as_secs_f64()
-    );
-
-    if !suppress_warnings {
-        let has_warnings = stderr
-            .lines()
-            .any(|line| line.contains("warning[") || line.contains("warning:"));
-
-        if has_warnings {
-            return Ok(Some(stderr));
-        }
-    }
-
-    Ok(None)
+/// 仅做编译检查，不生成最终可执行文件或静态库，但仍会在 `target/` 下写入中间构建产物
+/// （例如 `.rmeta` 文件和增量编译状态），用于错误/告警验证场景。
+///
+/// 相比 `cargo_build`，`cargo check` 跳过最终产物的代码生成与链接阶段，速度更快，
+/// 适用于只需要验证代码能否通过编译、无需生成二进制/静态库的场景。
+///
+/// # 参数
+/// - `feature`: 特性名称
+/// - `suppress_warnings`: true=抑制警告(-A warnings), false=显示警告
+/// - `_show_full_output`: 保留参数，暂未实现，传入值不影响当前输出行为
+///
+/// # 返回
+/// - `Ok(None)`: 检查成功且无警告（或警告被抑制）
+/// - `Ok(Some(warnings))`: 检查成功但有警告
+/// - `Err`: 检查失败（存在编译错误）
+pub fn cargo_check(
+    feature: &str,
+    suppress_warnings: bool,
+    _show_full_output: bool,
+) -> Result<Option<String>> {
+    run_cargo_subcommand(
+        feature,
+        suppress_warnings,
+        "check",
+        "Failed to execute cargo check",
+        "Check error",
+        "Check completed",
+    )
 }
 
 /// 从 c2rust-config 获取特定的配置值
@@ -1272,7 +1326,7 @@ pub(crate) fn handle_test_failure_interactive(
 }
 
 /// 执行完整的构建和测试流程
-/// 顺序：update_code_analysis → cargo_build → c2rust_clean → c2rust_build → c2rust_test
+/// 顺序：update_code_analysis → cargo_check → c2rust_clean → c2rust_build → c2rust_test
 /// 这是主流程中的标准验证流程
 pub fn run_full_build_and_test(feature: &str) -> Result<()> {
     // This entry point always runs tests; skip_test=false.
@@ -1280,7 +1334,7 @@ pub fn run_full_build_and_test(feature: &str) -> Result<()> {
 }
 
 /// 执行完整的构建和测试流程
-/// 顺序：update_code_analysis → cargo_build → c2rust_clean → c2rust_build → c2rust_test
+/// 顺序：update_code_analysis → cargo_check → c2rust_clean → c2rust_build → c2rust_test
 ///
 /// 任何步骤失败时直接返回错误，并打印详细的错误信息。
 /// 调用方负责处理错误并提供交互式修复选项（如需要）。
@@ -1299,25 +1353,26 @@ pub fn run_full_build_and_test_interactive(
         "Running full build and test flow...".bright_blue().bold()
     );
 
-    // 1. 更新代码分析，然后构建 Rust 代码（快速失败检查：Rust 代码无法编译则提前返回）
+    // 1. 更新代码分析，然后检查 Rust 代码（快速失败检查：Rust 代码无法编译则提前返回）
+    // 使用 cargo check 而非 cargo build，跳过代码生成以提升速度；实际产物由步骤3生成。
     println!(
         "│ {}",
-        "→ Step 1/4: Updating code analysis and building Rust code (cargo build)...".bright_blue()
+        "→ Step 1/4: Updating code analysis and checking Rust code (cargo check)...".bright_blue()
     );
     println!("│ {}", "Updating code analysis...".bright_blue());
     analyzer::update_code_analysis(feature)?;
     println!("│ {}", "✓ Code analysis updated".bright_green());
-    match cargo_build(feature, true, false) {
+    match cargo_check(feature, true, false) {
         Ok(_) => {
-            println!("│ {}", "  ✓ Rust build successful".bright_green());
+            println!("│ {}", "  ✓ Rust check successful".bright_green());
         }
         Err(e) => {
-            println!("│ {}", "  ✗ Rust build failed".red());
+            println!("│ {}", "  ✗ Rust check failed".red());
             println!("│");
             println!("│ {}", "Error details:".red().bold());
             println!("│ {}", format!("{:#}", e).red());
             println!("│");
-            return Err(e).context("Rust build failed in full build flow");
+            return Err(e).context("Rust check failed in full build flow");
         }
     }
 

@@ -14,7 +14,7 @@ use std::path::Path;
 /// 公共任务1：执行代码错误检查
 ///
 /// 流程：
-/// 1. 执行 cargo build（抑制警告）
+/// 1. 执行 cargo build（抑制警告，生成 librust.a 供后续混合构建链接）
 /// 2. 执行混合构建检查（内部包含代码分析更新）
 /// 3. 提交到 git
 ///
@@ -39,7 +39,7 @@ pub fn execute_code_error_check(feature: &str, show_full_output: bool, skip_test
 /// 公共任务2：执行代码告警检查
 ///
 /// 流程：
-/// 1. 执行 cargo build（显示警告）
+/// 1. 执行 cargo build（显示警告，生成 librust.a 供后续混合构建链接）
 /// 2. 执行混合构建检查（内部包含代码分析更新）
 /// 3. 提交到 git
 pub fn execute_code_warning_check(feature: &str, show_full_output: bool) -> Result<()> {
