@@ -38,6 +38,17 @@ enum Commands {
         #[arg(long)]
         show_full_output: bool,
     },
+
+    /// 执行 feature 初始化校验，不进入翻译循环
+    Verify {
+        /// 功能名称（如未指定则默认为 "default"）
+        #[arg(long, default_value = "default")]
+        feature: String,
+
+        /// 显示完整输出，不进行截断
+        #[arg(long)]
+        show_full_output: bool,
+    },
 }
 
 fn main() {
@@ -55,6 +66,10 @@ fn main() {
             max_fix_attempts,
             show_full_output,
         ),
+        Commands::Verify {
+            feature,
+            show_full_output,
+        } => c2rust_translate::verify_feature(&feature, show_full_output),
     };
 
     if let Err(e) = result {

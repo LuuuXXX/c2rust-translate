@@ -378,6 +378,10 @@ pub fn c2rust_build(feature: &str) -> Result<()> {
     analyzer::update_code_analysis(feature)?;
     println!("{}", "✓ Code analysis updated".bright_green());
 
+    println!("{}", "Rebuilding Rust static library for hybrid link...".bright_blue());
+    cargo_build(feature, true, false)?;
+    println!("{}", "✓ Rust static library refreshed".bright_green());
+
     let build_cmd = get_config_value("build.cmd", feature)?;
 
     execute_command_in_dir_with_type(&build_cmd, "build.dir", feature, true, "build")

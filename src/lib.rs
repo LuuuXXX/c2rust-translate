@@ -113,6 +113,18 @@ pub fn translate_feature(
     Ok(())
 }
 
+/// Run feature initialization and project-level verification without entering
+/// the translation loop.
+pub fn verify_feature(feature: &str, show_full_output: bool) -> Result<()> {
+    print_workflow_header(feature);
+
+    step_1_initialize(feature)?;
+    let skip_test = check_test_configuration(feature)?;
+    step_2_initial_verification(feature, show_full_output, skip_test)?;
+
+    Ok(())
+}
+
 // ============================================================================
 // Workflow Step Functions
 // ============================================================================

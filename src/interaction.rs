@@ -3,6 +3,7 @@
 use anyhow::{Context, Result};
 use colored::Colorize;
 use inquire::{Select, Text};
+use std::io::IsTerminal;
 use std::path::Path;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -73,6 +74,10 @@ pub enum TestConfigChoice {
     Continue, // 继续但跳过测试阶段
 }
 
+fn has_interactive_terminal() -> bool {
+    std::io::stdin().is_terminal() && std::io::stdout().is_terminal()
+}
+
 /// 统一的失败场景提示函数
 ///
 /// 在失败时提示并返回 ManualFix/Skip/Exit（上下文仅用于展示提示信息）
@@ -89,6 +94,18 @@ pub fn prompt_failure_choice(context: &str) -> Result<FailureChoice> {
         "跳过（忽略失败继续）",
         "退出（中止流程）",
     ];
+
+    if !has_interactive_terminal() {
+        println!(
+            "│ {}",
+            format!(
+                "检测到当前会话无 TTY，无法弹出交互式选择；默认执行“跳过”并继续记录失败现场。上下文：{}",
+                context
+            )
+            .yellow()
+        );
+        return Ok(FailureChoice::Skip);
+    }
 
     let choice = Select::new("请选择处理方式:", options.clone())
         .with_vim_mode(true)
@@ -649,6 +666,14 @@ pub fn prompt_test_config_missing_choice() -> Result<TestConfigChoice> {
         "Exit and configure test settings",
         "Continue without test phase (tests will be skipped)",
     ];
+
+    if !has_interactive_terminal() {
+        println!(
+            "{}",
+            "No TTY detected; continuing without test phase by default.".yellow()
+        );
+        return Ok(TestConfigChoice::Continue);
+    }
 
     let choice = Select::new("Select an option:", options.clone())
         .with_vim_mode(true)
