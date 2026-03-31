@@ -376,9 +376,9 @@ where
             }
         }
 
-        println!("{}", "Updating code analysis...".bright_blue());
+        println!("│ {}", "Updating code analysis...".bright_blue());
         analyzer::update_code_analysis(feature)?;
-        println!("{}", "✓ Code analysis updated".bright_green());
+        println!("│ {}", "✓ Code analysis updated".bright_green());
     }
 
     println!(

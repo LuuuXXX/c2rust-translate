@@ -4,7 +4,13 @@
 
 ## 版本历史
 
-### v0.3.0（当前版本）
+### v0.3.1（当前版本）
+**工作流优化：消除冗余步骤**
+- **消除重复 `get_config_value` 实现**：删除 `hybrid_build.rs` 中与 `builder.rs` 完全相同的私有实现（~25 行），改用 `crate::builder::get_config_value`
+- **减少冗余代码分析更新**：新增 `c2rust_clean_no_analysis`/`c2rust_build_no_analysis`/`c2rust_test_no_analysis` 内部变体，在 clean→build→test 序列中由序列开头统一调用一次 `update_code_analysis`，避免每个步骤各自重复触发（由 3-4 次降至 1 次），涉及 `run_hybrid_build_interactive`、`run_full_build_and_test_interactive`、`complete_file_processing`、`run_final_interval_test_if_needed`
+- **修复日志前缀**：`execute_code_warning_check_with_fix_loop` 中代码分析日志缺失 `│ ` 前缀，已与函数内其他输出格式对齐
+
+### v0.3.0
 **非致命错误处理改进：**
 - **翻译脚本失败非致命化**：`translate_and_fix.py` 非零退出时记录警告并跳过该文件，继续处理下一个文件（新增 `TranslationFailedSignal`，与用户主动跳过的 `SkipFileSignal` 区分）。基础设施错误（找不到项目根目录、无效 feature 名称等）仍为致命错误。
 - **修复步骤失败非致命化**：`apply_error_fix`/`apply_warning_fix` 失败时打印警告，本次修复计数为 0，修复循环继续直至达到最大次数

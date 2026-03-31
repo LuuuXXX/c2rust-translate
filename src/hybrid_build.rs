@@ -1,8 +1,7 @@
 use crate::analyzer;
 use crate::util;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use colored::Colorize;
-use std::process::Command;
 
 /// 混合构建命令类型
 #[derive(Debug, Clone, Copy)]
@@ -60,8 +59,8 @@ pub fn get_hybrid_build_command(
 ) -> Result<(String, String)> {
     util::validate_feature_name(feature)?;
 
-    let cmd = get_config_value(command_type.cmd_key(), feature)?;
-    let dir = get_config_value(command_type.dir_key(), feature)?;
+    let cmd = crate::builder::get_config_value(command_type.cmd_key(), feature)?;
+    let dir = crate::builder::get_config_value(command_type.dir_key(), feature)?;
 
     Ok((cmd, dir))
 }
@@ -115,7 +114,7 @@ pub fn execute_hybrid_build_sequence(feature: &str, skip_test: bool) -> Result<(
 
 /// 执行单个混合构建命令（不更新代码分析）
 fn run_hybrid_command(feature: &str, command_type: HybridCommandType) -> Result<()> {
-    let cmd = get_config_value(command_type.cmd_key(), feature)?;
+    let cmd = crate::builder::get_config_value(command_type.cmd_key(), feature)?;
 
     crate::builder::execute_command_in_dir_with_type(
         &cmd,
@@ -124,31 +123,6 @@ fn run_hybrid_command(feature: &str, command_type: HybridCommandType) -> Result<
         command_type.needs_ld_preload(),
         command_type.as_str(),
     )
-}
-
-/// 从 c2rust-config 获取特定的配置值（内部辅助函数）
-fn get_config_value(key: &str, feature: &str) -> Result<String> {
-    let project_root = util::find_project_root()?;
-    let c2rust_dir = project_root.join(".c2rust");
-
-    let output = Command::new("c2rust-config")
-        .current_dir(&c2rust_dir)
-        .args(["config", "--make", "--feature", feature, "--list", key])
-        .output()
-        .with_context(|| format!("Failed to get {} from config", key))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("Failed to retrieve {}: {}", key, stderr);
-    }
-
-    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
-
-    if value.is_empty() {
-        anyhow::bail!("Empty {} value from config", key);
-    }
-
-    Ok(value)
 }
 
 #[cfg(test)]
