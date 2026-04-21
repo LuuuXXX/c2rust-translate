@@ -235,7 +235,7 @@ pub fn execute_code_error_check_with_fix_loop<F>(
     format_progress: &F,
     is_last_attempt: bool,
     attempt_number: usize,
-    max_fix_attempts: usize,
+    max_error_fix_attempts: usize,
     show_full_output: bool,
     skip_test: bool,
 ) -> Result<(bool, usize, bool)>
@@ -246,14 +246,14 @@ where
     println!("│ {}", "Updating code analysis...".bright_blue());
     analyzer::update_code_analysis(feature)?;
     println!("│ {}", "✓ Code analysis updated".bright_green());
-    for attempt in 1..=max_fix_attempts {
+    for attempt in 1..=max_error_fix_attempts {
         println!("│");
         println!("│ {}", format_progress("Check").bright_magenta().bold());
         println!(
             "│ {}",
             format!(
                 "Checking Rust project (attempt {}/{})",
-                attempt, max_fix_attempts
+                attempt, max_error_fix_attempts
             )
             .bright_blue()
             .bold()
@@ -265,7 +265,7 @@ where
                 return Ok((true, fix_attempts, false));
             }
             Err(build_error) => {
-                if attempt == max_fix_attempts {
+                if attempt == max_error_fix_attempts {
                     let (build_successful, extra_fix_attempts, had_restart) =
                         handle_max_fix_attempts_reached(
                             build_error,
@@ -273,7 +273,7 @@ where
                             rs_file,
                             is_last_attempt,
                             attempt_number,
-                            max_fix_attempts,
+                            max_error_fix_attempts,
                             feature,
                             file_type,
                             show_full_output,
@@ -314,7 +314,7 @@ where
 /// 此函数运行不带 -A warnings 的 cargo check 并修复剩余的警告。
 ///
 /// 此函数为非致命性的：
-/// - 如果修复超过 max_fix_attempts 次仍有剩余警告，继续并返回已应用的修复次数
+/// - 如果修复超过 max_warning_fix_attempts 次仍有剩余警告，继续并返回已应用的修复次数
 /// - 如果警告阶段出现意外检查错误，记录日志后继续（不中断文件处理）
 ///
 /// 返回 Ok(fix_attempts)：警告修复阶段中应用的修复次数
@@ -324,14 +324,14 @@ pub fn execute_code_warning_check_with_fix_loop<F>(
     rs_file: &Path,
     _file_name: &str,
     format_progress: &F,
-    max_fix_attempts: usize,
+    max_warning_fix_attempts: usize,
     show_full_output: bool,
 ) -> Result<usize>
 where
     F: Fn(&str) -> String,
 {
     let mut fix_attempts = 0usize;
-    for attempt in 1..=max_fix_attempts {
+    for attempt in 1..=max_warning_fix_attempts {
         println!("│");
         println!(
             "│ {}",
@@ -341,7 +341,7 @@ where
             "│ {}",
             format!(
                 "Checking for warnings (attempt {}/{})",
-                attempt, max_fix_attempts
+                attempt, max_warning_fix_attempts
             )
             .bright_blue()
             .bold()
@@ -399,19 +399,19 @@ fn handle_max_fix_attempts_reached(
     rs_file: &Path,
     is_last_attempt: bool,
     attempt_number: usize,
-    max_fix_attempts: usize,
+    max_error_fix_attempts: usize,
     feature: &str,
     file_type: &str,
     show_full_output: bool,
     skip_test: bool,
 ) -> Result<(bool, usize, bool)> {
     println!("│");
-    println!("│ {}", "⚠ Maximum fix attempts reached!".red().bold());
+    println!("│ {}", "⚠ Maximum error-fix attempts reached!".red().bold());
     println!(
         "│ {}",
         format!(
-            "File {} still has build errors after {} fix attempts.",
-            file_name, max_fix_attempts
+            "File {} still has build errors after {} error-fix attempts.",
+            file_name, max_error_fix_attempts
         )
         .yellow()
     );
@@ -483,7 +483,7 @@ fn handle_max_fix_attempts_reached(
             is_last_attempt,
             attempt_number,
             file_name,
-            max_fix_attempts,
+            max_error_fix_attempts,
             show_full_output,
             skip_test,
         ),
@@ -499,8 +499,8 @@ fn handle_max_fix_attempts_reached(
             Err(anyhow::Error::from(SkipFileSignal))
         }
         interaction::FailureChoice::Exit => Err(build_error).context(format!(
-            "Build failed after {} fix attempts for file {}",
-            max_fix_attempts, file_name
+            "Build failed after {} error-fix attempts for file {}",
+            max_error_fix_attempts, file_name
         )),
         interaction::FailureChoice::FixOtherFile => {
             unreachable!("FixOtherFile is not offered in this context")
@@ -574,7 +574,7 @@ fn handle_add_suggestion(
     is_last_attempt: bool,
     attempt_number: usize,
     file_name: &str,
-    max_fix_attempts: usize,
+    max_error_fix_attempts: usize,
     show_full_output: bool,
     skip_test: bool,
 ) -> Result<(bool, usize, bool)> {
@@ -627,13 +627,13 @@ fn handle_add_suggestion(
         );
         println!(
             "│ {}",
-            format!("(You will have {} fix attempts)", max_fix_attempts).bright_blue()
+            format!("(You will have {} error-fix attempts)", max_error_fix_attempts).bright_blue()
         );
         println!("│");
 
         // 调用 execute_code_error_check_with_fix_loop 重新开始完整的修复循环
         // 注意：这里传入 is_last_attempt=true 表示这是最后一次翻译机会
-        // 但修复循环本身会有完整的 max_fix_attempts 次机会
+        // 但修复循环本身会有完整的 max_error_fix_attempts 次机会
         // 第二个返回值是递归循环中消耗的 fix_attempts 次数，由调用方 process_rs_file 聚合统计。
         let (build_successful, recursive_fix_attempts, had_restart) =
             crate::verification::execute_code_error_check_with_fix_loop(
@@ -644,7 +644,7 @@ fn handle_add_suggestion(
                 &|op: &str| format!("Suggestion-based fix - {}", op),
                 true, // is_last_attempt: 翻译层面确实是最后一次了
                 attempt_number,
-                max_fix_attempts,
+                max_error_fix_attempts,
                 show_full_output,
                 skip_test,
             )?;
@@ -877,7 +877,7 @@ mod tests {
             &rs_file,
             "var_foo.rs",
             &|op: &str| op.to_string(),
-            1, // max_fix_attempts
+            1, // max_warning_fix_attempts
             false,
         );
 

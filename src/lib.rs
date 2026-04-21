@@ -23,7 +23,10 @@ pub(crate) mod suggestion;
 
 use anyhow::{Context, Result};
 use colored::Colorize;
+use quote::ToTokens;
 use std::path::Path;
+use syn::visit::Visit;
+use syn::visit_mut::VisitMut;
 
 /// Interval (in successfully processed files) at which periodic git GC is triggered.
 /// Increasing this value reduces GC frequency; decreasing it compacts the repo more often.
@@ -56,7 +59,8 @@ fn maybe_run_periodic_git_gc(progress_state: &util::ProgressState) {
 /// # Arguments
 /// * `feature` - Feature name (must not contain path separators)
 /// * `allow_all` - If true, auto-process all files without prompting
-/// * `max_fix_attempts` - Maximum number of error fix attempts per file
+/// * `max_error_fix_attempts` - Maximum number of build-error fix attempts per file
+/// * `max_warning_fix_attempts` - Maximum number of warning-fix attempts per file
 /// * `show_full_output` - If true, show complete code/error output without truncation
 ///
 /// # Returns
@@ -65,13 +69,33 @@ fn maybe_run_periodic_git_gc(progress_state: &util::ProgressState) {
 pub fn translate_feature(
     feature: &str,
     allow_all: bool,
-    max_fix_attempts: usize,
+    target_file: Option<&str>,
+    max_error_fix_attempts: usize,
+    max_warning_fix_attempts: usize,
     show_full_output: bool,
 ) -> Result<()> {
     print_workflow_header(feature);
 
     // Step 1: Initialize feature directory
     step_1_initialize(feature)?;
+
+    // Capture whether the dedicated `.c2rust` repo was already dirty before any
+    // verification side effects run. Resume snapshotting should reflect unfinished
+    // user progress, not fresh analysis/build artifacts produced by step 2.
+    let preexisting_resume_snapshot_needed = match git::git_has_uncommitted_changes() {
+        Ok(is_dirty) => is_dirty,
+        Err(e) => {
+            eprintln!(
+                "{}",
+                format!(
+                    "⚠ Warning: failed to inspect .c2rust working tree before verification: {}",
+                    e
+                )
+                .yellow()
+            );
+            false
+        }
+    };
 
     // Check test configuration before initial verification (step 2 also uses test-related commands)
     let skip_test = check_test_configuration(feature)?;
@@ -80,10 +104,22 @@ pub fn translate_feature(
     step_2_initial_verification(feature, show_full_output, skip_test)?;
 
     // Step 2.5: Check and load previous translation stats
-    let mut stats = step_2_5_load_or_create_stats(feature)?;
+    let mut stats = step_2_5_load_or_create_stats(
+        feature,
+        preexisting_resume_snapshot_needed,
+        max_error_fix_attempts,
+        max_warning_fix_attempts,
+        show_full_output,
+        skip_test,
+    )?;
+
+    if let Some(target_file) = target_file {
+        prepare_target_file_rerun(feature, target_file, &mut stats)?;
+    }
 
     // Step 3 & 4: Select files and initialize progress
-    let (rust_dir, mut progress_state) = step_3_4_select_files_and_init_progress(feature, &stats)?;
+    let (rust_dir, mut progress_state) =
+        step_3_4_select_files_and_init_progress(feature, &stats, target_file)?;
 
     // Step 5: Execute translation loop
     let step5_result = step_5_execute_translation_loop(
@@ -91,7 +127,9 @@ pub fn translate_feature(
         &rust_dir,
         &mut progress_state,
         allow_all,
-        max_fix_attempts,
+        target_file,
+        max_error_fix_attempts,
+        max_warning_fix_attempts,
         show_full_output,
         &mut stats,
         skip_test,
@@ -189,46 +227,132 @@ fn check_test_configuration(feature: &str) -> Result<bool> {
 }
 
 /// Step 2.5: Check for existing stats file and load or create stats
-fn step_2_5_load_or_create_stats(feature: &str) -> Result<util::TranslationStats> {
+fn step_2_5_load_or_create_stats(
+    feature: &str,
+    preexisting_resume_snapshot_needed: bool,
+    max_error_fix_attempts: usize,
+    max_warning_fix_attempts: usize,
+    show_full_output: bool,
+    skip_test: bool,
+) -> Result<util::TranslationStats> {
+    let project_root = util::find_project_root()?;
+    let rust_dir = project_root.join(".c2rust").join(feature).join("rust");
+    let rust_src_dir = rust_dir.join("src");
     match util::TranslationStats::load_from_file(feature)? {
-        Some(existing_stats) => {
-            println!(
-                "\n{}",
-                "Found previous translation progress!"
-                    .bright_yellow()
-                    .bold()
-            );
-            println!("Previous progress:");
-            println!("  - Total files translated: {}", existing_stats.total_files);
-            println!("  - Files skipped: {}", existing_stats.skipped_files.len());
-            if !existing_stats.translation_failed_files.is_empty() {
-                println!(
-                    "  - Translation failures: {}",
-                    existing_stats.translation_failed_files.len()
-                );
+        Some(mut existing_stats) => {
+            let normalized = existing_stats.normalize_file_keys();
+            let reconciled =
+                rust_src_dir.is_dir() && existing_stats.reconcile_with_workspace(&rust_src_dir)?;
+            if normalized || reconciled {
+                save_stats_or_warn(&existing_stats, feature);
             }
+            loop {
+                print_previous_progress_summary(&existing_stats);
 
-            let choice = interaction::prompt_continue_or_restart()?;
+                let choice =
+                    interaction::prompt_continue_or_restart(!existing_stats.skipped_files.is_empty())?;
 
-            match choice {
-                interaction::ContinueChoice::Continue => {
-                    println!("{}", "✓ Continuing previous progress...".bright_green());
-                    Ok(existing_stats)
-                }
-                interaction::ContinueChoice::Restart => {
-                    println!(
-                        "{}",
-                        "✓ Starting fresh translation session...".bright_cyan()
-                    );
-                    util::TranslationStats::clear_stats_file(feature)?;
-                    Ok(util::TranslationStats::new())
+                match compute_resume_action(choice, feature, preexisting_resume_snapshot_needed) {
+                    ResumeAction::Continue { snapshot_message } => {
+                        if let Some(snapshot_message) = snapshot_message {
+                            if git_commit_or_warn(&snapshot_message, feature) {
+                                println!(
+                                    "{}",
+                                    "✓ Snapshotted uncommitted translation progress before resume."
+                                        .bright_green()
+                                );
+                            }
+                        }
+                        println!("{}", "✓ Continuing previous progress...".bright_green());
+                        return Ok(existing_stats);
+                    }
+                    ResumeAction::Restart => {
+                        println!(
+                            "{}",
+                            "✓ Starting fresh translation session...".bright_cyan()
+                        );
+                        util::TranslationStats::clear_stats_file(feature)?;
+                        return Ok(util::TranslationStats::new());
+                    }
+                    ResumeAction::FixSkippedFiles => {
+                        println!(
+                            "{}",
+                            "Reprocessing skipped files from previous run...".bright_cyan()
+                        );
+                        let mut progress_state = build_progress_state(&rust_dir, None)?;
+                        let mut translations_since_last_test = 0usize;
+                        process_skipped_files_once(
+                            feature,
+                            &rust_dir,
+                            &mut progress_state,
+                            max_error_fix_attempts,
+                            max_warning_fix_attempts,
+                            show_full_output,
+                            &mut existing_stats,
+                            skip_test,
+                            &mut translations_since_last_test,
+                        )?;
+                        run_final_interval_test_if_needed(
+                            feature,
+                            skip_test,
+                            translations_since_last_test,
+                        )?;
+                        save_stats_or_warn(&existing_stats, feature);
+                    }
                 }
             }
         }
         None => {
             println!("{}", "Starting new translation session...".bright_cyan());
-            Ok(util::TranslationStats::new())
+            let mut stats = util::TranslationStats::new();
+            if rust_src_dir.is_dir() && stats.reconcile_with_workspace(&rust_src_dir)? {
+                save_stats_or_warn(&stats, feature);
+            }
+            Ok(stats)
         }
+    }
+}
+
+enum ResumeAction {
+    Continue { snapshot_message: Option<String> },
+    Restart,
+    FixSkippedFiles,
+}
+
+fn compute_resume_action(
+    choice: interaction::ContinueChoice,
+    feature: &str,
+    preexisting_resume_snapshot_needed: bool,
+) -> ResumeAction {
+    match choice {
+        interaction::ContinueChoice::Continue => ResumeAction::Continue {
+            snapshot_message: preexisting_resume_snapshot_needed.then(|| {
+                format!(
+                    "Snapshot unfinished translation progress before resume (feature: {})",
+                    feature
+                )
+            }),
+        },
+        interaction::ContinueChoice::Restart => ResumeAction::Restart,
+        interaction::ContinueChoice::FixSkippedFiles => ResumeAction::FixSkippedFiles,
+    }
+}
+
+fn print_previous_progress_summary(stats: &util::TranslationStats) {
+    println!(
+        "\n{}",
+        "Found previous translation progress!"
+            .bright_yellow()
+            .bold()
+    );
+    println!("Previous progress:");
+    println!("  - Total files translated: {}", stats.total_files);
+    println!("  - Files skipped: {}", stats.skipped_files.len());
+    if !stats.translation_failed_files.is_empty() {
+        println!(
+            "  - Translation failures: {}",
+            stats.translation_failed_files.len()
+        );
     }
 }
 
@@ -236,6 +360,7 @@ fn step_2_5_load_or_create_stats(feature: &str) -> Result<util::TranslationStats
 fn step_3_4_select_files_and_init_progress(
     feature: &str,
     _stats: &util::TranslationStats,
+    target_file: Option<&str>,
 ) -> Result<(std::path::PathBuf, util::ProgressState)> {
     println!(
         "\n{}",
@@ -245,19 +370,34 @@ fn step_3_4_select_files_and_init_progress(
     // Get rust directory path
     let project_root = util::find_project_root()?;
     let rust_dir = project_root.join(".c2rust").join(feature).join("rust");
-
-    // Calculate progress
-    let total_rs_files = file_scanner::count_all_rs_files(&rust_dir)?;
-    let initial_empty_count = file_scanner::find_empty_rs_files(&rust_dir)?.len();
-    let already_processed = total_rs_files.saturating_sub(initial_empty_count);
-
-    let progress_state =
-        util::ProgressState::with_initial_progress(total_rs_files, already_processed);
+    let progress_state = build_progress_state(&rust_dir, target_file)?;
+    let already_processed = progress_state.processed_count;
+    let total_rs_files = progress_state.total_count;
 
     // Display progress
     print_progress_status(already_processed, total_rs_files);
 
     Ok((rust_dir, progress_state))
+}
+
+fn build_progress_state(rust_dir: &Path, target_file: Option<&str>) -> Result<util::ProgressState> {
+    let (already_processed, total_rs_files) = if let Some(target_file) = target_file {
+        let target_path = rust_dir.join(target_file);
+        let exists = target_path.is_file();
+        let is_empty = exists && std::fs::metadata(&target_path)?.len() == 0;
+        let already_processed = if exists && !is_empty { 1 } else { 0 };
+        (already_processed, 1)
+    } else {
+        let total_rs_files = file_scanner::count_all_rs_files(rust_dir)?;
+        let initial_empty_count = file_scanner::find_empty_rs_files(rust_dir)?.len();
+        let already_processed = total_rs_files.saturating_sub(initial_empty_count);
+        (already_processed, total_rs_files)
+    };
+
+    Ok(util::ProgressState::with_initial_progress(
+        total_rs_files,
+        already_processed,
+    ))
 }
 
 /// Print current progress status
@@ -288,7 +428,9 @@ fn step_5_execute_translation_loop(
     rust_dir: &Path,
     progress_state: &mut util::ProgressState,
     allow_all: bool,
-    max_fix_attempts: usize,
+    target_file: Option<&str>,
+    max_error_fix_attempts: usize,
+    max_warning_fix_attempts: usize,
     show_full_output: bool,
     stats: &mut util::TranslationStats,
     skip_test: bool,
@@ -331,6 +473,8 @@ fn step_5_execute_translation_loop(
             })
             .collect();
 
+        let empty_rs_files = filter_target_files(empty_rs_files, rust_dir, target_file)?;
+
         if empty_rs_files.is_empty() {
             if stats.skipped_files.is_empty() {
                 print_completion_message();
@@ -350,25 +494,33 @@ fn step_5_execute_translation_loop(
             &selected_indices,
             rust_dir,
             progress_state,
-            max_fix_attempts,
+            max_error_fix_attempts,
+            max_warning_fix_attempts,
+            show_full_output,
+            stats,
+            skip_test,
+            &mut translations_since_last_test,
+        )?;
+
+        if target_file.is_some() {
+            break;
+        }
+    }
+
+    // Handle skipped files after the main translation loop
+    if target_file.is_none() {
+        handle_skipped_files_loop(
+            feature,
+            rust_dir,
+            progress_state,
+            max_error_fix_attempts,
+            max_warning_fix_attempts,
             show_full_output,
             stats,
             skip_test,
             &mut translations_since_last_test,
         )?;
     }
-
-    // Handle skipped files after the main translation loop
-    handle_skipped_files_loop(
-        feature,
-        rust_dir,
-        progress_state,
-        max_fix_attempts,
-        show_full_output,
-        stats,
-        skip_test,
-        &mut translations_since_last_test,
-    )?;
 
     // If C2RUST_TEST_INTERVAL > 1 and the total translation count was not a
     // multiple of the interval, the last few translations never got a test run.
@@ -389,7 +541,8 @@ fn handle_skipped_files_loop(
     feature: &str,
     rust_dir: &Path,
     progress_state: &mut util::ProgressState,
-    max_fix_attempts: usize,
+    max_error_fix_attempts: usize,
+    max_warning_fix_attempts: usize,
     show_full_output: bool,
     stats: &mut util::TranslationStats,
     skip_test: bool,
@@ -403,64 +556,386 @@ fn handle_skipped_files_loop(
         let choice = interaction::prompt_skipped_files_choice(&stats.skipped_files)?;
 
         match choice {
-            interaction::SkippedFilesChoice::ProcessNow => {
-                // Drain the skipped list so we can iterate and re-populate it with any
-                // files that get skipped again during this pass.
-                let files_to_process = std::mem::take(&mut stats.skipped_files);
-                let total = files_to_process.len();
-                let mut iter = files_to_process.into_iter().enumerate();
-                while let Some((idx, file_name)) = iter.next() {
-                    let rs_file = rust_dir.join(&file_name);
-                    let pos = idx + 1;
-                    print_file_processing_header(pos, total, &file_name);
-
-                    let (_, skip_interval_test) =
-                        compute_interval_test_decision(*translations_since_last_test);
-
-                    match process_rs_file(
-                        feature,
-                        &rs_file,
-                        &file_name,
-                        pos,
-                        total,
-                        max_fix_attempts,
-                        show_full_output,
-                        stats,
-                        skip_test,
-                        skip_interval_test,
-                    ) {
-                        Err(e) => {
-                            if e.downcast_ref::<verification::SkipFileSignal>().is_some()
-                                || e.downcast_ref::<verification::TranslationFailedSignal>().is_some()
-                            {
-                                // File was re-skipped or translation failed; already recorded
-                                // by process_rs_file into the appropriate list.
-                                save_stats_or_warn(stats, feature);
-                                continue;
-                            }
-                            // On real error, re-add the current and all remaining files so they are not lost.
-                            stats.record_file_skipped(file_name);
-                            for (_, remaining_file) in iter {
-                                stats.record_file_skipped(remaining_file);
-                            }
-                            save_stats_or_warn(stats, feature);
-                            return Err(e);
-                        }
-                        Ok(tests_ran) => {
-                            // Mark file as processed. mark_processed() is capped at total_count
-                            // so it cannot overflow even if this is a resumed session.
-                            progress_state.mark_processed();
-                            update_interval_counter(translations_since_last_test, tests_ran);
-                            save_stats_or_warn(stats, feature);
-                            maybe_run_periodic_git_gc(progress_state);
-                        }
-                    }
-                }
-                // Loop again: if any files were skipped during this pass they are now
-                // in stats.skipped_files and the user will be prompted again.
-            }
+            interaction::SkippedFilesChoice::ProcessNow => process_skipped_files_once(
+                feature,
+                rust_dir,
+                progress_state,
+                max_error_fix_attempts,
+                max_warning_fix_attempts,
+                show_full_output,
+                stats,
+                skip_test,
+                translations_since_last_test,
+            )?,
             interaction::SkippedFilesChoice::ExitForLater => break,
         }
+    }
+
+    Ok(())
+}
+
+fn process_skipped_files_once(
+    feature: &str,
+    rust_dir: &Path,
+    progress_state: &mut util::ProgressState,
+    max_error_fix_attempts: usize,
+    max_warning_fix_attempts: usize,
+    show_full_output: bool,
+    stats: &mut util::TranslationStats,
+    skip_test: bool,
+    translations_since_last_test: &mut usize,
+) -> Result<()> {
+    let failed_isolation = BackgroundFailedFileIsolation::activate(
+        feature,
+        rust_dir,
+        &files_to_process_snapshot(&stats.skipped_files),
+        stats,
+    )?;
+    let result = process_skipped_files_once_inner(
+        feature,
+        rust_dir,
+        progress_state,
+        max_error_fix_attempts,
+        max_warning_fix_attempts,
+        show_full_output,
+        stats,
+        skip_test,
+        translations_since_last_test,
+    );
+    failed_isolation.restore()?;
+    result
+}
+
+fn process_skipped_files_once_inner(
+    feature: &str,
+    rust_dir: &Path,
+    progress_state: &mut util::ProgressState,
+    max_error_fix_attempts: usize,
+    max_warning_fix_attempts: usize,
+    show_full_output: bool,
+    stats: &mut util::TranslationStats,
+    skip_test: bool,
+    translations_since_last_test: &mut usize,
+) -> Result<()> {
+    let files_to_process = std::mem::take(&mut stats.skipped_files);
+    let total = files_to_process.len();
+    for idx in 0..files_to_process.len() {
+        let file_name = files_to_process[idx].clone();
+        let rs_file = rust_dir.join(&file_name);
+        let pos = idx + 1;
+        print_file_processing_header(pos, total, &file_name);
+
+        let (_, skip_interval_test) = compute_interval_test_decision(*translations_since_last_test);
+        let translation_mode = prepare_skipped_file_for_retry(
+            feature,
+            rust_dir,
+            &file_name,
+            &files_to_process[idx..],
+        )?;
+
+        match process_rs_file(
+            feature,
+            &rs_file,
+            &file_name,
+            pos,
+            total,
+            max_error_fix_attempts,
+            max_warning_fix_attempts,
+            show_full_output,
+            stats,
+            skip_test,
+            skip_interval_test,
+            translation_mode,
+        ) {
+            Err(e) => {
+                if e.downcast_ref::<verification::SkipFileSignal>().is_some()
+                    || e.downcast_ref::<verification::TranslationFailedSignal>().is_some()
+                {
+                    // File was re-skipped or translation failed; already recorded
+                    // by process_rs_file into the appropriate list.
+                    save_stats_or_warn(stats, feature);
+                    continue;
+                }
+                // On real error, re-add the current and all remaining files so they are not lost.
+                stats.record_file_skipped(file_name);
+                for remaining_file in &files_to_process[idx + 1..] {
+                    stats.record_file_skipped(remaining_file.clone());
+                }
+                save_stats_or_warn(stats, feature);
+                return Err(e);
+            }
+            Ok(tests_ran) => {
+                // Mark file as processed. mark_processed() is capped at total_count
+                // so it cannot overflow even if this is a resumed session.
+                clear_skipped_file_stash(feature, &file_name)?;
+                progress_state.mark_processed();
+                update_interval_counter(translations_since_last_test, tests_ran);
+                save_stats_or_warn(stats, feature);
+                maybe_run_periodic_git_gc(progress_state);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TranslationInputMode {
+    TranslateFromC,
+    ReuseExistingRust,
+}
+
+struct BackgroundFailedFileIsolation {
+    feature: String,
+    rust_dir: std::path::PathBuf,
+    stashed_files: Vec<String>,
+}
+
+impl BackgroundFailedFileIsolation {
+    fn activate(
+        feature: &str,
+        rust_dir: &Path,
+        skipped_retry_files: &[String],
+        stats: &util::TranslationStats,
+    ) -> Result<Self> {
+        let skipped_set: std::collections::HashSet<&str> =
+            skipped_retry_files.iter().map(|item| item.as_str()).collect();
+        let mut stashed_files = Vec::new();
+
+        for file_name in &stats.translation_failed_files {
+            if skipped_set.contains(file_name.as_str()) {
+                continue;
+            }
+            let rs_file = rust_dir.join(file_name);
+            if rust_file_has_content(&rs_file)? {
+                stash_skipped_file_for_later(feature, file_name, &rs_file)?;
+                stashed_files.push(file_name.clone());
+            }
+        }
+
+        Ok(Self {
+            feature: feature.to_string(),
+            rust_dir: rust_dir.to_path_buf(),
+            stashed_files,
+        })
+    }
+
+    fn restore(self) -> Result<()> {
+        for file_name in &self.stashed_files {
+            let rs_file = self.rust_dir.join(file_name);
+            restore_skipped_file_stash(&self.feature, file_name, &rs_file)?;
+        }
+        Ok(())
+    }
+}
+
+fn files_to_process_snapshot(skipped_files: &[String]) -> Vec<String> {
+    skipped_files.to_vec()
+}
+
+fn prepare_skipped_file_for_retry(
+    feature: &str,
+    rust_dir: &Path,
+    current_file: &str,
+    remaining_skipped_files: &[String],
+) -> Result<TranslationInputMode> {
+    temporarily_clear_other_skipped_files(feature, rust_dir, current_file, remaining_skipped_files)?;
+    let current_rs_file = rust_dir.join(current_file);
+    let restored = restore_skipped_file_stash(feature, current_file, &current_rs_file)?;
+    let current_has_content = rust_file_has_content(&current_rs_file)?;
+
+    if restored || current_has_content {
+        println!(
+            "│ {}",
+            "Using existing Rust output for skipped-file recovery; proceeding directly to check/fix."
+                .bright_blue()
+        );
+        Ok(TranslationInputMode::ReuseExistingRust)
+    } else {
+        println!(
+            "│ {}",
+            "Skipped file is empty; retranslating it from the C source before verification."
+                .bright_blue()
+        );
+        Ok(TranslationInputMode::TranslateFromC)
+    }
+}
+
+fn temporarily_clear_other_skipped_files(
+    feature: &str,
+    rust_dir: &Path,
+    current_file: &str,
+    remaining_skipped_files: &[String],
+) -> Result<()> {
+    for file_name in remaining_skipped_files {
+        if file_name == current_file {
+            continue;
+        }
+        let rs_file = rust_dir.join(file_name);
+        if rust_file_has_content(&rs_file)? {
+            stash_skipped_file_for_later(feature, file_name, &rs_file)?;
+        }
+    }
+    Ok(())
+}
+
+fn skipped_file_stash_root(feature: &str) -> Result<std::path::PathBuf> {
+    let project_root = util::find_project_root()?;
+    Ok(project_root
+        .join(".c2rust")
+        .join(feature)
+        .join("tmp")
+        .join("skipped-rust-stash"))
+}
+
+fn validate_relative_stats_path(file_name: &str) -> Result<std::path::PathBuf> {
+    use std::path::{Component, Path, PathBuf};
+
+    let path = Path::new(file_name);
+    if path.is_absolute() {
+        anyhow::bail!("Skipped file path must be relative, got: {}", file_name);
+    }
+
+    let mut relative = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Normal(part) => relative.push(part),
+            Component::CurDir => {}
+            _ => anyhow::bail!("Skipped file path must not contain path traversal: {}", file_name),
+        }
+    }
+
+    if relative.as_os_str().is_empty() {
+        anyhow::bail!("Skipped file path is empty: {}", file_name);
+    }
+
+    Ok(relative)
+}
+
+fn skipped_file_stash_path(feature: &str, file_name: &str) -> Result<std::path::PathBuf> {
+    let stash_root = skipped_file_stash_root(feature)?;
+    Ok(stash_root.join(validate_relative_stats_path(file_name)?))
+}
+
+fn rust_file_has_content(rs_file: &Path) -> Result<bool> {
+    match std::fs::metadata(rs_file) {
+        Ok(metadata) => Ok(metadata.len() > 0),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(err) => Err(err).context(format!(
+            "Failed to inspect Rust file content state: {}",
+            rs_file.display()
+        )),
+    }
+}
+
+fn stash_skipped_file_for_later(feature: &str, file_name: &str, rs_file: &Path) -> Result<()> {
+    if !rust_file_has_content(rs_file)? {
+        revert_failed_file_to_empty(rs_file)?;
+        return Ok(());
+    }
+
+    let stash_path = skipped_file_stash_path(feature, file_name)?;
+    if let Some(parent) = stash_path.parent() {
+        std::fs::create_dir_all(parent).with_context(|| {
+            format!("Failed to create skipped-file stash directory: {}", parent.display())
+        })?;
+    }
+
+    let content = std::fs::read(rs_file)
+        .with_context(|| format!("Failed to read Rust file for skipped stash: {}", rs_file.display()))?;
+    std::fs::write(&stash_path, content).with_context(|| {
+        format!(
+            "Failed to write skipped-file stash for {} at {}",
+            file_name,
+            stash_path.display()
+        )
+    })?;
+    revert_failed_file_to_empty(rs_file)?;
+    Ok(())
+}
+
+fn restore_skipped_file_stash(feature: &str, file_name: &str, rs_file: &Path) -> Result<bool> {
+    let stash_path = skipped_file_stash_path(feature, file_name)?;
+    if !stash_path.is_file() {
+        return Ok(false);
+    }
+
+    if rust_file_has_content(rs_file)? {
+        return Ok(false);
+    }
+
+    let content = std::fs::read(&stash_path).with_context(|| {
+        format!(
+            "Failed to read skipped-file stash for {} from {}",
+            file_name,
+            stash_path.display()
+        )
+    })?;
+    std::fs::write(rs_file, content).with_context(|| {
+        format!(
+            "Failed to restore skipped-file stash for {} into {}",
+            file_name,
+            rs_file.display()
+        )
+    })?;
+    std::fs::remove_file(&stash_path).with_context(|| {
+        format!(
+            "Failed to remove skipped-file stash after restore: {}",
+            stash_path.display()
+        )
+    })?;
+    prune_empty_stash_dirs(feature, stash_path.parent())?;
+    Ok(true)
+}
+
+fn clear_skipped_file_stash(feature: &str, file_name: &str) -> Result<()> {
+    let stash_path = skipped_file_stash_path(feature, file_name)?;
+    match std::fs::remove_file(&stash_path) {
+        Ok(()) => prune_empty_stash_dirs(feature, stash_path.parent()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(err).context(format!(
+            "Failed to remove skipped-file stash: {}",
+            stash_path.display()
+        )),
+    }
+}
+
+fn prune_empty_stash_dirs(
+    feature: &str,
+    start_dir: Option<&Path>,
+) -> Result<()> {
+    let stash_root = skipped_file_stash_root(feature)?;
+    let mut current = start_dir.map(|path| path.to_path_buf());
+
+    while let Some(dir) = current {
+        if dir == stash_root {
+            break;
+        }
+        if std::fs::read_dir(&dir)
+            .with_context(|| format!("Failed to read skipped-file stash dir: {}", dir.display()))?
+            .next()
+            .is_some()
+        {
+            break;
+        }
+        std::fs::remove_dir(&dir).with_context(|| {
+            format!("Failed to remove empty skipped-file stash dir: {}", dir.display())
+        })?;
+        current = dir.parent().map(|parent| parent.to_path_buf());
+    }
+
+    if stash_root.is_dir()
+        && std::fs::read_dir(&stash_root)
+            .with_context(|| format!("Failed to read skipped-file stash root: {}", stash_root.display()))?
+            .next()
+            .is_none()
+    {
+        std::fs::remove_dir(&stash_root).with_context(|| {
+            format!(
+                "Failed to remove empty skipped-file stash root: {}",
+                stash_root.display()
+            )
+        })?;
     }
 
     Ok(())
@@ -600,6 +1075,79 @@ fn select_files_to_process(
     }
 }
 
+fn filter_target_files(
+    empty_rs_files: Vec<std::path::PathBuf>,
+    rust_dir: &Path,
+    target_file: Option<&str>,
+) -> Result<Vec<std::path::PathBuf>> {
+    let Some(target_file) = target_file else {
+        return Ok(empty_rs_files);
+    };
+
+    let filtered: Vec<_> = empty_rs_files
+        .into_iter()
+        .filter(|path| {
+            path.strip_prefix(rust_dir)
+                .ok()
+                .and_then(|rel| rel.to_str())
+                .map(|rel| rel == target_file)
+                .unwrap_or(false)
+        })
+        .collect();
+
+    if !filtered.is_empty() {
+        return Ok(filtered);
+    }
+
+    let target_path = rust_dir.join(target_file);
+    if !target_path.exists() {
+        anyhow::bail!(
+            "Target Rust file not found under feature workspace: {}",
+            target_file
+        );
+    }
+
+    anyhow::bail!(
+        "Target Rust file is currently excluded from translation (likely skipped or marked translation-failed): {}",
+        target_file
+    );
+}
+
+fn prepare_target_file_rerun(
+    feature: &str,
+    target_file: &str,
+    stats: &mut util::TranslationStats,
+) -> Result<()> {
+    let project_root = util::find_project_root()?;
+    let rust_dir = project_root.join(".c2rust").join(feature).join("rust");
+    let target_path = rust_dir.join(target_file);
+
+    stats.clear_target_history(target_file);
+    save_stats_or_warn(stats, feature);
+
+    if !target_path.exists() {
+        return Ok(());
+    }
+
+    let metadata = std::fs::metadata(&target_path)?;
+    if metadata.len() == 0 {
+        return Ok(());
+    }
+
+    println!(
+        "{}",
+        format!(
+            "Target file already has previous Rust output; clearing it for targeted rerun: {}",
+            target_file
+        )
+        .bright_yellow()
+    );
+    std::fs::write(&target_path, "")
+        .with_context(|| format!("Failed to clear target Rust file for rerun: {}", target_file))?;
+
+    Ok(())
+}
+
 /// Process all selected files
 fn process_selected_files(
     feature: &str,
@@ -607,7 +1155,8 @@ fn process_selected_files(
     selected_indices: &[usize],
     rust_dir: &Path,
     progress_state: &mut util::ProgressState,
-    max_fix_attempts: usize,
+    max_error_fix_attempts: usize,
+    max_warning_fix_attempts: usize,
     show_full_output: bool,
     stats: &mut util::TranslationStats,
     skip_test: bool,
@@ -640,11 +1189,13 @@ fn process_selected_files(
             file_name,
             current_position,
             total_count,
-            max_fix_attempts,
+            max_error_fix_attempts,
+            max_warning_fix_attempts,
             show_full_output,
             stats,
             skip_test,
             skip_interval_test,
+            TranslationInputMode::TranslateFromC,
         ) {
             Err(e) => {
                 if e.downcast_ref::<verification::SkipFileSignal>().is_none()
@@ -712,7 +1263,8 @@ fn print_file_processing_header(current_position: usize, total_count: usize, fil
 /// * `file_name` - Display name of the file
 /// * `current_position` - Current file position in the overall workflow
 /// * `total_count` - Total number of files to process
-/// * `max_fix_attempts` - Maximum error fix attempts per translation
+/// * `max_error_fix_attempts` - Maximum number of build-error fix attempts per translation
+/// * `max_warning_fix_attempts` - Maximum number of warning-fix attempts per translation
 /// * `show_full_output` - Whether to show full output
 ///
 /// # Returns
@@ -725,11 +1277,13 @@ fn process_rs_file(
     file_name: &str,
     current_position: usize,
     total_count: usize,
-    max_fix_attempts: usize,
+    max_error_fix_attempts: usize,
+    max_warning_fix_attempts: usize,
     show_full_output: bool,
     stats: &mut util::TranslationStats,
     skip_test: bool,
     skip_interval_test: bool,
+    translation_mode: TranslationInputMode,
 ) -> Result<bool> {
     use util::MAX_TRANSLATION_ATTEMPTS;
 
@@ -766,18 +1320,20 @@ fn process_rs_file(
         // as a non-fatal translation failure.  All other errors (missing project root,
         // invalid feature name, cannot execute Python, empty output, …) are infrastructure
         // problems and propagate to the caller with `?`.
-        if let Err(e) = translate_file(
+        if let Err(e) = run_translation_phase(
             feature,
             file_type,
             rs_file,
             &format_progress,
             show_full_output,
+            translation_mode,
         ) {
             if e.downcast_ref::<translator::TranslationScriptFailedError>().is_some() {
                 println!(
                     "│ {}",
                     format!("⚠ Translation failed: {:#}", e).yellow()
                 );
+                stash_skipped_file_for_later(feature, file_name, rs_file)?;
                 println!(
                     "│ {}",
                     format!("Skipping file due to translation failure: {}", file_name)
@@ -806,7 +1362,7 @@ fn process_rs_file(
             &format_progress,
             is_last_attempt,
             attempt_number,
-            max_fix_attempts,
+            max_error_fix_attempts,
             show_full_output,
             skip_test,
         );
@@ -818,6 +1374,7 @@ fn process_rs_file(
                     "│ {}",
                     format!("Skipping file: {}", file_name).bright_yellow()
                 );
+                stash_skipped_file_for_later(feature, file_name, rs_file)?;
                 stats.record_file_skipped(file_name.to_string());
                 return Err(verification::SkipFileSignal.into());
             }
@@ -833,8 +1390,8 @@ fn process_rs_file(
 
         if build_successful {
             // Phase 2: Fix warnings after all errors are resolved
-            // (skipped when C2RUST_PROCESS_WARNINGS=0 or =false)
-            if should_process_warnings() {
+            // (skipped when C2RUST_PROCESS_WARNINGS=0/false or max_warning_fix_attempts=0)
+            if should_process_warnings() && max_warning_fix_attempts > 0 {
                 println!("│");
                 println!(
                     "│ {}",
@@ -848,7 +1405,7 @@ fn process_rs_file(
                     rs_file,
                     file_name,
                     &format_progress,
-                    max_fix_attempts,
+                    max_warning_fix_attempts,
                     show_full_output,
                 )
                 .unwrap_or_else(|e| {
@@ -861,15 +1418,37 @@ fn process_rs_file(
                 total_fix_attempts += warning_fix_attempts;
             } else {
                 println!("│");
+                let reason = if !should_process_warnings() {
+                    "C2RUST_PROCESS_WARNINGS=0/false"
+                } else {
+                    "max_warning_fix_attempts=0"
+                };
                 println!(
                     "│ {}",
-                    "Phase 2: Warning processing skipped (C2RUST_PROCESS_WARNINGS=0/false)."
+                    format!("Phase 2: Warning processing skipped ({}).", reason)
                         .bright_yellow()
                 );
             }
 
-            let (processing_complete, tests_ran) =
-                complete_file_processing(feature, file_name, file_type, rs_file, &format_progress, skip_test, skip_interval_test)?;
+            let (processing_complete, tests_ran) = match complete_file_processing(
+                feature,
+                file_name,
+                file_type,
+                rs_file,
+                &format_progress,
+                skip_test,
+                skip_interval_test,
+            ) {
+                Ok(result) => result,
+                Err(e) => {
+                    if e.downcast_ref::<verification::SkipFileSignal>().is_some() {
+                        stash_skipped_file_for_later(feature, file_name, rs_file)?;
+                        stats.record_file_skipped(file_name.to_string());
+                        return Err(verification::SkipFileSignal.into());
+                    }
+                    return Err(e);
+                }
+            };
             if processing_complete {
                 stats.record_file_completion(
                     file_name.to_string(),
@@ -884,6 +1463,22 @@ fn process_rs_file(
     }
 
     anyhow::bail!("Unexpected: all retry attempts completed without resolution")
+}
+
+/// Revert a skipped/failed translation back to an empty placeholder file.
+///
+/// The workflow uses empty `fun_*.rs` / `var_*.rs` files to represent pending
+/// work, but `cargo check` still compiles any non-empty file in the workspace.
+/// If a skipped file keeps broken contents, the next file's verification phase
+/// reports the stale error again. Truncating the file restores the placeholder
+/// state so later files can proceed independently.
+fn revert_failed_file_to_empty(rs_file: &Path) -> Result<()> {
+    std::fs::write(rs_file, "").with_context(|| {
+        format!(
+            "Failed to revert skipped/failed translation to empty placeholder: {}",
+            rs_file.display()
+        )
+    })
 }
 
 // ============================================================================
@@ -1059,6 +1654,64 @@ fn check_c_file_exists(rs_file: &Path) -> Result<()> {
 // ============================================================================
 
 /// Translate C source file to Rust
+fn run_translation_phase<F>(
+    feature: &str,
+    file_type: &str,
+    rs_file: &Path,
+    format_progress: &F,
+    show_full_output: bool,
+    translation_mode: TranslationInputMode,
+) -> Result<()>
+where
+    F: Fn(&str) -> String,
+{
+    match translation_mode {
+        TranslationInputMode::TranslateFromC => {
+            translate_file(feature, file_type, rs_file, format_progress, show_full_output)
+        }
+        TranslationInputMode::ReuseExistingRust => {
+            println!("│");
+            println!(
+                "│ {}",
+                format_progress("Reuse Existing Rust").bright_magenta().bold()
+            );
+            println!(
+                "│ {}",
+                "Reusing previously stashed Rust output for skipped-file recovery."
+                    .bright_blue()
+                    .bold()
+            );
+
+            let metadata = std::fs::metadata(rs_file).with_context(|| {
+                format!(
+                    "Skipped-file recovery expected existing Rust output, but file metadata could not be read: {}",
+                    rs_file.display()
+                )
+            })?;
+            if metadata.len() == 0 {
+                anyhow::bail!(
+                    "Skipped-file recovery expected existing Rust output, but the file is empty: {}",
+                    rs_file.display()
+                );
+            }
+
+            translator::display_code(
+                rs_file,
+                "─ Existing Rust Code Preview ─",
+                util::CODE_PREVIEW_LINES,
+                show_full_output,
+            );
+            println!(
+                "│ {}",
+                format!("✓ Reused existing Rust output ({} bytes)", metadata.len())
+                    .bright_green()
+            );
+            Ok(())
+        }
+    }
+}
+
+/// Translate C source file to Rust
 fn translate_file<F>(
     feature: &str,
     file_type: &str,
@@ -1091,6 +1744,9 @@ where
         anyhow::bail!("Translation failed: output file is empty");
     }
 
+    try_collapse_exported_function_unsafe_regions(rs_file)?;
+    try_normalize_c_char_literal_ptrs(rs_file)?;
+
     println!(
         "│ {}",
         format!("✓ Translation complete ({} bytes)", metadata.len()).bright_green()
@@ -1120,6 +1776,14 @@ where
     println!("│");
     println!("│ {}", format_progress("Fix").bright_magenta().bold());
 
+    if try_apply_local_build_error_fix(rs_file, &build_error.to_string())? {
+        println!(
+            "│ {}",
+            "✓ Applied local compiler-error fix".bright_green()
+        );
+        return Ok(());
+    }
+
     // Fix translation error
     // Always show full fix code, but respect user preference for error preview
     translator::fix_translation_error(
@@ -1140,6 +1804,284 @@ where
     println!("│ {}", "✓ Fix applied".bright_green());
 
     Ok(())
+}
+
+fn try_apply_local_build_error_fix(rs_file: &Path, build_error: &str) -> Result<bool> {
+    if try_fix_static_mut_array_pointer_access(rs_file, build_error)? {
+        return Ok(true);
+    }
+    if try_fix_c_string_slice_pointer_cast(rs_file, build_error)? {
+        return Ok(true);
+    }
+    if try_fix_option_fn_unwrap_mismatch(rs_file, build_error)? {
+        return Ok(true);
+    }
+    if try_wrap_unsafe_call_from_e0133(rs_file, build_error)? {
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+#[derive(Default)]
+struct UnsafeExprCounter {
+    count: usize,
+}
+
+impl Visit<'_> for UnsafeExprCounter {
+    fn visit_expr_unsafe(&mut self, node: &syn::ExprUnsafe) {
+        self.count += 1;
+        syn::visit::visit_expr_unsafe(self, node);
+    }
+}
+
+struct UnsafeRegionCollapser;
+
+impl VisitMut for UnsafeRegionCollapser {
+    fn visit_expr_mut(&mut self, expr: &mut syn::Expr) {
+        syn::visit_mut::visit_expr_mut(self, expr);
+        if let syn::Expr::Unsafe(expr_unsafe) = expr {
+            let block = expr_unsafe.block.clone();
+            *expr = syn::Expr::Block(syn::ExprBlock {
+                attrs: expr_unsafe.attrs.clone(),
+                label: None,
+                block,
+            });
+        }
+    }
+}
+
+fn has_export_name_attr(attrs: &[syn::Attribute]) -> bool {
+    attrs.iter().any(|attr| attr.meta.to_token_stream().to_string().contains("export_name"))
+}
+
+fn should_collapse_fn_unsafe_regions(item_fn: &syn::ItemFn) -> bool {
+    if item_fn.sig.unsafety.is_some() {
+        return false;
+    }
+    if item_fn.sig.abi.is_none() || !has_export_name_attr(&item_fn.attrs) {
+        return false;
+    }
+    let mut counter = UnsafeExprCounter::default();
+    counter.visit_block(&item_fn.block);
+    counter.count >= 2
+}
+
+fn collapse_fn_unsafe_regions(item_fn: &mut syn::ItemFn) -> bool {
+    if !should_collapse_fn_unsafe_regions(item_fn) {
+        return false;
+    }
+
+    let mut collapser = UnsafeRegionCollapser;
+    collapser.visit_block_mut(&mut item_fn.block);
+
+    let old_block = item_fn.block.as_ref().clone();
+    item_fn.block = Box::new(syn::Block {
+        brace_token: old_block.brace_token,
+        stmts: vec![syn::Stmt::Expr(
+            syn::Expr::Unsafe(syn::ExprUnsafe {
+                attrs: Vec::new(),
+                unsafe_token: Default::default(),
+                block: old_block,
+            }),
+            None,
+        )],
+    });
+    true
+}
+
+fn try_collapse_exported_function_unsafe_regions(rs_file: &Path) -> Result<bool> {
+    let source = std::fs::read_to_string(rs_file)?;
+    let mut ast = match syn::parse_file(&source) {
+        Ok(ast) => ast,
+        Err(_) => return Ok(false),
+    };
+
+    let mut changed = false;
+    for item in &mut ast.items {
+        if let syn::Item::Fn(item_fn) = item {
+            changed |= collapse_fn_unsafe_regions(item_fn);
+        }
+    }
+
+    if !changed {
+        return Ok(false);
+    }
+
+    let mut rendered = prettyplease::unparse(&ast);
+    if source.ends_with('\n') {
+        rendered.push('\n');
+    }
+    std::fs::write(rs_file, rendered)?;
+    Ok(true)
+}
+
+fn try_normalize_c_char_literal_ptrs(rs_file: &Path) -> Result<bool> {
+    let source = std::fs::read_to_string(rs_file)?;
+    let re = regex::Regex::new(
+        r#"b"((?:\\.|[^"\\])*)\\0"\.as_ptr\(\)\s+as\s+\*const\s+::core::ffi::c_char"#,
+    )?;
+    let updated = re.replace_all(&source, r#"c"$1".as_ptr()"#).into_owned();
+    if updated == source {
+        return Ok(false);
+    }
+    std::fs::write(rs_file, updated)?;
+    Ok(true)
+}
+
+fn try_fix_static_mut_array_pointer_access(rs_file: &Path, build_error: &str) -> Result<bool> {
+    let mentions_static_mut_refs = build_error.contains("static_mut_refs")
+        || build_error.contains("creating a mutable reference to mutable static")
+        || build_error.contains("creating a shared reference to mutable static");
+    let mentions_array_ptr_get = build_error.contains("array_ptr_get");
+    if !mentions_static_mut_refs && !mentions_array_ptr_get {
+        return Ok(false);
+    }
+
+    let source = std::fs::read_to_string(rs_file)?;
+    let mut updated = source.clone();
+
+    let ptr_patterns = [
+        (
+            regex::Regex::new(r"\(&raw mut\s+([A-Za-z_][A-Za-z0-9_]*)\)\.as_mut_ptr\(\)")?,
+            "::core::ptr::addr_of_mut!($1).cast()",
+        ),
+        (
+            regex::Regex::new(r"\b([A-Za-z_][A-Za-z0-9_]*)\.as_mut_ptr\(\)")?,
+            "::core::ptr::addr_of_mut!($1).cast()",
+        ),
+    ];
+
+    if mentions_static_mut_refs || mentions_array_ptr_get {
+        for (pattern, replacement) in ptr_patterns {
+            updated = pattern.replace_all(&updated, replacement).into_owned();
+        }
+    }
+
+    let array_len = regex::Regex::new(r"\*const\s+\[[^;\]]+;\s*([0-9_]+)\]")?
+        .captures(build_error)
+        .and_then(|caps| caps.get(1).map(|m| m.as_str().to_string()));
+
+    if let Some(array_len) = array_len {
+        let size_patterns = [
+            regex::Regex::new(r"core::mem::size_of_val\(&([A-Za-z_][A-Za-z0-9_]*)\)")?,
+            regex::Regex::new(r"\(&raw const\s+([A-Za-z_][A-Za-z0-9_]*)\)\.len\(\)")?,
+            regex::Regex::new(r"\b([A-Za-z_][A-Za-z0-9_]*)\.len\(\)")?,
+        ];
+        for pattern in size_patterns {
+            updated = pattern.replace_all(&updated, array_len.as_str()).into_owned();
+        }
+    }
+
+    if updated == source {
+        return Ok(false);
+    }
+
+    std::fs::write(rs_file, updated)?;
+    Ok(true)
+}
+
+fn try_fix_c_string_slice_pointer_cast(rs_file: &Path, build_error: &str) -> Result<bool> {
+    if !build_error.contains("slice_ptr_get") && !build_error.contains("casting `&*const") {
+        return Ok(false);
+    }
+
+    let source = std::fs::read_to_string(rs_file)?;
+    let pattern = regex::Regex::new(
+        r#"unsafe\s*\{\s*&(?P<lit>c"((?:\\.|[^"\\])*)"\.as_ptr\(\))\s+as\s+\*const\s+\[::core::ffi::c_char\]\s*\}\s*\.as_ptr\(\)"#,
+    )?;
+    let updated = pattern.replace_all(&source, "$lit").into_owned();
+
+    if updated == source {
+        return Ok(false);
+    }
+
+    std::fs::write(rs_file, updated)?;
+    Ok(true)
+}
+
+fn try_fix_option_fn_unwrap_mismatch(rs_file: &Path, build_error: &str) -> Result<bool> {
+    if !build_error.contains("expected enum `Option<")
+        || !build_error.contains("found fn pointer")
+    {
+        return Ok(false);
+    }
+
+    let source = std::fs::read_to_string(rs_file)?;
+    let pattern = regex::Regex::new(
+        r#"(?P<prefix>[A-Za-z_][A-Za-z0-9_\[\]\.\(\)\s]*?)\.func\.unwrap\(\)"#,
+    )?;
+    let updated = pattern.replace_all(&source, "${prefix}.func").into_owned();
+
+    if updated == source {
+        return Ok(false);
+    }
+
+    std::fs::write(rs_file, updated)?;
+    Ok(true)
+}
+
+fn try_wrap_unsafe_call_from_e0133(rs_file: &Path, build_error: &str) -> Result<bool> {
+    if !build_error.contains("error[E0133]: call to unsafe function") {
+        return Ok(false);
+    }
+
+    let source = std::fs::read_to_string(rs_file)?;
+    let mut lines: Vec<String> = source.lines().map(|line| line.to_string()).collect();
+    let rel_path = rs_file
+        .strip_prefix(crate::util::find_project_root()?)
+        .ok()
+        .and_then(|path| path.to_str())
+        .map(|s| s.replace('\\', "/"));
+
+    let location_re = regex::Regex::new(r"--> ([^:]+):(\d+):(\d+)")?;
+    let assign_re = regex::Regex::new(
+        r"^(?P<indent>\s*)(?P<prefix>(?:let\s+[^=]+=\s*|return\s+)?)(?P<call>[A-Za-z_][A-Za-z0-9_]*\s*\([^;]*\))(?P<suffix>\s*;.*)$",
+    )?;
+
+    let mut changed = false;
+    for captures in location_re.captures_iter(build_error) {
+        let Some(path) = captures.get(1).map(|m| m.as_str().replace('\\', "/")) else {
+            continue;
+        };
+        let Some(expected_path) = &rel_path else {
+            continue;
+        };
+        if !path.ends_with(expected_path) {
+            continue;
+        }
+
+        let Ok(line_no) = captures[2].parse::<usize>() else {
+            continue;
+        };
+        if line_no == 0 || line_no > lines.len() {
+            continue;
+        }
+
+        let line = lines[line_no - 1].clone();
+        if line.contains("unsafe {") {
+            continue;
+        }
+
+        if let Some(m) = assign_re.captures(&line) {
+            let indent = m.name("indent").map(|m| m.as_str()).unwrap_or("");
+            let prefix = m.name("prefix").map(|m| m.as_str()).unwrap_or("");
+            let call = m.name("call").map(|m| m.as_str()).unwrap_or("");
+            let suffix = m.name("suffix").map(|m| m.as_str()).unwrap_or("");
+            lines[line_no - 1] = format!("{indent}{prefix}unsafe {{ {call} }}{suffix}");
+            changed = true;
+        }
+    }
+
+    if !changed {
+        return Ok(false);
+    }
+
+    let mut updated = lines.join("\n");
+    if source.ends_with('\n') {
+        updated.push('\n');
+    }
+    std::fs::write(rs_file, updated)?;
+    Ok(true)
 }
 
 /// Apply warning fix to translated file
@@ -1682,6 +2624,10 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use tempfile::tempdir;
 
     struct EnvGuard {
         key: &'static str,
@@ -1706,6 +2652,36 @@ mod tests {
                 None => std::env::remove_var(self.key),
             }
         }
+    }
+
+    struct CurrentDirGuard {
+        prior: PathBuf,
+    }
+
+    impl CurrentDirGuard {
+        fn change_to(path: &Path) -> Self {
+            let prior = std::env::current_dir().unwrap();
+            std::env::set_current_dir(path).unwrap();
+            Self { prior }
+        }
+    }
+
+    impl Drop for CurrentDirGuard {
+        fn drop(&mut self) {
+            std::env::set_current_dir(&self.prior).unwrap();
+        }
+    }
+
+    fn create_temp_feature_workspace(
+        feature: &str,
+    ) -> (tempfile::TempDir, CurrentDirGuard, PathBuf, PathBuf) {
+        let temp_dir = tempdir().unwrap();
+        let project_root = temp_dir.path().to_path_buf();
+        let feature_root = project_root.join(".c2rust").join(feature);
+        let rust_dir = feature_root.join("rust");
+        fs::create_dir_all(rust_dir.join("src")).unwrap();
+        let guard = CurrentDirGuard::change_to(&project_root);
+        (temp_dir, guard, feature_root, rust_dir)
     }
 
     #[test]
@@ -1804,6 +2780,61 @@ mod tests {
     fn test_should_continue_on_test_error_disabled_with_false() {
         let _guard = EnvGuard::set("C2RUST_TEST_CONTINUE_ON_ERROR", "false");
         assert!(!should_continue_on_test_error());
+    }
+
+    #[test]
+    fn test_compute_resume_action_skips_snapshot_when_preexisting_tree_is_clean() {
+        let action = compute_resume_action(
+            interaction::ContinueChoice::Continue,
+            "default",
+            false,
+        );
+
+        match action {
+            ResumeAction::Continue { snapshot_message } => {
+                assert!(snapshot_message.is_none());
+            }
+            ResumeAction::Restart | ResumeAction::FixSkippedFiles => {
+                panic!("expected continue action")
+            }
+        }
+    }
+
+    #[test]
+    fn test_compute_resume_action_requests_snapshot_when_preexisting_tree_is_dirty() {
+        let action = compute_resume_action(
+            interaction::ContinueChoice::Continue,
+            "default",
+            true,
+        );
+
+        match action {
+            ResumeAction::Continue { snapshot_message } => {
+                assert_eq!(
+                    snapshot_message.as_deref(),
+                    Some("Snapshot unfinished translation progress before resume (feature: default)")
+                );
+            }
+            ResumeAction::Restart | ResumeAction::FixSkippedFiles => {
+                panic!("expected continue action")
+            }
+        }
+    }
+
+    #[test]
+    fn test_compute_resume_action_fix_skipped_files() {
+        let action = compute_resume_action(
+            interaction::ContinueChoice::FixSkippedFiles,
+            "default",
+            true,
+        );
+
+        match action {
+            ResumeAction::FixSkippedFiles => {}
+            ResumeAction::Continue { .. } | ResumeAction::Restart => {
+                panic!("expected fix-skipped-files action")
+            }
+        }
     }
 
     // ========================================================================
@@ -2062,5 +3093,291 @@ mod tests {
         // Both guard conditions true: still Ok(()).
         let result = run_final_interval_test_if_needed("dummy_feature", true, 0);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_collapse_exported_fn_unsafe_regions_rewrites_multi_unsafe_body() {
+        let source = r#"
+use super::*;
+#[unsafe(export_name = "XSUM_benchInternal")]
+pub extern "C" fn XSUM_benchInternal(key_size: usize) -> ::core::ffi::c_int {
+    let buffer = unsafe { calloc(key_size + 19, 1) };
+    if buffer.is_null() {
+        unsafe { exit(12) };
+    }
+    let aligned = unsafe {
+        let ptr = (buffer as *mut u8).add(15);
+        ptr as *const ::core::ffi::c_void
+    };
+    unsafe { XSUM_benchMem(aligned, key_size) };
+    unsafe { free(buffer) };
+    0
+}
+"#;
+        let mut file = syn::parse_file(source).unwrap();
+        let syn::Item::Fn(item_fn) = &mut file.items[1] else {
+            panic!("expected fn item");
+        };
+
+        assert!(collapse_fn_unsafe_regions(item_fn));
+        let rendered = prettyplease::unparse(&file);
+
+        assert!(rendered.contains("unsafe {"));
+        assert_eq!(rendered.matches("unsafe {").count(), 1);
+        assert!(rendered.contains("XSUM_benchInternal"));
+        assert!(!rendered.contains("let buffer = unsafe"));
+        assert!(!rendered.contains("unsafe { calloc"));
+        assert!(!rendered.contains("unsafe { exit"));
+        assert!(rendered.contains("XSUM_benchMem"));
+        assert!(rendered.contains("free(buffer)"));
+    }
+
+    #[test]
+    fn test_collapse_exported_fn_unsafe_regions_skips_single_unsafe_call() {
+        let source = r#"
+use super::*;
+#[unsafe(export_name = "XSUM_autox86")]
+pub extern "C" fn XSUM_autox86() -> *const ::core::ffi::c_char {
+    let vec_version: ::core::ffi::c_int = unsafe { XXH_featureTest() };
+    match vec_version {
+        0 => b"scalar\0".as_ptr() as *const ::core::ffi::c_char,
+        _ => b"avx\0".as_ptr() as *const ::core::ffi::c_char,
+    }
+}
+"#;
+        let mut file = syn::parse_file(source).unwrap();
+        let syn::Item::Fn(item_fn) = &mut file.items[1] else {
+            panic!("expected fn item");
+        };
+
+        assert!(!collapse_fn_unsafe_regions(item_fn));
+        let rendered = prettyplease::unparse(&file);
+        assert_eq!(rendered.matches("unsafe {").count(), 1);
+        assert!(rendered.contains("let vec_version: ::core::ffi::c_int = unsafe { XXH_featureTest() };"));
+    }
+
+    #[test]
+    fn test_fix_static_mut_array_pointer_access_rewrites_array_pointer_patterns() {
+        let dir = tempfile::tempdir().unwrap();
+        let rs_file = dir.path().join("fun_test.rs");
+        std::fs::write(
+            &rs_file,
+            r#"use super::*;
+pub unsafe extern "C" fn test() {
+    XSUM_fillTestBuffer((&raw mut g_benchSecretBuf).as_mut_ptr(), core::mem::size_of_val(&g_benchSecretBuf));
+}"#,
+        )
+        .unwrap();
+
+        let build_error = r#"error[E0658]: use of unstable library feature `array_ptr_get`
+  --> src/fun_test.rs:2:37
+   |
+2  |     (&raw mut g_benchSecretBuf).as_mut_ptr(),
+   |                                 ^^^^^^^^^^
+error[E0599]: no method named `len` found for raw pointer `*const [u8; 136]` in the current scope"#;
+
+        assert!(try_fix_static_mut_array_pointer_access(&rs_file, build_error).unwrap());
+        let updated = std::fs::read_to_string(&rs_file).unwrap();
+        assert!(updated.contains("::core::ptr::addr_of_mut!(g_benchSecretBuf).cast()"));
+        assert!(updated.contains("136"));
+        assert!(!updated.contains("as_mut_ptr()"));
+        assert!(!updated.contains("size_of_val(&g_benchSecretBuf)"));
+    }
+
+    #[test]
+    fn test_fix_static_mut_array_pointer_access_rewrites_len_pattern() {
+        let dir = tempfile::tempdir().unwrap();
+        let rs_file = dir.path().join("fun_test.rs");
+        std::fs::write(
+            &rs_file,
+            r#"use super::*;
+pub unsafe extern "C" fn test() {
+    XSUM_fillTestBuffer(g_benchSecretBuf.as_mut_ptr(), g_benchSecretBuf.len());
+}"#,
+        )
+        .unwrap();
+
+        let build_error = r#"error: creating a mutable reference to mutable static
+error: creating a shared reference to mutable static
+error[E0599]: no method named `len` found for raw pointer `*const [u8; 136]` in the current scope"#;
+
+        assert!(try_fix_static_mut_array_pointer_access(&rs_file, build_error).unwrap());
+        let updated = std::fs::read_to_string(&rs_file).unwrap();
+        assert!(updated.contains("::core::ptr::addr_of_mut!(g_benchSecretBuf).cast()"));
+        assert!(updated.contains(", 136)"));
+    }
+
+    #[test]
+    fn test_fix_c_string_slice_pointer_cast_simplifies_weird_assert_arg() {
+        let dir = tempfile::tempdir().unwrap();
+        let rs_file = dir.path().join("fun_test.rs");
+        std::fs::write(
+            &rs_file,
+            r#"use super::*;
+pub unsafe extern "C" fn test() {
+    __assert_fail(c"a".as_ptr(), c"b".as_ptr(), 1, unsafe { &c"foo".as_ptr() as *const [::core::ffi::c_char] }.as_ptr());
+}"#,
+        )
+        .unwrap();
+
+        let build_error = "error[E0658]: use of unstable library feature `slice_ptr_get`";
+        assert!(try_fix_c_string_slice_pointer_cast(&rs_file, build_error).unwrap());
+        let updated = std::fs::read_to_string(&rs_file).unwrap();
+        assert!(updated.contains("c\"foo\".as_ptr()"));
+        assert!(!updated.contains("*const [::core::ffi::c_char]"));
+    }
+
+    #[test]
+    fn test_fix_option_fn_unwrap_mismatch_removes_unwrap() {
+        let dir = tempfile::tempdir().unwrap();
+        let rs_file = dir.path().join("fun_test.rs");
+        std::fs::write(
+            &rs_file,
+            r#"use super::*;
+pub unsafe extern "C" fn test(hashFuncID: usize) {
+    XSUM_benchHash(g_hashesToBench[hashFuncID].func.unwrap(), c"name".as_ptr(), 1, ::core::ptr::null(), 0);
+}"#,
+        )
+        .unwrap();
+
+        let build_error = r#"error[E0308]: mismatched types
+expected enum `Option<unsafe extern "C" fn(*const c_void, usize, u32) -> u32>`
+found fn pointer"#;
+        assert!(try_fix_option_fn_unwrap_mismatch(&rs_file, build_error).unwrap());
+        let updated = std::fs::read_to_string(&rs_file).unwrap();
+        assert!(updated.contains("g_hashesToBench[hashFuncID].func,"));
+        assert!(!updated.contains(".unwrap()"));
+    }
+
+    #[test]
+    fn test_revert_failed_file_to_empty_clears_non_empty_file() {
+        let temp_dir = tempdir().unwrap();
+        let rs_file = temp_dir.path().join("fun_example.rs");
+        fs::write(&rs_file, "pub fn broken() -> i32 { nope }\n").unwrap();
+
+        revert_failed_file_to_empty(&rs_file).unwrap();
+
+        let content = fs::read_to_string(&rs_file).unwrap();
+        assert!(content.is_empty());
+    }
+
+    #[test]
+    fn test_revert_failed_file_to_empty_preserves_empty_file() {
+        let temp_dir = tempdir().unwrap();
+        let rs_file = temp_dir.path().join("fun_example.rs");
+        fs::write(&rs_file, "").unwrap();
+
+        revert_failed_file_to_empty(&rs_file).unwrap();
+
+        let metadata = fs::metadata(&rs_file).unwrap();
+        assert_eq!(metadata.len(), 0);
+    }
+
+    #[test]
+    #[serial]
+    fn test_stash_skipped_file_for_later_writes_stash_and_clears_source() {
+        let (_temp_dir, _guard, feature_root, rust_dir) = create_temp_feature_workspace("default");
+        let rs_file = rust_dir.join("src").join("fun_example.rs");
+        fs::write(&rs_file, "pub fn kept() {}\n").unwrap();
+
+        stash_skipped_file_for_later("default", "src/fun_example.rs", &rs_file).unwrap();
+
+        assert_eq!(fs::metadata(&rs_file).unwrap().len(), 0);
+        let stash_file = feature_root
+            .join("tmp")
+            .join("skipped-rust-stash")
+            .join("src")
+            .join("fun_example.rs");
+        assert_eq!(fs::read_to_string(stash_file).unwrap(), "pub fn kept() {}\n");
+    }
+
+    #[test]
+    #[serial]
+    fn test_prepare_skipped_file_for_retry_restores_current_and_clears_other_files() {
+        let (_temp_dir, _guard, feature_root, rust_dir) = create_temp_feature_workspace("default");
+        let current = rust_dir.join("src").join("fun_current.rs");
+        let other = rust_dir.join("src").join("fun_other.rs");
+        fs::write(&current, "").unwrap();
+        fs::write(&other, "pub fn other() {}\n").unwrap();
+
+        let stash_file = feature_root
+            .join("tmp")
+            .join("skipped-rust-stash")
+            .join("src")
+            .join("fun_current.rs");
+        fs::create_dir_all(stash_file.parent().unwrap()).unwrap();
+        fs::write(&stash_file, "pub fn current() {}\n").unwrap();
+
+        let mode = prepare_skipped_file_for_retry(
+            "default",
+            &rust_dir,
+            "src/fun_current.rs",
+            &[
+                "src/fun_current.rs".to_string(),
+                "src/fun_other.rs".to_string(),
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(mode, TranslationInputMode::ReuseExistingRust);
+        assert_eq!(fs::read_to_string(&current).unwrap(), "pub fn current() {}\n");
+        assert_eq!(fs::metadata(&other).unwrap().len(), 0);
+        let other_stash = feature_root
+            .join("tmp")
+            .join("skipped-rust-stash")
+            .join("src")
+            .join("fun_other.rs");
+        assert_eq!(fs::read_to_string(other_stash).unwrap(), "pub fn other() {}\n");
+    }
+
+    #[test]
+    #[serial]
+    fn test_prepare_skipped_file_for_retry_uses_c_translation_for_empty_current() {
+        let (_temp_dir, _guard, _feature_root, rust_dir) = create_temp_feature_workspace("default");
+        let current = rust_dir.join("src").join("fun_current.rs");
+        fs::write(&current, "").unwrap();
+
+        let mode = prepare_skipped_file_for_retry(
+            "default",
+            &rust_dir,
+            "src/fun_current.rs",
+            &["src/fun_current.rs".to_string()],
+        )
+        .unwrap();
+
+        assert_eq!(mode, TranslationInputMode::TranslateFromC);
+        assert_eq!(fs::metadata(&current).unwrap().len(), 0);
+    }
+
+    #[test]
+    #[serial]
+    fn test_background_failed_file_isolation_stashes_and_restores_failed_files() {
+        let (_temp_dir, _guard, feature_root, rust_dir) = create_temp_feature_workspace("default");
+        let failed = rust_dir.join("src").join("fun_failed.rs");
+        fs::write(&failed, "pub fn failed() {}\n").unwrap();
+
+        let mut stats = util::TranslationStats::new();
+        stats.record_file_translation_failed("src/fun_failed.rs".to_string());
+
+        let isolation = BackgroundFailedFileIsolation::activate(
+            "default",
+            &rust_dir,
+            &["src/fun_current.rs".to_string()],
+            &stats,
+        )
+        .unwrap();
+
+        assert_eq!(fs::metadata(&failed).unwrap().len(), 0);
+        let stash_file = feature_root
+            .join("tmp")
+            .join("skipped-rust-stash")
+            .join("src")
+            .join("fun_failed.rs");
+        assert_eq!(fs::read_to_string(&stash_file).unwrap(), "pub fn failed() {}\n");
+
+        isolation.restore().unwrap();
+
+        assert_eq!(fs::read_to_string(&failed).unwrap(), "pub fn failed() {}\n");
+        assert!(!stash_file.exists());
     }
 }

@@ -71,15 +71,22 @@ fn get_translate_script_full_path() -> Result<PathBuf> {
     Ok(translate_script_dir.join("translate_and_fix.py"))
 }
 
-fn find_python_interpreter() -> Result<&'static str> {
+fn find_python_interpreter() -> Result<String> {
+    if let Ok(c2rust_home) = std::env::var("C2RUST_HOME") {
+        let candidate = PathBuf::from(c2rust_home).join("bin").join("python");
+        if candidate.is_file() && Command::new(&candidate).arg("--version").output().is_ok() {
+            return Ok(candidate.to_string_lossy().into_owned());
+        }
+    }
+
     for candidate in ["python3", "python"] {
         if Command::new(candidate).arg("--version").output().is_ok() {
-            return Ok(candidate);
+            return Ok(candidate.to_string());
         }
     }
 
     anyhow::bail!(
-        "Neither `python3` nor `python` is available in PATH. Please install Python 3 or expose one of these commands."
+        "No usable Python interpreter found. Tried C2RUST_HOME/bin/python first, then `python` and `python3` from PATH."
     )
 }
 
@@ -392,7 +399,7 @@ pub fn translate_c_to_rust(
         println!(
             "│ {} {} {} --config {} --type {} --c_code {} --output {} --rusttype {}",
             "→".bright_blue(),
-            python.bright_blue(),
+            python.as_str().bright_blue(),
             script_str.dimmed(),
             config_str.dimmed(),
             file_type.bright_yellow(),
@@ -404,7 +411,7 @@ pub fn translate_c_to_rust(
         println!(
             "│ {} {} {} --config {} --type {} --c_code {} --output {}",
             "→".bright_blue(),
-            python.bright_blue(),
+            python.as_str().bright_blue(),
             script_str.dimmed(),
             config_str.dimmed(),
             file_type.bright_yellow(),
@@ -430,7 +437,7 @@ pub fn translate_c_to_rust(
         args.push(rt.as_str());
     }
 
-    let status = Command::new(python)
+    let status = Command::new(&python)
         .args(&args)
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
@@ -576,7 +583,7 @@ pub fn fix_translation_error(
     if suggestion_exists {
         println!("│ {} {} {} --config {} --type syntax_fix --c_code {} --rust_code {} --output {} --error {} --suggestion {}",
             "→".yellow(),
-            python.yellow(),
+            python.as_str().yellow(),
             script_str.dimmed(),
             config_str.dimmed(),
             c_file_str.bright_yellow(),
@@ -587,7 +594,7 @@ pub fn fix_translation_error(
     } else {
         println!("│ {} {} {} --config {} --type syntax_fix --c_code {} --rust_code {} --output {} --error {}",
             "→".yellow(),
-            python.yellow(),
+            python.as_str().yellow(),
             script_str.dimmed(),
             config_str.dimmed(),
             c_file_str.bright_yellow(),
@@ -607,7 +614,7 @@ pub fn fix_translation_error(
         suggestion_str,
     );
 
-    let status = Command::new(python)
+    let status = Command::new(&python)
         .args(&args)
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
@@ -751,6 +758,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_find_python_interpreter_prefers_python3() {
+        let home_guard = EnvVarGuard::new("C2RUST_HOME");
         let path_guard = EnvVarGuard::new("PATH");
         let temp_dir = tempfile::tempdir().unwrap();
         let python3_path = temp_dir.path().join("python3");
@@ -762,9 +770,41 @@ mod tests {
             perms.set_mode(0o755);
             std::fs::set_permissions(&python3_path, perms).unwrap();
         }
+        home_guard.remove();
         path_guard.set(temp_dir.path().to_str().unwrap());
 
         assert_eq!(find_python_interpreter().unwrap(), "python3");
+    }
+
+    #[test]
+    #[serial]
+    fn test_find_python_interpreter_prefers_c2rust_home_python() {
+        let home_guard = EnvVarGuard::new("C2RUST_HOME");
+        let path_guard = EnvVarGuard::new("PATH");
+        let temp_dir = tempfile::tempdir().unwrap();
+        let bin_dir = temp_dir.path().join("bin");
+        std::fs::create_dir_all(&bin_dir).unwrap();
+        let python_path = bin_dir.join("python");
+        std::fs::write(&python_path, "#!/bin/sh\nexit 0\n").unwrap();
+        let python3_path = temp_dir.path().join("python3");
+        std::fs::write(&python3_path, "#!/bin/sh\nexit 0\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for path in [&python_path, &python3_path] {
+                let mut perms = std::fs::metadata(path).unwrap().permissions();
+                perms.set_mode(0o755);
+                std::fs::set_permissions(path, perms).unwrap();
+            }
+        }
+
+        home_guard.set(temp_dir.path().to_str().unwrap());
+        path_guard.set(temp_dir.path().to_str().unwrap());
+
+        assert_eq!(
+            find_python_interpreter().unwrap(),
+            python_path.to_string_lossy()
+        );
     }
 
     #[test]

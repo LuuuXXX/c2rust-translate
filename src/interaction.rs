@@ -63,8 +63,9 @@ pub enum SkippedFilesChoice {
 /// 发现已有翻译进度时的用户选择
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ContinueChoice {
-    Continue, // 继续之前的进度
-    Restart,  // 开始新的翻译会话
+    Continue,        // 继续之前的进度
+    Restart,         // 开始新的翻译会话
+    FixSkippedFiles, // 修复上次运行中被跳过的文件
 }
 
 /// 测试配置缺失时的用户选择
@@ -76,6 +77,18 @@ pub enum TestConfigChoice {
 
 fn has_interactive_terminal() -> bool {
     std::io::stdin().is_terminal() && std::io::stdout().is_terminal()
+}
+
+fn default_compile_success_choice_without_tty(context: &str) -> CompileSuccessChoice {
+    println!(
+        "│ {}",
+        format!(
+            "No TTY detected; {} by default because compilation already succeeded.",
+            context
+        )
+        .yellow()
+    );
+    CompileSuccessChoice::Accept
 }
 
 /// 统一的失败场景提示函数
@@ -358,6 +371,12 @@ pub fn prompt_compile_success_choice() -> Result<CompileSuccessChoice> {
         "Exit (abort the translation process)",
     ];
 
+    if !has_interactive_terminal() {
+        return Ok(default_compile_success_choice_without_tty(
+            "accepting this translation",
+        ));
+    }
+
     let choice = Select::new("What would you like to do?", options.clone())
         .with_vim_mode(true)
         .prompt()
@@ -402,6 +421,12 @@ pub fn prompt_build_success_tests_skipped_choice() -> Result<CompileSuccessChoic
         "Exit (abort the translation process)",
     ];
 
+    if !has_interactive_terminal() {
+        return Ok(default_compile_success_choice_without_tty(
+            "accepting this translation with skipped tests",
+        ));
+    }
+
     let choice = Select::new("What would you like to do?", options.clone())
         .with_vim_mode(true)
         .prompt()
@@ -445,6 +470,12 @@ pub fn prompt_build_success_tests_deferred_choice() -> Result<CompileSuccessChoi
         "Manual fix (edit the file with VIM, then run full build & tests)",
         "Exit (abort the translation process)",
     ];
+
+    if !has_interactive_terminal() {
+        return Ok(default_compile_success_choice_without_tty(
+            "accepting this translation with deferred tests",
+        ));
+    }
 
     let choice = Select::new("What would you like to do?", options.clone())
         .with_vim_mode(true)
@@ -521,6 +552,14 @@ pub fn prompt_compile_failure_choice() -> Result<FailureChoice> {
         "Exit (abort the translation process)",
     ];
 
+    if !has_interactive_terminal() {
+        println!(
+            "│ {}",
+            "No TTY detected; defaulting to Skip and continuing.".yellow()
+        );
+        return Ok(FailureChoice::Skip);
+    }
+
     let choice = Select::new("Select an option:", options.clone())
         .with_vim_mode(true)
         .prompt()
@@ -556,6 +595,14 @@ pub fn prompt_build_failure_choice() -> Result<FailureChoice> {
         "Manual fix (edit the file with VIM)",
         "Exit (abort the translation process)",
     ];
+
+    if !has_interactive_terminal() {
+        println!(
+            "│ {}",
+            "No TTY detected; defaulting to Skip and continuing.".yellow()
+        );
+        return Ok(FailureChoice::Skip);
+    }
 
     let choice = Select::new("Select an option:", options.clone())
         .with_vim_mode(true)
@@ -617,12 +664,28 @@ pub fn prompt_skipped_files_choice(skipped_files: &[String]) -> Result<SkippedFi
     }
 }
 
-/// 询问用户是否继续之前的翻译进度或开始新的会话
-pub fn prompt_continue_or_restart() -> Result<ContinueChoice> {
-    let options = vec![
+fn build_resume_options(has_skipped_files: bool) -> Vec<&'static str> {
+    let mut options = vec![
         "Continue previous progress (resume from where you left off)",
         "Start fresh (clear all progress)",
     ];
+    if has_skipped_files {
+        options.push("Fix skipped files (attempt to translate skipped files from the previous run)");
+    }
+    options
+}
+
+/// 询问用户是否继续之前的翻译进度、重新开始，或修复之前跳过的文件
+pub fn prompt_continue_or_restart(has_skipped_files: bool) -> Result<ContinueChoice> {
+    let options = build_resume_options(has_skipped_files);
+
+    if !has_interactive_terminal() {
+        println!(
+            "{}",
+            "No TTY detected; continuing previous progress by default.".yellow()
+        );
+        return Ok(ContinueChoice::Continue);
+    }
 
     let choice = Select::new("What would you like to do?", options.clone())
         .with_vim_mode(true)
@@ -636,6 +699,7 @@ pub fn prompt_continue_or_restart() -> Result<ContinueChoice> {
     {
         0 => Ok(ContinueChoice::Continue),
         1 => Ok(ContinueChoice::Restart),
+        2 if has_skipped_files => Ok(ContinueChoice::FixSkippedFiles),
         _ => unreachable!(),
     }
 }
@@ -730,7 +794,41 @@ mod tests {
     fn test_continue_choice_variants() {
         assert_eq!(ContinueChoice::Continue, ContinueChoice::Continue);
         assert_eq!(ContinueChoice::Restart, ContinueChoice::Restart);
+        assert_eq!(ContinueChoice::FixSkippedFiles, ContinueChoice::FixSkippedFiles);
         assert_ne!(ContinueChoice::Continue, ContinueChoice::Restart);
+    }
+
+    #[test]
+    fn test_build_resume_options_without_skipped_files() {
+        let options = build_resume_options(false);
+        assert_eq!(
+            options,
+            vec![
+                "Continue previous progress (resume from where you left off)",
+                "Start fresh (clear all progress)",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_build_resume_options_with_skipped_files() {
+        let options = build_resume_options(true);
+        assert_eq!(
+            options,
+            vec![
+                "Continue previous progress (resume from where you left off)",
+                "Start fresh (clear all progress)",
+                "Fix skipped files (attempt to translate skipped files from the previous run)",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_default_compile_success_choice_without_tty() {
+        assert_eq!(
+            default_compile_success_choice_without_tty("accepting this translation"),
+            CompileSuccessChoice::Accept
+        );
     }
 
     #[test]

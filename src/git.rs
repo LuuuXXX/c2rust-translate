@@ -2,6 +2,26 @@ use crate::util;
 use anyhow::{Context, Result};
 use std::process::Command;
 
+/// Return whether the dedicated `.c2rust/` tracking repo currently has
+/// uncommitted changes.
+pub fn git_has_uncommitted_changes() -> Result<bool> {
+    let project_root = util::find_project_root()?;
+    let c2rust_dir = project_root.join(".c2rust");
+
+    let output = Command::new("git")
+        .current_dir(&c2rust_dir)
+        .args(["status", "--porcelain"])
+        .output()
+        .context("Failed to inspect .c2rust git status")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("git status --porcelain failed: {}", stderr);
+    }
+
+    Ok(!output.stdout.is_empty())
+}
+
 /// Commit changes with a message.
 /// Stages all pending changes in the `.c2rust/` directory (which is a dedicated
 /// translation-tracking git repo) and creates a commit.  Because `.c2rust/` is

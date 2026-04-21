@@ -971,9 +971,15 @@ pub(crate) fn handle_build_failure_interactive(
                                             feature, file_type, rs_file, e, skip_test,
                                         );
                                     }
-                                    interaction::FailureChoice::Skip
-                                    | interaction::FailureChoice::FixOtherFile => {
-                                        unreachable!("Skip and FixOtherFile are not offered in this context")
+                                    interaction::FailureChoice::Skip => {
+                                        return Err(anyhow::Error::from(
+                                            crate::verification::SkipFileSignal,
+                                        ));
+                                    }
+                                    interaction::FailureChoice::FixOtherFile => {
+                                        unreachable!(
+                                            "FixOtherFile is not offered in this context"
+                                        )
                                     }
                                     interaction::FailureChoice::Exit => {
                                         return Err(e).context(
@@ -995,9 +1001,11 @@ pub(crate) fn handle_build_failure_interactive(
                 }
             }
         }
-        interaction::FailureChoice::Skip
-        | interaction::FailureChoice::FixOtherFile => {
-            unreachable!("Skip and FixOtherFile are not offered in this context")
+        interaction::FailureChoice::Skip => {
+            Err(anyhow::Error::from(crate::verification::SkipFileSignal))
+        }
+        interaction::FailureChoice::FixOtherFile => {
+            unreachable!("FixOtherFile is not offered in this context")
         }
         interaction::FailureChoice::Exit => {
             println!("│");

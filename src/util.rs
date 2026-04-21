@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use walkdir::WalkDir;
 
 // ============================================================================
 // Constants
@@ -67,6 +68,7 @@ impl TranslationStats {
         had_restart: bool,
         fix_attempts: usize,
     ) {
+        let file_name = canonicalize_stats_file_key(&file_name);
         self.total_files += 1;
 
         debug_assert!(
@@ -97,6 +99,7 @@ impl TranslationStats {
 
     /// 记录文件被跳过
     pub fn record_file_skipped(&mut self, file_name: String) {
+        let file_name = canonicalize_stats_file_key(&file_name);
         if !self.skipped_files.contains(&file_name) {
             self.skipped_files.push(file_name);
         }
@@ -104,8 +107,34 @@ impl TranslationStats {
 
     /// 记录翻译命令失败（与用户主动跳过区分）
     pub fn record_file_translation_failed(&mut self, file_name: String) {
+        let file_name = canonicalize_stats_file_key(&file_name);
         if !self.translation_failed_files.contains(&file_name) {
             self.translation_failed_files.push(file_name);
+        }
+    }
+
+    /// 为定点重跑清理单个目标的历史状态。
+    ///
+    /// 该操作不会影响其它文件的统计，只移除当前目标在
+    /// `skipped_files` / `translation_failed_files` / `file_attempts`
+    /// 中的历史痕迹，并同步调整聚合成功计数。
+    pub fn clear_target_history(&mut self, file_name: &str) {
+        let canonical_name = canonicalize_stats_file_key(file_name);
+        self.skipped_files.retain(|item| item != &canonical_name);
+        self.translation_failed_files
+            .retain(|item| item != &canonical_name);
+
+        if let Some(previous) = self.file_attempts.remove(&canonical_name) {
+            self.total_files = self.total_files.saturating_sub(1);
+            match previous.translation_attempts {
+                1 => self.success_first_try = self.success_first_try.saturating_sub(1),
+                2 => self.success_retry_1 = self.success_retry_1.saturating_sub(1),
+                3 => self.success_retry_2 = self.success_retry_2.saturating_sub(1),
+                _ => self.success_retry_3_plus = self.success_retry_3_plus.saturating_sub(1),
+            }
+            if previous.had_restart {
+                self.restart_count = self.restart_count.saturating_sub(1);
+            }
         }
     }
 
@@ -268,8 +297,9 @@ impl TranslationStats {
         let path = Self::get_stats_file_path(feature)?;
         match std::fs::read_to_string(&path) {
             Ok(contents) => {
-                let stats: Self = serde_json::from_str(&contents)
+                let mut stats: Self = serde_json::from_str(&contents)
                     .with_context(|| format!("Failed to parse stats file: {}", path.display()))?;
+                let _ = stats.normalize_file_keys();
                 Ok(Some(stats))
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -293,6 +323,63 @@ impl TranslationStats {
         Ok(())
     }
 
+    /// Reconcile persisted stats with the current workspace state.
+    ///
+    /// This is intentionally conservative:
+    /// - only non-empty translatable `fun_*.rs` / `var_*.rs` files are considered
+    /// - existing per-file stats are preserved
+    /// - newly discovered completed files are backfilled as first-try successes
+    ///
+    /// This keeps `translation_stats.json` usable after workspace migration,
+    /// partial metadata loss, or flows where translated files already exist on disk
+    /// but stats were not written correctly.
+    pub fn reconcile_with_workspace(&mut self, rust_dir: &Path) -> Result<bool> {
+        let mut discovered = Vec::new();
+        for entry in WalkDir::new(rust_dir) {
+            let entry = entry?;
+            if !entry.file_type().is_file() {
+                continue;
+            }
+            let path = entry.path();
+            if path.extension().is_none_or(|ext| ext != "rs") {
+                continue;
+            }
+            let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            if !stem.starts_with("fun_") && !stem.starts_with("var_") {
+                continue;
+            }
+            if entry.metadata()?.len() == 0 {
+                continue;
+            }
+            let rel = path
+                .strip_prefix(rust_dir)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .to_string();
+            discovered.push(canonicalize_stats_file_key(&rel));
+        }
+        discovered.sort();
+        discovered.dedup();
+
+        let mut changed = false;
+        for file_name in discovered {
+            if self.file_attempts.contains_key(&file_name)
+                || self.skipped_files.iter().any(|item| item == &file_name)
+                || self
+                    .translation_failed_files
+                    .iter()
+                    .any(|item| item == &file_name)
+            {
+                continue;
+            }
+            self.record_file_completion(file_name, 1, false, 0);
+            changed = true;
+        }
+        Ok(changed)
+    }
+
     /// 清空统计文件（开始新会话）
     pub fn clear_stats_file(feature: &str) -> Result<()> {
         let path = Self::get_stats_file_path(feature)?;
@@ -313,6 +400,76 @@ impl TranslationStats {
     /// statistics API for future use (e.g., progress visualisation, report generation).
     pub fn get_completed_files(&self) -> Vec<String> {
         self.file_attempts.keys().cloned().collect()
+    }
+
+    pub(crate) fn normalize_file_keys(&mut self) -> bool {
+        let before = serde_json::to_string(self).ok();
+        let previous_attempts = std::mem::take(&mut self.file_attempts);
+        let previous_skipped = std::mem::take(&mut self.skipped_files);
+        let previous_failed = std::mem::take(&mut self.translation_failed_files);
+
+        self.total_files = 0;
+        self.success_first_try = 0;
+        self.success_retry_1 = 0;
+        self.success_retry_2 = 0;
+        self.success_retry_3_plus = 0;
+        self.restart_count = 0;
+
+        for (file_name, stat) in previous_attempts {
+            let canonical_name = canonicalize_stats_file_key(&file_name);
+            match self.file_attempts.entry(canonical_name) {
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(stat);
+                }
+                std::collections::hash_map::Entry::Occupied(mut entry) => {
+                    let existing = entry.get_mut();
+                    if stat.translation_attempts > existing.translation_attempts
+                        || (stat.translation_attempts == existing.translation_attempts
+                            && stat.fix_attempts > existing.fix_attempts)
+                    {
+                        existing.translation_attempts = stat.translation_attempts;
+                        existing.fix_attempts = stat.fix_attempts;
+                    }
+                    existing.had_restart |= stat.had_restart;
+                }
+            }
+        }
+
+        for stat in self.file_attempts.values() {
+            self.total_files += 1;
+            match stat.translation_attempts {
+                1 => self.success_first_try += 1,
+                2 => self.success_retry_1 += 1,
+                3 => self.success_retry_2 += 1,
+                _ => self.success_retry_3_plus += 1,
+            }
+            if stat.had_restart {
+                self.restart_count += 1;
+            }
+        }
+
+        for file_name in previous_skipped {
+            self.record_file_skipped(file_name);
+        }
+        for file_name in previous_failed {
+            self.record_file_translation_failed(file_name);
+        }
+
+        let after = serde_json::to_string(self).ok();
+        before != after
+    }
+}
+
+fn canonicalize_stats_file_key(file_name: &str) -> String {
+    let normalized = file_name.replace('\\', "/");
+    let trimmed = normalized.trim_start_matches("./").trim_start_matches('/');
+    if trimmed.is_empty() {
+        return "src".to_string();
+    }
+    if trimmed.starts_with("src/") || trimmed == "src" {
+        trimmed.to_string()
+    } else {
+        format!("src/{}", trimmed)
     }
 }
 
@@ -671,7 +828,7 @@ mod tests {
         assert_eq!(stats.success_retry_1, 0);
         assert_eq!(stats.restart_count, 0);
 
-        let entry = stats.file_attempts.get("foo.rs").unwrap();
+        let entry = stats.file_attempts.get("src/foo.rs").unwrap();
         assert_eq!(entry.translation_attempts, 1);
         assert_eq!(entry.fix_attempts, 0);
         assert!(!entry.had_restart);
@@ -686,7 +843,7 @@ mod tests {
         assert_eq!(stats.success_first_try, 0);
         assert_eq!(stats.success_retry_1, 1);
 
-        let entry = stats.file_attempts.get("bar.rs").unwrap();
+        let entry = stats.file_attempts.get("src/bar.rs").unwrap();
         assert_eq!(entry.translation_attempts, 2);
         assert_eq!(entry.fix_attempts, 3);
     }
@@ -714,7 +871,7 @@ mod tests {
 
         assert_eq!(stats.restart_count, 1);
 
-        let entry = stats.file_attempts.get("restart.rs").unwrap();
+        let entry = stats.file_attempts.get("src/restart.rs").unwrap();
         assert!(entry.had_restart);
     }
 
@@ -753,11 +910,11 @@ mod tests {
 
         stats.record_file_skipped("foo.rs".to_string());
         assert_eq!(stats.skipped_files.len(), 1);
-        assert_eq!(stats.skipped_files[0], "foo.rs");
+        assert_eq!(stats.skipped_files[0], "src/foo.rs");
 
         stats.record_file_skipped("bar.rs".to_string());
         assert_eq!(stats.skipped_files.len(), 2);
-        assert_eq!(stats.skipped_files[1], "bar.rs");
+        assert_eq!(stats.skipped_files[1], "src/bar.rs");
 
         // Duplicate entries should not be added
         stats.record_file_skipped("foo.rs".to_string());
@@ -772,7 +929,7 @@ mod tests {
 
         stats.record_file_translation_failed("bad.rs".to_string());
         assert_eq!(stats.translation_failed_files.len(), 1);
-        assert_eq!(stats.translation_failed_files[0], "bad.rs");
+        assert_eq!(stats.translation_failed_files[0], "src/bad.rs");
 
         // Duplicate entries should not be added
         stats.record_file_translation_failed("bad.rs".to_string());
@@ -796,7 +953,7 @@ mod tests {
 
         let mut completed = stats.get_completed_files();
         completed.sort();
-        assert_eq!(completed, vec!["a.rs", "b.rs"]);
+        assert_eq!(completed, vec!["src/a.rs", "src/b.rs"]);
     }
 
     #[test]
@@ -844,12 +1001,113 @@ mod tests {
         assert_eq!(restored.total_files, 1);
         assert_eq!(restored.success_retry_2, 1);
         assert_eq!(restored.restart_count, 1);
-        assert_eq!(restored.skipped_files, vec!["y.rs"]);
-        assert_eq!(restored.translation_failed_files, vec!["z.rs"]);
+        assert_eq!(restored.skipped_files, vec!["src/y.rs"]);
+        assert_eq!(restored.translation_failed_files, vec!["src/z.rs"]);
 
-        let entry = restored.file_attempts.get("x.rs").unwrap();
+        let entry = restored.file_attempts.get("src/x.rs").unwrap();
         assert_eq!(entry.translation_attempts, 3);
         assert_eq!(entry.fix_attempts, 7);
         assert!(entry.had_restart);
+    }
+
+    #[test]
+    fn test_reconcile_with_workspace_backfills_nonempty_translatable_files() {
+        let temp_dir = tempdir().unwrap();
+        let rust_dir = temp_dir.path().join("rust").join("src");
+        fs::create_dir_all(rust_dir.join("mod_a")).unwrap();
+        fs::write(rust_dir.join("mod_a").join("fun_done.rs"), "pub fn done() {}\n").unwrap();
+        fs::write(rust_dir.join("mod_a").join("var_done.rs"), "pub static X: i32 = 1;\n").unwrap();
+        fs::write(rust_dir.join("mod_a").join("fun_empty.rs"), "").unwrap();
+        fs::write(rust_dir.join("mod_a").join("decl_only.rs"), "extern \"C\" {}\n").unwrap();
+
+        let mut stats = TranslationStats::new();
+        let changed = stats.reconcile_with_workspace(&rust_dir).unwrap();
+
+        assert!(changed);
+        assert_eq!(stats.total_files, 2);
+        assert_eq!(stats.success_first_try, 2);
+        assert!(stats.file_attempts.contains_key("src/mod_a/fun_done.rs"));
+        assert!(stats.file_attempts.contains_key("src/mod_a/var_done.rs"));
+        assert!(!stats.file_attempts.contains_key("src/mod_a/fun_empty.rs"));
+        assert!(!stats.file_attempts.contains_key("src/mod_a/decl_only.rs"));
+    }
+
+    #[test]
+    fn test_reconcile_with_workspace_preserves_existing_records() {
+        let temp_dir = tempdir().unwrap();
+        let rust_dir = temp_dir.path().join("rust").join("src");
+        fs::create_dir_all(rust_dir.join("mod_a")).unwrap();
+        fs::write(rust_dir.join("mod_a").join("fun_done.rs"), "pub fn done() {}\n").unwrap();
+
+        let mut stats = TranslationStats::new();
+        stats.record_file_completion("src/mod_a/fun_done.rs".to_string(), 2, true, 3);
+
+        let changed = stats.reconcile_with_workspace(&rust_dir).unwrap();
+
+        assert!(!changed);
+        assert_eq!(stats.total_files, 1);
+        assert_eq!(stats.success_retry_1, 1);
+        let entry = stats.file_attempts.get("src/mod_a/fun_done.rs").unwrap();
+        assert_eq!(entry.translation_attempts, 2);
+        assert_eq!(entry.fix_attempts, 3);
+        assert!(entry.had_restart);
+    }
+
+    #[test]
+    fn test_reconcile_with_workspace_merges_legacy_and_canonical_keys() {
+        let temp_dir = tempdir().unwrap();
+        let rust_dir = temp_dir.path().join("rust").join("src");
+        fs::create_dir_all(rust_dir.join("mod_a")).unwrap();
+        fs::write(rust_dir.join("mod_a").join("fun_done.rs"), "pub fn done() {}\n").unwrap();
+
+        let mut stats = TranslationStats::new();
+        stats.file_attempts.insert(
+            "mod_a/fun_done.rs".to_string(),
+            FileAttemptStat {
+                translation_attempts: 2,
+                fix_attempts: 3,
+                had_restart: true,
+            },
+        );
+        stats.normalize_file_keys();
+
+        let changed = stats.reconcile_with_workspace(&rust_dir).unwrap();
+
+        assert!(!changed);
+        assert_eq!(stats.total_files, 1);
+        assert!(stats.file_attempts.contains_key("src/mod_a/fun_done.rs"));
+        assert!(!stats.file_attempts.contains_key("mod_a/fun_done.rs"));
+    }
+
+    #[test]
+    fn test_clear_target_history_clears_legacy_key_via_canonical_target() {
+        let mut stats = TranslationStats::new();
+        stats.file_attempts.insert(
+            "mod_a/fun_done.rs".to_string(),
+            FileAttemptStat {
+                translation_attempts: 1,
+                fix_attempts: 0,
+                had_restart: false,
+            },
+        );
+        stats.skipped_files.push("mod_a/fun_done.rs".to_string());
+        stats.translation_failed_files
+            .push("mod_a/fun_done.rs".to_string());
+        stats.normalize_file_keys();
+
+        stats.clear_target_history("src/mod_a/fun_done.rs");
+
+        assert_eq!(stats.total_files, 0);
+        assert!(stats.file_attempts.is_empty());
+        assert!(stats.skipped_files.is_empty());
+        assert!(stats.translation_failed_files.is_empty());
+    }
+
+    #[test]
+    fn test_canonicalize_stats_file_key_prefixes_src() {
+        assert_eq!(canonicalize_stats_file_key("mod_a/fun_done.rs"), "src/mod_a/fun_done.rs");
+        assert_eq!(canonicalize_stats_file_key("src/mod_a/fun_done.rs"), "src/mod_a/fun_done.rs");
+        assert_eq!(canonicalize_stats_file_key("./mod_a/fun_done.rs"), "src/mod_a/fun_done.rs");
+        assert_eq!(canonicalize_stats_file_key(r"mod_a\fun_done.rs"), "src/mod_a/fun_done.rs");
     }
 }
