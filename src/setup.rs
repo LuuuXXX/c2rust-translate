@@ -66,7 +66,7 @@ pub fn check_and_initialize_feature(feature: &str) -> Result<()> {
             "{}",
             "Feature directory does not exist. Initializing...".yellow()
         );
-        crate::analyzer::initialize_feature(feature)?;
+        crate::builder::initialize_feature(feature)?;
 
         match std::fs::metadata(&rust_dir) {
             Ok(metadata) => {
@@ -120,7 +120,7 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool, skip_
         "═══ 初始化验证（初始化后） ═══".bright_magenta().bold()
     );
 
-    match crate::common_tasks::execute_code_error_check(feature, show_full_output, skip_test) {
+    match crate::pipeline::execute_code_error_check(feature, show_full_output, skip_test) {
         Ok(_) => {
             println!("{}", "✓ 初始化验证完成并已提交".bright_green().bold());
             Ok(())
@@ -153,7 +153,7 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool, skip_
                             return Err(last_error).context("初始化验证失败 - 未识别到特定文件");
                         }
                         // Re-run the check; on success break out, on failure loop again
-                        match crate::common_tasks::execute_code_error_check(
+                        match crate::pipeline::execute_code_error_check(
                             feature,
                             show_full_output,
                             skip_test,

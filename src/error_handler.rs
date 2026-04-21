@@ -283,7 +283,7 @@ pub(crate) fn handle_startup_test_failure_with_files(
 
                 // 应用带有建议的修复
                 let format_progress = |op: &str| format!("Fix startup test failure - {}", op);
-                crate::apply_error_fix(
+                crate::code_rewrite::apply_error_fix(
                     feature,
                     file_type,
                     file,

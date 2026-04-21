@@ -6,7 +6,7 @@
 //! 3. 执行混合构建检查
 //! 4. 执行翻译任务
 
-use crate::{builder, git, hybrid_build, translator};
+use crate::{builder, git, translator};
 use anyhow::{Context, Result};
 use colored::Colorize;
 use std::path::Path;
@@ -76,7 +76,7 @@ pub fn execute_code_warning_check(feature: &str, show_full_output: bool) -> Resu
 /// 2. 执行混合构建构建命令
 /// 3. 执行混合构建测试命令（当 `skip_test` 为 `true` 时跳过）
 pub fn execute_hybrid_build_check(feature: &str, skip_test: bool) -> Result<()> {
-    hybrid_build::execute_hybrid_build_sequence(feature, skip_test).context("混合构建检查失败")
+    builder::execute_hybrid_build_sequence(feature, skip_test).context("混合构建检查失败")
 }
 
 /// 公共任务4：执行翻译任务

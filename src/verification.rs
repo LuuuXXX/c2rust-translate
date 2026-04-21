@@ -1,4 +1,4 @@
-use crate::{analyzer, builder, diff_display, interaction, suggestion, translator};
+use crate::{builder, diff_display, interaction, suggestion, translator};
 use anyhow::{Context, Result};
 use colored::Colorize;
 use std::path::Path;
@@ -57,7 +57,7 @@ enum AutoRetryOutcome {
 /// var is absent, empty, or set to a non-truthy value — falling through to the
 /// interactive prompt.
 fn resolve_auto_retry_outcome(is_last_attempt: bool) -> Option<AutoRetryOutcome> {
-    if !crate::should_auto_retry_on_max_fix_attempts() {
+    if !crate::config::should_auto_retry_on_max_fix_attempts() {
         return None;
     }
     if is_last_attempt {
@@ -144,7 +144,7 @@ where
                 .unwrap_or(file_stem);
             let msg_format_progress = |op: &str| format!("Fixing {} - {}", msg_file_name, op);
             if is_warning {
-                match crate::apply_warning_fix(
+                match crate::code_rewrite::apply_warning_fix(
                     feature,
                     msg_file_type,
                     msg_file,
@@ -161,7 +161,7 @@ where
                     }
                 }
             } else {
-                match crate::apply_error_fix(
+                match crate::code_rewrite::apply_error_fix(
                     feature,
                     msg_file_type,
                     msg_file,
@@ -182,7 +182,7 @@ where
     } else {
         // Fall back to single-file fix
         if is_warning {
-            match crate::apply_warning_fix(
+            match crate::code_rewrite::apply_warning_fix(
                 feature,
                 file_type,
                 rs_file,
@@ -199,7 +199,7 @@ where
                 }
             }
         } else {
-            match crate::apply_error_fix(
+            match crate::code_rewrite::apply_error_fix(
                 feature,
                 file_type,
                 rs_file,
@@ -244,7 +244,7 @@ where
 {
     let mut fix_attempts = 0usize;
     println!("│ {}", "Updating code analysis...".bright_blue());
-    analyzer::update_code_analysis(feature)?;
+    builder::update_code_analysis(feature)?;
     println!("│ {}", "✓ Code analysis updated".bright_green());
     for attempt in 1..=max_error_fix_attempts {
         println!("│");
@@ -301,7 +301,7 @@ where
         }
 
         println!("│ {}", "Updating code analysis...".bright_blue());
-        analyzer::update_code_analysis(feature)?;
+        builder::update_code_analysis(feature)?;
         println!("│ {}", "✓ Code analysis updated".bright_green());
     }
 
@@ -377,7 +377,7 @@ where
         }
 
         println!("│ {}", "Updating code analysis...".bright_blue());
-        analyzer::update_code_analysis(feature)?;
+        builder::update_code_analysis(feature)?;
         println!("│ {}", "✓ Code analysis updated".bright_green());
     }
 

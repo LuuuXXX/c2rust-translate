@@ -1,4 +1,4 @@
-use crate::analyzer;
+
 use crate::util;
 use anyhow::Result;
 use colored::Colorize;
@@ -79,7 +79,7 @@ pub fn execute_hybrid_build_command(feature: &str, command_type: HybridCommandTy
 
     // 首先更新代码分析
     println!("{}", "Updating code analysis...".bright_blue());
-    analyzer::update_code_analysis(feature)?;
+    crate::builder::update_code_analysis(feature)?;
     println!("{}", "✓ Code analysis updated".bright_green());
 
     run_hybrid_command(feature, command_type)
@@ -88,14 +88,14 @@ pub fn execute_hybrid_build_command(feature: &str, command_type: HybridCommandTy
 /// 执行混合构建命令序列（clean + build + test），仅更新一次代码分析
 ///
 /// 相比于对每个命令分别调用 `execute_hybrid_build_command`，此函数只执行一次
-/// `analyzer::update_code_analysis`，避免重复分析开销。
+/// `crate::builder::update_code_analysis`，避免重复分析开销。
 ///
 /// 当 `skip_test` 为 `true` 时跳过测试阶段。
 pub fn execute_hybrid_build_sequence(feature: &str, skip_test: bool) -> Result<()> {
     util::validate_feature_name(feature)?;
 
     println!("{}", "Updating code analysis...".bright_blue());
-    analyzer::update_code_analysis(feature)?;
+    crate::builder::update_code_analysis(feature)?;
     println!("{}", "✓ Code analysis updated".bright_green());
 
     // Clean and Build always run regardless of skip_test: they validate the build itself

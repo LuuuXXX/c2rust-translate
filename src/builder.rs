@@ -1,4 +1,3 @@
-use crate::analyzer;
 use crate::util;
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -415,7 +414,7 @@ pub fn c2rust_clean(feature: &str) -> Result<()> {
     util::validate_feature_name(feature)?;
 
     println!("{}", "Updating code analysis...".bright_blue());
-    analyzer::update_code_analysis(feature)?;
+    update_code_analysis(feature)?;
     println!("{}", "✓ Code analysis updated".bright_green());
 
     let clean_cmd = get_config_value("clean.cmd", feature)?;
@@ -440,7 +439,7 @@ pub fn c2rust_build(feature: &str) -> Result<()> {
     util::validate_feature_name(feature)?;
 
     println!("{}", "Updating code analysis...".bright_blue());
-    analyzer::update_code_analysis(feature)?;
+    update_code_analysis(feature)?;
     println!("{}", "✓ Code analysis updated".bright_green());
 
     println!("{}", "Rebuilding Rust static library for hybrid link...".bright_blue());
@@ -472,7 +471,7 @@ pub fn c2rust_test(feature: &str) -> Result<()> {
     util::validate_feature_name(feature)?;
 
     println!("{}", "Updating code analysis...".bright_blue());
-    analyzer::update_code_analysis(feature)?;
+    update_code_analysis(feature)?;
     println!("{}", "✓ Code analysis updated".bright_green());
 
     let test_cmd = get_config_value("test.cmd", feature)?;
@@ -526,7 +525,7 @@ pub fn run_hybrid_build_interactive(
 
     // 在整个序列开始前统一更新一次代码分析，避免 clean/build/test 各自重复更新
     println!("│ {}", "Updating code analysis...".bright_blue());
-    analyzer::update_code_analysis(feature)?;
+    update_code_analysis(feature)?;
     println!("│ {}", "✓ Code analysis updated".bright_green());
 
     // 执行命令
@@ -571,7 +570,7 @@ pub fn run_hybrid_build_interactive(
             Ok(())
         }
         Err(test_error) => {
-            if crate::should_continue_on_test_error() {
+            if crate::config::should_continue_on_test_error() {
                 println!(
                     "│ {}",
                     format!(
@@ -757,7 +756,7 @@ pub(crate) fn handle_build_failure_interactive(
                 );
 
                 let format_progress = |op: &str| format!("Fix for build failure - {}", op);
-                crate::apply_error_fix(
+                crate::code_rewrite::apply_error_fix(
                     feature,
                     file_type,
                     rs_file,
@@ -1126,7 +1125,7 @@ pub(crate) fn handle_test_failure_interactive(
                 );
 
                 let format_progress = |op: &str| format!("Fix for test failure - {}", op);
-                crate::apply_error_fix(
+                crate::code_rewrite::apply_error_fix(
                     feature,
                     file_type,
                     rs_file,
@@ -1368,7 +1367,7 @@ pub fn run_full_build_and_test_interactive(
         "→ Step 1/4: Updating code analysis and checking Rust code (cargo check)...".bright_blue()
     );
     println!("│ {}", "Updating code analysis...".bright_blue());
-    analyzer::update_code_analysis(feature)?;
+    update_code_analysis(feature)?;
     println!("│ {}", "✓ Code analysis updated".bright_green());
     match cargo_check(feature, true, false) {
         Ok(_) => {
@@ -1437,7 +1436,7 @@ pub fn run_full_build_and_test_interactive(
                 println!("│ {}", "Error details:".red().bold());
                 println!("│ {}", format!("{:#}", e).red());
                 println!("│");
-                if crate::should_continue_on_test_error() {
+                if crate::config::should_continue_on_test_error() {
                     println!(
                         "│ {}",
                         "⚠ Continuing despite test failure (C2RUST_TEST_CONTINUE_ON_ERROR is set)."
@@ -1455,6 +1454,7 @@ pub fn run_full_build_and_test_interactive(
 
 #[cfg(test)]
 mod tests {
+    use super::HybridCommandType;
     /// Test that warning detection recognises `warning[code]:` patterns
     #[test]
     fn test_detect_warning_code_format() {
@@ -1566,4 +1566,209 @@ mod tests {
             .count();
         assert_eq!(count, 1, "rs_file should appear exactly once in the result");
     }
+
+    #[test]
+    fn test_hybrid_command_type_keys() {
+        assert_eq!(HybridCommandType::Clean.cmd_key(), "clean.cmd");
+        assert_eq!(HybridCommandType::Clean.dir_key(), "clean.dir");
+
+        assert_eq!(HybridCommandType::Build.cmd_key(), "build.cmd");
+        assert_eq!(HybridCommandType::Build.dir_key(), "build.dir");
+
+        assert_eq!(HybridCommandType::Test.cmd_key(), "test.cmd");
+        assert_eq!(HybridCommandType::Test.dir_key(), "test.dir");
+    }
+
+    #[test]
+    fn test_hybrid_command_type_as_str() {
+        assert_eq!(HybridCommandType::Clean.as_str(), "clean");
+        assert_eq!(HybridCommandType::Build.as_str(), "build");
+        assert_eq!(HybridCommandType::Test.as_str(), "test");
+    }
+
+    #[test]
+    fn test_needs_ld_preload() {
+        assert!(!HybridCommandType::Clean.needs_ld_preload());
+        assert!(HybridCommandType::Build.needs_ld_preload());
+        assert!(!HybridCommandType::Test.needs_ld_preload());
+    }
 }
+
+// ============================================================================
+// Code Analysis
+// ============================================================================
+
+/// Shared helper: validates the feature name and runs `code_analyse` with the
+/// assembled argument list: `<pre_args...> --feature <feature> <post_args...>`.
+fn run_code_analyse(pre_args: &[&str], feature: &str, post_args: &[&str]) -> anyhow::Result<()> {
+    util::validate_feature_name(feature)?;
+    let project_root = util::find_project_root()?;
+
+    let mut args: Vec<&str> = pre_args.to_vec();
+    args.push("--feature");
+    args.push(feature);
+    args.extend_from_slice(post_args);
+
+    let output = std::process::Command::new("code_analyse")
+        .current_dir(&project_root)
+        .args(&args)
+        .output()
+        .with_context(|| format!("Failed to execute code_analyse {:?}", args))?;
+
+    if !output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!(
+            "code_analyse {:?} failed:\nstdout: {}\nstderr: {}",
+            args,
+            stdout,
+            stderr
+        );
+    }
+
+    Ok(())
+}
+
+/// Initialize code analysis for a feature.
+pub fn initialize_feature(feature: &str) -> anyhow::Result<()> {
+    println!("Running code_analyse --init --feature {}", feature);
+    run_code_analyse(&["--init"], feature, &[])
+}
+
+/// Update code analysis for a feature.
+pub fn update_code_analysis(feature: &str) -> anyhow::Result<()> {
+    run_code_analyse(&["--update"], feature, &[])
+}
+
+/// Notify code_analyse of build success after tests pass.
+pub fn update_code_analysis_build_success(feature: &str) -> anyhow::Result<()> {
+    run_code_analyse(&["--update"], feature, &["--build-success"])
+}
+// ============================================================================
+// Hybrid Build
+// ============================================================================
+
+
+/// 混合构建命令类型
+#[derive(Debug, Clone, Copy)]
+pub enum HybridCommandType {
+    Clean,
+    Build,
+    Test,
+}
+
+impl HybridCommandType {
+    /// 获取命令类型对应的配置键（命令）
+    pub fn cmd_key(&self) -> &'static str {
+        match self {
+            Self::Clean => "clean.cmd",
+            Self::Build => "build.cmd",
+            Self::Test => "test.cmd",
+        }
+    }
+
+    /// 获取命令类型对应的配置键（目录）
+    pub fn dir_key(&self) -> &'static str {
+        match self {
+            Self::Clean => "clean.dir",
+            Self::Build => "build.dir",
+            Self::Test => "test.dir",
+        }
+    }
+
+    /// 获取命令类型的字符串表示
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Clean => "clean",
+            Self::Build => "build",
+            Self::Test => "test",
+        }
+    }
+
+    /// 是否需要设置 LD_PRELOAD
+    pub fn needs_ld_preload(&self) -> bool {
+        matches!(self, Self::Build)
+    }
+}
+
+/// 获取混合构建命令和目录
+///
+/// # 参数
+/// - `feature`: 特性名称
+/// - `command_type`: 命令类型（clean, build, test）
+///
+/// # 返回
+/// - `(cmd, dir)`: 命令字符串和工作目录
+pub fn get_hybrid_build_command(
+    feature: &str,
+    command_type: HybridCommandType,
+) -> Result<(String, String)> {
+    util::validate_feature_name(feature)?;
+
+    let cmd = get_config_value(command_type.cmd_key(), feature)?;
+    let dir = get_config_value(command_type.dir_key(), feature)?;
+
+    Ok((cmd, dir))
+}
+
+/// 执行混合构建命令
+///
+/// # 参数
+/// - `feature`: 特性名称
+/// - `command_type`: 命令类型
+///
+/// # 返回
+/// - `Ok(())`: 命令执行成功
+/// - `Err`: 命令执行失败
+pub fn execute_hybrid_build_command(feature: &str, command_type: HybridCommandType) -> Result<()> {
+    util::validate_feature_name(feature)?;
+
+    // 首先更新代码分析
+    println!("{}", "Updating code analysis...".bright_blue());
+    update_code_analysis(feature)?;
+    println!("{}", "✓ Code analysis updated".bright_green());
+
+    run_hybrid_command(feature, command_type)
+}
+
+/// 执行混合构建命令序列（clean + build + test），仅更新一次代码分析
+///
+/// 相比于对每个命令分别调用 `execute_hybrid_build_command`，此函数只执行一次
+/// `update_code_analysis`，避免重复分析开销。
+///
+/// 当 `skip_test` 为 `true` 时跳过测试阶段。
+pub fn execute_hybrid_build_sequence(feature: &str, skip_test: bool) -> Result<()> {
+    util::validate_feature_name(feature)?;
+
+    println!("{}", "Updating code analysis...".bright_blue());
+    update_code_analysis(feature)?;
+    println!("{}", "✓ Code analysis updated".bright_green());
+
+    // Clean and Build always run regardless of skip_test: they validate the build itself
+    // and must succeed even when the test phase is skipped due to missing test configuration.
+    run_hybrid_command(feature, HybridCommandType::Clean)?;
+    run_hybrid_command(feature, HybridCommandType::Build)?;
+    if skip_test {
+        println!(
+            "{}",
+            "⏭ 跳过测试阶段（测试配置不完整）".bright_yellow()
+        );
+        return Ok(());
+    }
+    run_hybrid_command(feature, HybridCommandType::Test)
+}
+
+/// 执行单个混合构建命令（不更新代码分析）
+fn run_hybrid_command(feature: &str, command_type: HybridCommandType) -> Result<()> {
+    let cmd = get_config_value(command_type.cmd_key(), feature)?;
+
+    execute_command_in_dir_with_type(
+        &cmd,
+        command_type.dir_key(),
+        feature,
+        command_type.needs_ld_preload(),
+        command_type.as_str(),
+    )
+
+}
+
