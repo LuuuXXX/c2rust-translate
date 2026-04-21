@@ -1479,6 +1479,7 @@ where
                 }
                 interaction::CompileSuccessChoice::ManualFix => {
                     println!("│ {}", "You chose: Manual fix".bright_cyan());
+                    println!("│ {}", "Reason: 用户主动选择（编译成功，测试已跳过）(user-initiated after successful build; tests skipped)".yellow());
                     interaction::open_in_vim(rs_file)?;
                     println!(
                         "│ {}",
@@ -1541,6 +1542,7 @@ where
                 }
                 interaction::CompileSuccessChoice::ManualFix => {
                     println!("│ {}", "You chose: Manual fix".bright_cyan());
+                    println!("│ {}", "Reason: 用户主动选择（编译成功，测试已推迟）(user-initiated after successful build; tests deferred by interval)".yellow());
                     interaction::open_in_vim(rs_file)?;
                     println!(
                         "│ {}",
@@ -1596,6 +1598,7 @@ where
                 }
                 interaction::CompileSuccessChoice::ManualFix => {
                     println!("│ {}", "You chose: Manual fix".bright_cyan());
+                    println!("│ {}", "Reason: 用户主动选择（编译和测试全部通过）(user-initiated after successful compilation and tests)".yellow());
                     interaction::open_in_vim(rs_file)?;
                     println!(
                         "│ {}",

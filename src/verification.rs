@@ -488,7 +488,7 @@ fn handle_max_fix_attempts_reached(
             skip_test,
         ),
         interaction::FailureChoice::ManualFix => {
-            handle_manual_fix(feature, file_type, rs_file, &build_error, skip_test)
+            handle_manual_fix(feature, file_type, rs_file, &build_error, skip_test, "达到最大 AI 修复尝试次数 (max AI fix attempts reached)")
         }
         interaction::FailureChoice::Skip => {
             println!("│ {}", "You chose: Skip this file".bright_cyan());
@@ -669,9 +669,11 @@ fn handle_manual_fix(
     rs_file: &Path,
     build_error: &anyhow::Error,
     skip_test: bool,
+    reason: &str,
 ) -> Result<(bool, usize, bool)> {
     println!("│");
     println!("│ {}", "You chose: Manual fix".bright_cyan());
+    println!("│ {}", format!("Reason: {}", reason).yellow());
 
     // 尝试打开文件（多文件时展示选择界面）
     match interaction::open_files_for_manual_fix(&collect_fix_files(feature, rs_file, build_error))

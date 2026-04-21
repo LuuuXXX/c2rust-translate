@@ -804,6 +804,7 @@ pub(crate) fn handle_build_failure_interactive(
                             interaction::FailureChoice::ManualFix => {
                                 println!("│");
                                 println!("│ {}", "You chose: Manually edit the code".bright_cyan());
+                                println!("│ {}", "Reason: AI 修复后混合构建仍失败 (hybrid build still failing after AI-assisted fix)".yellow());
                                 println!("│ {}", "Opening vim for manual fixes...".bright_blue());
 
                                 // 打开 vim 允许用户手动编辑代码（支持多文件选择）
@@ -855,6 +856,7 @@ pub(crate) fn handle_build_failure_interactive(
                                                     }
                                                     interaction::FailureChoice::ManualFix => {
                                                         // 重新打开 vim
+                                                        println!("│ {}", "Reason: 手动修复后混合构建仍失败 (hybrid build still failing after manual fix)".yellow());
                                                         println!("│ {}", "Reopening Vim for another manual fix attempt...".bright_blue());
                                                         let fix_files = get_manual_fix_files(feature, rs_file, &e.to_string());
                                                         interaction::open_files_for_manual_fix(&fix_files)
@@ -907,6 +909,7 @@ pub(crate) fn handle_build_failure_interactive(
         interaction::FailureChoice::ManualFix => {
             println!("│");
             println!("│ {}", "You chose: Manual fix".bright_cyan());
+            println!("│ {}", "Reason: 混合构建失败 (hybrid build failed)".yellow());
 
             // 尝试打开 vim
             let fix_files = get_manual_fix_files(feature, rs_file, &build_error.to_string());
@@ -949,6 +952,10 @@ pub(crate) fn handle_build_failure_interactive(
                                         return Ok(false);
                                     }
                                     interaction::FailureChoice::ManualFix => {
+                                        println!(
+                                            "│ {}",
+                                            "Reason: 手动修复后混合构建仍失败 (hybrid build still failing after manual fix)".yellow()
+                                        );
                                         println!(
                                             "│ {}",
                                             "Reopening Vim for another manual fix attempt..."
@@ -1165,6 +1172,7 @@ pub(crate) fn handle_test_failure_interactive(
                             interaction::FailureChoice::ManualFix => {
                                 println!("│");
                                 println!("│ {}", "You chose: Manually edit the code".bright_cyan());
+                                println!("│ {}", "Reason: AI 修复后混合测试仍失败 (hybrid tests still failing after AI-assisted fix)".yellow());
                                 println!("│ {}", "Opening vim for manual fixes...".bright_blue());
 
                                 // 打开 vim 允许用户手动编辑代码
@@ -1231,6 +1239,7 @@ pub(crate) fn handle_test_failure_interactive(
         interaction::FailureChoice::ManualFix => {
             println!("│");
             println!("│ {}", "You chose: Manual fix".bright_cyan());
+            println!("│ {}", "Reason: 混合测试失败 (hybrid tests failed)".yellow());
 
             // 尝试打开 vim
             let fix_files = get_manual_fix_files(feature, rs_file, &test_error.to_string());
@@ -1269,6 +1278,10 @@ pub(crate) fn handle_test_failure_interactive(
                                         return Ok(false);
                                     }
                                     interaction::FailureChoice::ManualFix => {
+                                        println!(
+                                            "│ {}",
+                                            "Reason: 手动修复后混合测试仍失败 (hybrid tests still failing after manual fix)".yellow()
+                                        );
                                         println!(
                                             "│ {}",
                                             "Reopening Vim for another manual fix attempt..."
