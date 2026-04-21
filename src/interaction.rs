@@ -8,6 +8,48 @@ use std::path::Path;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+// ─── 进入手动修复模式的原因常量 ───────────────────────────────────────────────
+
+/// 混合构建阶段失败
+pub const MANUAL_FIX_REASON_HYBRID_BUILD_FAILED: &str =
+    "混合构建失败 (hybrid build failed)";
+/// 混合测试阶段失败
+pub const MANUAL_FIX_REASON_HYBRID_TESTS_FAILED: &str =
+    "混合测试失败 (hybrid tests failed)";
+/// AI 辅助修复后混合构建仍失败
+pub const MANUAL_FIX_REASON_BUILD_STILL_FAILING_AFTER_AI_FIX: &str =
+    "AI 修复后混合构建仍失败 (hybrid build still failing after AI-assisted fix)";
+/// AI 辅助修复后混合测试仍失败
+pub const MANUAL_FIX_REASON_TESTS_STILL_FAILING_AFTER_AI_FIX: &str =
+    "AI 修复后混合测试仍失败 (hybrid tests still failing after AI-assisted fix)";
+/// 手动修复后混合构建仍失败
+pub const MANUAL_FIX_REASON_BUILD_STILL_FAILING_AFTER_MANUAL_FIX: &str =
+    "手动修复后混合构建仍失败 (hybrid build still failing after manual fix)";
+/// 手动修复后混合测试仍失败
+pub const MANUAL_FIX_REASON_TESTS_STILL_FAILING_AFTER_MANUAL_FIX: &str =
+    "手动修复后混合测试仍失败 (hybrid tests still failing after manual fix)";
+/// 达到最大 AI 修复尝试次数
+pub const MANUAL_FIX_REASON_MAX_FIX_ATTEMPTS: &str =
+    "达到最大 AI 修复尝试次数 (max AI fix attempts reached)";
+/// 初始化验证失败
+pub const MANUAL_FIX_REASON_INIT_VALIDATION_FAILED: &str =
+    "初始化验证失败 (initialization validation failed)";
+/// 启动验证测试失败
+pub const MANUAL_FIX_REASON_STARTUP_TESTS_FAILED: &str =
+    "启动验证测试失败 (startup verification tests failed)";
+/// 手动修复后启动验证测试仍失败
+pub const MANUAL_FIX_REASON_STARTUP_TESTS_STILL_FAILING: &str =
+    "手动修复后启动验证测试仍失败 (startup verification tests still failing after manual fix)";
+/// 用户主动选择（编译成功，测试已跳过）
+pub const MANUAL_FIX_REASON_USER_INITIATED_TESTS_SKIPPED: &str =
+    "用户主动选择（编译成功，测试已跳过）(user-initiated after successful build; tests skipped)";
+/// 用户主动选择（编译成功，测试已推迟）
+pub const MANUAL_FIX_REASON_USER_INITIATED_TESTS_DEFERRED: &str =
+    "用户主动选择（编译成功，测试已推迟）(user-initiated after successful build; tests deferred by interval)";
+/// 用户主动选择（编译和测试全部通过）
+pub const MANUAL_FIX_REASON_USER_INITIATED_ALL_PASSED: &str =
+    "用户主动选择（编译和测试全部通过）(user-initiated after successful compilation and tests)";
+
 /// 全局自动接受模式标志
 static AUTO_ACCEPT_MODE: AtomicBool = AtomicBool::new(false);
 

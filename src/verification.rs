@@ -488,7 +488,7 @@ fn handle_max_fix_attempts_reached(
             skip_test,
         ),
         interaction::FailureChoice::ManualFix => {
-            handle_manual_fix(feature, file_type, rs_file, &build_error, skip_test, "达到最大 AI 修复尝试次数 (max AI fix attempts reached)")
+            handle_manual_fix(feature, file_type, rs_file, &build_error, skip_test, interaction::MANUAL_FIX_REASON_MAX_FIX_ATTEMPTS)
         }
         interaction::FailureChoice::Skip => {
             println!("│ {}", "You chose: Skip this file".bright_cyan());

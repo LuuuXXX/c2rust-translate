@@ -328,7 +328,7 @@ pub(crate) fn handle_startup_test_failure_with_files(
             interaction::FailureChoice::ManualFix => {
                 println!("│");
                 println!("│ {}", "You chose: Manual fix".bright_cyan());
-                println!("│ {}", "Reason: 启动验证测试失败 (startup verification tests failed)".yellow());
+                println!("│ {}", format!("Reason: {}", interaction::MANUAL_FIX_REASON_STARTUP_TESTS_FAILED).yellow());
 
                 // 尝试打开 vim（支持多文件选择）
                 match interaction::open_files_for_manual_fix(&files) {
@@ -389,7 +389,7 @@ pub(crate) fn handle_startup_test_failure_with_files(
 
                                             match retry_choice {
                                                 interaction::FailureChoice::ManualFix => {
-                                                    println!("│ {}", "Reason: 手动修复后启动验证测试仍失败 (startup verification tests still failing after manual fix)".yellow());
+                                                    println!("│ {}", format!("Reason: {}", interaction::MANUAL_FIX_REASON_STARTUP_TESTS_STILL_FAILING).yellow());
                                                     println!("│ {}", "Reopening file in Vim for additional manual fixes...".bright_blue());
                                                     match interaction::open_files_for_manual_fix(&files) {
                                                         Ok(_) => {

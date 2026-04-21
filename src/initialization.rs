@@ -146,7 +146,7 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool, skip_
                     interaction::FailureChoice::ManualFix => {
                         println!(
                             "│ {}",
-                            "Reason: 初始化验证失败 (initialization validation failed)".yellow()
+                            format!("Reason: {}", interaction::MANUAL_FIX_REASON_INIT_VALIDATION_FAILED).yellow()
                         );
                         let error_text = format!("{:#}", last_error);
                         if !open_failing_files_from_error(&error_text, feature)? {
