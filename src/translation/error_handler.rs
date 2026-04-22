@@ -5,7 +5,9 @@ use colored::Colorize;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use crate::{builder, file_scanner, interaction, suggestion, translator, util};
+use crate::{suggestion, util};
+use crate::ui::{file_scanner, interaction};
+use super::translator;
 
 /// 从错误消息中按出现顺序提取文件路径字符串
 /// 只提取 error 和 warning 级别诊断中引用的文件路径
@@ -293,7 +295,7 @@ pub(crate) fn handle_startup_test_failure_with_files(
                 )?;
 
                 // 再次尝试构建和测试
-                match builder::run_full_build_and_test(feature) {
+                match crate::workflow::run_full_build_and_test(feature) {
                     Ok(_) => {
                         // 全部通过，停止进一步的错误处理
                         return Ok(());
@@ -344,7 +346,7 @@ pub(crate) fn handle_startup_test_failure_with_files(
                             // 手动编辑后执行完整构建流程
                             // This is the startup verification context (not the translation loop),
                             // so skip_test=false: tests always run here.
-                            match builder::run_full_build_and_test_interactive(
+                            match crate::workflow::run_full_build_and_test_interactive(
                                 feature, file_type, file, false,
                             ) {
                                 Ok(_) => {
@@ -422,7 +424,7 @@ pub(crate) fn handle_startup_test_failure_with_files(
                                                         "Skipping current file(s) to fix other files..."
                                                             .bright_cyan()
                                                     );
-                                                    return Err(crate::verification::SkipFileSignal.into());
+                                                    return Err(super::verification::SkipFileSignal.into());
                                                 }
                                                 interaction::FailureChoice::RetryDirectly
                                                 | interaction::FailureChoice::AddSuggestion

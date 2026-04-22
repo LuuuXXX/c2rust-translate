@@ -1,4 +1,7 @@
-use crate::{analyzer, builder, diff_display, interaction, suggestion, translator};
+use crate::{analyzer, suggestion};
+use crate::build::builder;
+use crate::ui::{diff_display, interaction};
+use super::translator;
 use anyhow::{Context, Result};
 use colored::Colorize;
 use std::path::Path;
@@ -105,7 +108,7 @@ where
 {
     let mut count = 0usize;
 
-    let file_messages = match crate::error_handler::group_errors_by_file(message, feature) {
+    let file_messages = match super::error_handler::group_errors_by_file(message, feature) {
         Ok(v) => v,
         Err(e) => {
             println!(
@@ -136,7 +139,7 @@ where
                 continue;
             };
             let (msg_file_type, _) =
-                crate::file_scanner::extract_file_type(file_stem).unwrap_or((file_type, ""));
+                crate::ui::file_scanner::extract_file_type(file_stem).unwrap_or((file_type, ""));
             let msg_error = anyhow::anyhow!("{}", file_msg);
             let msg_file_name = msg_file
                 .file_name()
@@ -636,7 +639,7 @@ fn handle_add_suggestion(
         // 但修复循环本身会有完整的 max_error_fix_attempts 次机会
         // 第二个返回值是递归循环中消耗的 fix_attempts 次数，由调用方 process_rs_file 聚合统计。
         let (build_successful, recursive_fix_attempts, had_restart) =
-            crate::verification::execute_code_error_check_with_fix_loop(
+            crate::translation::verification::execute_code_error_check_with_fix_loop(
                 feature,
                 file_type,
                 rs_file,
@@ -659,7 +662,7 @@ fn collect_fix_files(
     rs_file: &Path,
     error: &anyhow::Error,
 ) -> Vec<std::path::PathBuf> {
-    crate::builder::get_manual_fix_files(feature, rs_file, &error.to_string())
+    crate::workflow::get_manual_fix_files(feature, rs_file, &error.to_string())
 }
 
 /// 处理手动修复选项
@@ -686,7 +689,7 @@ fn handle_manual_fix(
                 );
 
                 // 手动编辑后执行完整构建流程
-                match builder::run_full_build_and_test_interactive(feature, file_type, rs_file, skip_test) {
+                match crate::workflow::run_full_build_and_test_interactive(feature, file_type, rs_file, skip_test) {
                     Ok(_) => {
                         println!(
                             "│ {}",

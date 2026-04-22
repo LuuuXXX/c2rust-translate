@@ -1,12 +1,10 @@
-use crate::{interaction, util};
+use crate::util;
+use crate::ui::interaction;
 use anyhow::{Context, Result};
 use colored::Colorize;
 
-/// 从错误信息中提取失败的 .rs 文件并打开编辑器
-///
-/// 支持多文件选择
 fn open_failing_files_from_error(error_text: &str, feature: &str) -> Result<bool> {
-    let failing_files = crate::error_handler::group_errors_by_file(error_text, feature)?
+    let failing_files = crate::translation::error_handler::group_errors_by_file(error_text, feature)?
         .into_iter()
         .map(|(f, _)| f)
         .collect::<Vec<_>>();
@@ -35,9 +33,6 @@ fn open_failing_files_from_error(error_text: &str, feature: &str) -> Result<bool
     Ok(true)
 }
 
-/// 检查并初始化 feature 目录
-///
-/// 如果 rust 目录不存在，则初始化并提交
 pub fn check_and_initialize_feature(feature: &str) -> Result<()> {
     util::validate_feature_name(feature)?;
 
@@ -107,12 +102,11 @@ pub fn check_and_initialize_feature(feature: &str) -> Result<()> {
     Ok(())
 }
 
-/// 执行初始化验证
-///
-/// 在项目初始化后执行一次完整的代码错误检查，确保项目基础状态正常。
-///
-/// 当 `skip_test` 为 `true` 时，跳过混合构建序列中的测试阶段。
-pub fn execute_initial_verification(feature: &str, show_full_output: bool, skip_test: bool) -> Result<()> {
+pub fn execute_initial_verification(
+    feature: &str,
+    show_full_output: bool,
+    skip_test: bool,
+) -> Result<()> {
     util::validate_feature_name(feature)?;
 
     println!(
@@ -120,7 +114,22 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool, skip_
         "═══ 初始化验证（初始化后） ═══".bright_magenta().bold()
     );
 
-    match crate::common_tasks::execute_code_error_check(feature, show_full_output, skip_test) {
+    let run_check = || -> Result<()> {
+        // Inline of execute_code_error_check
+        println!("{}", "执行代码错误检查...".bright_blue());
+        println!("{}", "  → 构建中（抑制警告）...".bright_blue());
+        crate::build::builder::cargo_build(feature, true, show_full_output)?;
+        println!("{}", "  ✓ 构建成功".bright_green());
+        println!("{}", "  → 执行混合构建检查...".bright_blue());
+        crate::build::hybrid_build::execute_hybrid_build_sequence(feature, skip_test)
+            .context("混合构建检查失败")?;
+        println!("{}", "  ✓ 混合构建检查通过".bright_green());
+        crate::git::git_commit(&format!("Code error check passed for {}", feature), feature)?;
+        println!("{}", "✓ 代码错误检查完成".bright_green().bold());
+        Ok(())
+    };
+
+    match run_check() {
         Ok(_) => {
             println!("{}", "✓ 初始化验证完成并已提交".bright_green().bold());
             Ok(())
@@ -150,14 +159,10 @@ pub fn execute_initial_verification(feature: &str, show_full_output: bool, skip_
                                 "│ {}",
                                 "无法识别要打开的特定文件。请检查上面的错误。".yellow()
                             );
-                            return Err(last_error).context("初始化验证失败 - 未识别到特定文件");
+                            return Err(last_error)
+                                .context("初始化验证失败 - 未识别到特定文件");
                         }
-                        // Re-run the check; on success break out, on failure loop again
-                        match crate::common_tasks::execute_code_error_check(
-                            feature,
-                            show_full_output,
-                            skip_test,
-                        ) {
+                        match run_check() {
                             Ok(_) => {
                                 println!(
                                     "{}",
@@ -193,7 +198,6 @@ mod tests {
         {
             let _ = f;
         }
-
         assert_signature(check_and_initialize_feature);
     }
 
@@ -205,7 +209,6 @@ mod tests {
         {
             let _ = f;
         }
-
         assert_signature(execute_initial_verification);
     }
 }

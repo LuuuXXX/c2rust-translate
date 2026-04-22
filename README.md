@@ -4,7 +4,17 @@
 
 ## 版本历史
 
-### v0.3.1（当前版本）
+### v0.4.0（当前版本）
+**项目结构重构：模块职责分离 + 目录分组**
+- **新增 `build/`**：`builder.rs`（cargo_build / cargo_check）和 `hybrid_build.rs`（混合构建编排）归入同一目录
+- **新增 `workflow/`**：`steps.rs`（翻译/验证工作流，原 `workflow.rs`）和 `feature_init.rs` 归入同一目录
+- **新增 `translation/`**：`translator.rs`、`verification.rs`、`error_handler.rs`（C→Rust 翻译与错误修复）归入同一目录
+- **新增 `ui/`**：`interaction.rs`、`diff_display.rs`、`file_scanner.rs`（用户交互与显示）归入同一目录
+- **根目录精简**：仅保留 `main.rs`、`lib.rs`、`util.rs`、`stats.rs`、`progress.rs`、`analyzer.rs`、`git.rs`、`suggestion.rs` 等通用模块
+- **删除 `common_tasks.rs`**：薄封装层内联到 `workflow/steps.rs` 对应调用点
+- **删除 `initialization.rs`**：重命名为 `workflow/feature_init.rs`，语义更准确
+
+### v0.3.1
 **工作流优化：消除冗余步骤**
 - **消除重复 `get_config_value` 实现**：删除 `hybrid_build.rs` 中与 `builder.rs` 完全相同的私有实现（~25 行），改用 `crate::builder::get_config_value`
 - **减少冗余代码分析更新**：新增 `c2rust_clean_no_analysis`/`c2rust_build_no_analysis`/`c2rust_test_no_analysis` 内部变体，在 clean→build→test 序列中由序列开头统一调用一次 `update_code_analysis`，避免每个步骤各自重复触发（由 3-4 次降至 1 次），涉及 `run_hybrid_build_interactive`、`run_full_build_and_test_interactive`、`complete_file_processing`、`run_final_interval_test_if_needed`
@@ -34,21 +44,37 @@
 
 ## 项目架构
 
-本项目采用模块化设计，代码组织清晰：
+本项目采用模块化设计，每个模块职责单一：
 
-- **lib.rs** - 主工作流程编排
-- **common_tasks.rs** - 公共任务（错误检查、告警检查、混合构建检查、翻译）
-- **initialization.rs** - 项目初始化
-- **verification.rs** - 构建验证和修复循环
-- **builder.rs** - Cargo 构建
-- **translator.rs** - C 到 Rust 翻译
-- **analyzer.rs** - 代码分析集成
-- **interaction.rs** - 用户交互
-- **file_scanner.rs** - 文件发现和选择
-- **git.rs** - Git 版本控制
-- 其他辅助模块（progress, diff_display 等）
-
-详细的架构说明请参见 [文档/架构说明.md](文档/架构说明.md)。
+```
+src/
+├── main.rs                    — CLI 入口（Clap 解析）
+├── lib.rs                     — 公共 API（translate_feature / verify_feature）+ 环境变量辅助函数
+├── util.rs                    — find_project_root / validate_feature_name（路径工具函数）
+├── stats.rs                   — TranslationStats / FileAttemptStat（翻译统计报告）
+├── progress.rs                — ProgressState + 显示常量（进度跟踪）
+├── analyzer.rs                — code_analyse 外部命令封装
+├── git.rs                     — git commit/gc/reflog
+├── suggestion.rs              — suggestions.txt 读写
+├── build/                     — Rust & 混合构建
+│   ├── mod.rs
+│   ├── builder.rs             — cargo_build / cargo_check（Rust 编译）
+│   └── hybrid_build.rs        — 混合构建序列编排 + get_config_value + c2rust_clean/build/test
+├── workflow/                  — 翻译/验证工作流编排
+│   ├── mod.rs
+│   ├── steps.rs               — 完整的 translate_feature / verify_feature 工作流步骤
+│   └── feature_init.rs        — feature 目录初始化与初始化验证
+├── translation/               — C→Rust 翻译与修复
+│   ├── mod.rs
+│   ├── translator.rs          — translate_and_fix.py 脚本调用
+│   ├── verification.rs        — 翻译循环中单文件的错误修复循环
+│   └── error_handler.rs       — Cargo 错误解析与修复流程
+└── ui/                        — 用户交互与显示
+    ├── mod.rs
+    ├── interaction.rs         — 所有用户交互提示（含文件选择）
+    ├── diff_display.rs        — C/Rust 并排代码展示
+    └── file_scanner.rs        — .rs 文件磁盘扫描
+```
 
 ## 功能特性
 
@@ -70,24 +96,24 @@
 - **交互式修复** - 支持手动修复、跳过文件等多种选项
 - **文件选择** - 手动修复时使用上下键选择单个文件，回车确认
 
-## 公共任务说明
+## 工作流说明
 
-项目定义了4个标准化的公共任务：
+翻译工作流由 `workflow.rs` 编排，主要步骤如下：
 
-### 1. 代码错误检查
+### 1. 代码错误检查阶段
 包含以下步骤：
-- 执行 cargo build（抑制警告）
-- 执行混合构建检查（clean + build + test，内部会更新代码分析）
+- 执行 cargo build（抑制警告，生成 librust.a 供混合构建链接）
+- 执行混合构建序列（clean + build + test，内部统一更新一次代码分析）
 - 提交到 git
 
-### 2. 代码告警检查
+### 2. 代码告警检查阶段
 包含以下步骤：
 - 执行 cargo build（显示警告）
-- 执行混合构建检查（clean + build + test，内部会更新代码分析）
+- 执行混合构建序列（clean + build + test，内部统一更新一次代码分析）
 - 提交到 git
 
-### 3. 混合构建检查
-包含以下步骤：
+### 3. 混合构建序列
+通过 `hybrid_build.rs` 编排：
 - 执行清理命令（通过 c2rust-config 获取）
 - 执行构建命令（通过 c2rust-config 获取）
 - 执行测试命令（通过 c2rust-config 获取）
@@ -131,7 +157,7 @@ c2rust-translate translate --feature myfeature --show-full-output
 | **翻译脚本失败**（`translate_and_fix.py` 非零退出）| 文件记录到 `translation_failed_files`（区别于用户主动跳过的 `skipped_files`），跳过该文件继续处理下一个；最终统计中单独显示。注意：基础设施错误（找不到项目根目录、无效 feature 名称、无法执行 Python 等）仍为致命错误。 |
 | **修复失败**（`apply_error_fix`/`apply_warning_fix` 出错）| 打印警告，本次修复计数为 0，修复循环继续直到达到最大次数 |
 | **git 提交失败（翻译工作流）**（`finalize_file_processing`/`run_final_interval_test_if_needed` 中的 `git commit` 出错）| 打印 `⚠ Warning: git commit failed (continuing): ...`，工作树可能保持脏状态，后续提交可能包含额外变更 |
-| **git 提交失败（初始化/代码检查阶段）**（`initialization.rs`/`common_tasks.rs` 中的 `git commit` 出错）| **致命错误，中止整个流程** |
+| **git 提交失败（初始化/代码检查阶段）**（`feature_init.rs` 中的 `git commit` 出错）| **致命错误，中止整个流程** |
 | **`code_analyse` 失败** | **致命错误，中止整个流程** |
 | **构建失败后用户选择退出** | **致命错误，中止整个流程** |
 | **基础设施错误**（找不到项目根目录、无效 feature 名等）| **致命错误，中止整个流程** |
