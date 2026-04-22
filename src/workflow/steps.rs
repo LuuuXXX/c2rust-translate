@@ -1,5 +1,8 @@
-use crate::{analyzer, builder, diff_display, error_handler, file_scanner, git, hybrid_build, interaction, suggestion, translator, util, verification};
-use crate::feature_init;
+use crate::{analyzer, git, util};
+use crate::build::{builder, hybrid_build};
+use crate::translation::{error_handler, translator, verification};
+use crate::ui::{diff_display, file_scanner, interaction};
+use super::feature_init;
 use anyhow::{Context, Result};
 use colored::Colorize;
 use quote::ToTokens;
@@ -2535,7 +2538,7 @@ pub(crate) fn get_manual_fix_files(
     rs_file: &std::path::Path,
     error_str: &str,
 ) -> Vec<std::path::PathBuf> {
-    let mut files = match crate::error_handler::parse_error_for_files(error_str, feature) {
+    let mut files = match error_handler::parse_error_for_files(error_str, feature) {
         Ok(parsed) => parsed,
         Err(parse_err) => {
             eprintln!(
@@ -2579,8 +2582,8 @@ pub(crate) fn handle_build_failure_interactive(
     build_error: anyhow::Error,
     skip_test: bool,
 ) -> Result<bool> {
-    use crate::diff_display;
-    use crate::interaction;
+    use crate::ui::diff_display;
+    use crate::ui::interaction;
     use crate::suggestion;
 
     println!("│");
@@ -2602,7 +2605,7 @@ pub(crate) fn handle_build_failure_interactive(
         diff_display::ResultType::BuildFail,
     ) {
         // 如果比较失败则回退到旧显示
-        use crate::translator;
+        use crate::translation::translator;
         println!(
             "│ {}",
             format!("Failed to display comparison: {}", e).yellow()
@@ -2889,7 +2892,7 @@ pub(crate) fn handle_build_failure_interactive(
                                     }
                                     interaction::FailureChoice::Skip => {
                                         return Err(anyhow::Error::from(
-                                            crate::verification::SkipFileSignal,
+                                            crate::translation::verification::SkipFileSignal,
                                         ));
                                     }
                                     interaction::FailureChoice::FixOtherFile => {
@@ -2918,7 +2921,7 @@ pub(crate) fn handle_build_failure_interactive(
             }
         }
         interaction::FailureChoice::Skip => {
-            Err(anyhow::Error::from(crate::verification::SkipFileSignal))
+            Err(anyhow::Error::from(crate::translation::verification::SkipFileSignal))
         }
         interaction::FailureChoice::FixOtherFile => {
             unreachable!("FixOtherFile is not offered in this context")
@@ -2946,8 +2949,8 @@ pub(crate) fn handle_test_failure_interactive(
     test_error: anyhow::Error,
     skip_test: bool,
 ) -> Result<bool> {
-    use crate::diff_display;
-    use crate::interaction;
+    use crate::ui::diff_display;
+    use crate::ui::interaction;
     use crate::suggestion;
 
     println!("│");
@@ -2969,7 +2972,7 @@ pub(crate) fn handle_test_failure_interactive(
         diff_display::ResultType::TestFail,
     ) {
         // 如果比较失败则回退到旧显示
-        use crate::translator;
+        use crate::translation::translator;
         println!(
             "│ {}",
             format!("Failed to display comparison: {}", e).yellow()
@@ -2995,7 +2998,7 @@ pub(crate) fn handle_test_failure_interactive(
                 "You chose: Retry directly without suggestion".bright_cyan()
             );
 
-            crate::verification::display_retry_directly_warning();
+            crate::translation::verification::display_retry_directly_warning();
 
             // 清除旧建议
             suggestion::clear_suggestions()?;
@@ -3286,7 +3289,7 @@ pub fn run_full_build_and_test_interactive(
     println!("│ {}", "Updating code analysis...".bright_blue());
     analyzer::update_code_analysis(feature)?;
     println!("│ {}", "✓ Code analysis updated".bright_green());
-    match crate::builder::cargo_check(feature, true, false) {
+    match builder::cargo_check(feature, true, false) {
         Ok(_) => {
             println!("│ {}", "  ✓ Rust check successful".bright_green());
         }

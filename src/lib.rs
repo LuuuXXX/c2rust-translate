@@ -4,20 +4,14 @@
 //! gate verification, file selection, and translation execution across multiple modules.
 
 pub mod analyzer;
-pub mod builder;
-pub mod diff_display;
-pub mod error_handler;
-pub mod feature_init;
-pub mod file_scanner;
+pub mod build;
 pub mod git;
-pub mod hybrid_build;
-pub mod interaction;
 pub(crate) mod progress;
 pub(crate) mod stats;
 pub mod suggestion;
-pub mod translator;
+pub mod translation;
+pub mod ui;
 pub mod util;
-pub mod verification;
 pub(crate) mod workflow;
 
 pub use workflow::{translate_feature, verify_feature};

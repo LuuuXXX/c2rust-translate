@@ -417,7 +417,7 @@ pub fn c2rust_build(feature: &str) -> Result<()> {
     println!("{}", "✓ Code analysis updated".bright_green());
 
     println!("{}", "Rebuilding Rust static library for hybrid link...".bright_blue());
-    crate::builder::cargo_build(feature, true, false)?;
+    super::builder::cargo_build(feature, true, false)?;
     println!("{}", "✓ Rust static library refreshed".bright_green());
 
     let build_cmd = get_config_value("build.cmd", feature)?;
@@ -430,7 +430,7 @@ pub(crate) fn c2rust_build_no_analysis(feature: &str) -> Result<()> {
     util::validate_feature_name(feature)?;
 
     println!("{}", "Rebuilding Rust static library for hybrid link...".bright_blue());
-    crate::builder::cargo_build(feature, true, false)?;
+    super::builder::cargo_build(feature, true, false)?;
     println!("{}", "✓ Rust static library refreshed".bright_green());
 
     let build_cmd = get_config_value("build.cmd", feature)?;

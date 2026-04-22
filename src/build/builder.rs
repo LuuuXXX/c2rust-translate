@@ -4,23 +4,6 @@ use colored::Colorize;
 use std::process::Command;
 use std::time::Instant;
 
-// Public re-exports
-pub use crate::hybrid_build::{
-    c2rust_build, c2rust_clean, c2rust_test,
-    execute_command_in_dir_with_type, get_config_value,
-    run_hybrid_build, run_hybrid_build_interactive,
-};
-pub use crate::workflow::run_full_build_and_test;
-
-// Crate-internal re-exports
-pub(crate) use crate::hybrid_build::{
-    c2rust_build_no_analysis, c2rust_clean_no_analysis, c2rust_test_no_analysis,
-};
-pub(crate) use crate::workflow::{
-    get_manual_fix_files, handle_build_failure_interactive, handle_test_failure_interactive,
-    run_full_build_and_test_interactive,
-};
-
 fn run_cargo_subcommand(
     feature: &str,
     suppress_warnings: bool,

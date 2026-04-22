@@ -1,9 +1,10 @@
-use crate::{interaction, util};
+use crate::util;
+use crate::ui::interaction;
 use anyhow::{Context, Result};
 use colored::Colorize;
 
 fn open_failing_files_from_error(error_text: &str, feature: &str) -> Result<bool> {
-    let failing_files = crate::error_handler::group_errors_by_file(error_text, feature)?
+    let failing_files = crate::translation::error_handler::group_errors_by_file(error_text, feature)?
         .into_iter()
         .map(|(f, _)| f)
         .collect::<Vec<_>>();
@@ -117,10 +118,10 @@ pub fn execute_initial_verification(
         // Inline of execute_code_error_check
         println!("{}", "执行代码错误检查...".bright_blue());
         println!("{}", "  → 构建中（抑制警告）...".bright_blue());
-        crate::builder::cargo_build(feature, true, show_full_output)?;
+        crate::build::builder::cargo_build(feature, true, show_full_output)?;
         println!("{}", "  ✓ 构建成功".bright_green());
         println!("{}", "  → 执行混合构建检查...".bright_blue());
-        crate::hybrid_build::execute_hybrid_build_sequence(feature, skip_test)
+        crate::build::hybrid_build::execute_hybrid_build_sequence(feature, skip_test)
             .context("混合构建检查失败")?;
         println!("{}", "  ✓ 混合构建检查通过".bright_green());
         crate::git::git_commit(&format!("Code error check passed for {}", feature), feature)?;

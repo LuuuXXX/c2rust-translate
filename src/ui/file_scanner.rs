@@ -91,7 +91,7 @@ pub fn extract_file_type(filename: &str) -> Option<(&'static str, &str)> {
     }
 }
 
-pub use crate::interaction::{parse_file_selection, prompt_file_selection};
+pub use super::interaction::{parse_file_selection, prompt_file_selection};
 
 #[cfg(test)]
 mod tests {

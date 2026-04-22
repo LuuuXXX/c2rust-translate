@@ -5,15 +5,14 @@
 ## 版本历史
 
 ### v0.4.0（当前版本）
-**项目结构重构：模块职责分离**
-- **新增 `stats.rs`**：从 `util.rs` 抽取 `TranslationStats`、`FileAttemptStat`，统计报告独立成模块
-- **新增 `progress.rs`**：从 `util.rs` 抽取 `ProgressState` 及相关常量，进度跟踪独立成模块
-- **新增 `workflow.rs`**：从 `lib.rs` 和 `builder.rs` 提取所有工作流步骤函数，`lib.rs` 精简至仅保留公共 API 和环境变量辅助函数
-- **新增 `feature_init.rs`**：重命名自 `initialization.rs`，名字更准确表达"feature 初始化与验证"语义
-- **删除 `common_tasks.rs`**：薄封装层内联到 `workflow.rs` 对应调用点，消除无意义的间接层
-- **精简 `builder.rs`**：仅保留 `cargo_build`/`cargo_check`（Rust 编译），`get_config_value`/`execute_command_in_dir_with_type` 及所有 `c2rust_*` 函数移入 `hybrid_build.rs`
-- **扩展 `hybrid_build.rs`**：吸收混合构建相关的配置读取和命令执行逻辑
-- **扩展 `interaction.rs`**：吸收 `file_scanner.rs` 中的交互式文件选择（`prompt_file_selection`/`parse_file_selection`），`file_scanner.rs` 仅保留磁盘扫描逻辑
+**项目结构重构：模块职责分离 + 目录分组**
+- **新增 `build/`**：`builder.rs`（cargo_build / cargo_check）和 `hybrid_build.rs`（混合构建编排）归入同一目录
+- **新增 `workflow/`**：`steps.rs`（翻译/验证工作流，原 `workflow.rs`）和 `feature_init.rs` 归入同一目录
+- **新增 `translation/`**：`translator.rs`、`verification.rs`、`error_handler.rs`（C→Rust 翻译与错误修复）归入同一目录
+- **新增 `ui/`**：`interaction.rs`、`diff_display.rs`、`file_scanner.rs`（用户交互与显示）归入同一目录
+- **根目录精简**：仅保留 `main.rs`、`lib.rs`、`util.rs`、`stats.rs`、`progress.rs`、`analyzer.rs`、`git.rs`、`suggestion.rs` 等通用模块
+- **删除 `common_tasks.rs`**：薄封装层内联到 `workflow/steps.rs` 对应调用点
+- **删除 `initialization.rs`**：重命名为 `workflow/feature_init.rs`，语义更准确
 
 ### v0.3.1
 **工作流优化：消除冗余步骤**
@@ -49,24 +48,32 @@
 
 ```
 src/
-├── main.rs          — CLI 入口（Clap 解析）
-├── lib.rs           — 公共 API（translate_feature / verify_feature）+ 环境变量辅助函数
-├── workflow.rs      — 完整的翻译/验证工作流步骤函数
-├── stats.rs         — TranslationStats / FileAttemptStat（翻译统计报告）
-├── progress.rs      — ProgressState + 显示常量（进度跟踪）
-├── util.rs          — find_project_root / validate_feature_name（路径工具函数）
-├── feature_init.rs  — feature 目录初始化与初始化验证
-├── analyzer.rs      — code_analyse 外部命令封装
-├── builder.rs       — cargo_build / cargo_check（Rust 编译）
-├── hybrid_build.rs  — 混合构建序列编排 + get_config_value + c2rust_clean/build/test
-├── verification.rs  — 翻译循环中单文件的错误修复循环
-├── translator.rs    — C→Rust 翻译脚本调用
-├── file_scanner.rs  — .rs 文件磁盘扫描
-├── interaction.rs   — 所有用户交互提示（含文件选择）
-├── git.rs           — git commit/gc/reflog
-├── suggestion.rs    — suggestions.txt 读写
-├── diff_display.rs  — C/Rust 并排代码展示
-└── error_handler.rs — Cargo 错误解析与修复流程
+├── main.rs                    — CLI 入口（Clap 解析）
+├── lib.rs                     — 公共 API（translate_feature / verify_feature）+ 环境变量辅助函数
+├── util.rs                    — find_project_root / validate_feature_name（路径工具函数）
+├── stats.rs                   — TranslationStats / FileAttemptStat（翻译统计报告）
+├── progress.rs                — ProgressState + 显示常量（进度跟踪）
+├── analyzer.rs                — code_analyse 外部命令封装
+├── git.rs                     — git commit/gc/reflog
+├── suggestion.rs              — suggestions.txt 读写
+├── build/                     — Rust & 混合构建
+│   ├── mod.rs
+│   ├── builder.rs             — cargo_build / cargo_check（Rust 编译）
+│   └── hybrid_build.rs        — 混合构建序列编排 + get_config_value + c2rust_clean/build/test
+├── workflow/                  — 翻译/验证工作流编排
+│   ├── mod.rs
+│   ├── steps.rs               — 完整的 translate_feature / verify_feature 工作流步骤
+│   └── feature_init.rs        — feature 目录初始化与初始化验证
+├── translation/               — C→Rust 翻译与修复
+│   ├── mod.rs
+│   ├── translator.rs          — translate_and_fix.py 脚本调用
+│   ├── verification.rs        — 翻译循环中单文件的错误修复循环
+│   └── error_handler.rs       — Cargo 错误解析与修复流程
+└── ui/                        — 用户交互与显示
+    ├── mod.rs
+    ├── interaction.rs         — 所有用户交互提示（含文件选择）
+    ├── diff_display.rs        — C/Rust 并排代码展示
+    └── file_scanner.rs        — .rs 文件磁盘扫描
 ```
 
 ## 功能特性
